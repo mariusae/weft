@@ -10,6 +10,7 @@ struct CardEditor: View {
     @State private var newField = ""
     @State private var controller = EditorController()
     @State private var insertingQuery = false
+    @State private var definingFields = false
     @FocusState private var focus: Field?
 
     enum Field: Hashable { case title, tag }
@@ -29,6 +30,7 @@ struct CardEditor: View {
                         .keyboardShortcut(.return, modifiers: .command)
                         .buttonStyle(.borderedProminent)
                 }
+                renaming(draft)
                 tags(draft)
                 VStack(alignment: .leading, spacing: 0) {
                     #if os(macOS)
@@ -56,9 +58,40 @@ struct CardEditor: View {
                         .padding(.horizontal, 6)
                 }
                 .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
-                fields(draft)
+                let specs = store.schema(for: draft)
+                if !specs.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(specs, id: \.name) { spec in
+                            TypedFieldEditor(spec: spec, value: Binding {
+                                store.draft(title)?[field: spec.name]?.text ?? ""
+                            } set: { value in
+                                guard var updated = store.draft(title) else { return }
+                                updated[field: spec.name] = .text(value)
+                                store.updateDraft(title, updated)
+                            })
+                        }
+                    }
+                    .font(.callout)
+                }
+                schema(draft)
+                fields(draft, excluding: Set(specs.map(\.name)))
             }
             .onAppear { if !store.exists(title) { focus = .title } }
+        }
+    }
+
+    /// Being renamed: whether what refers to it is updated too.
+    @ViewBuilder private func renaming(_ draft: Tiddler) -> some View {
+        let new = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if store.exists(title), store.note(title) == nil, new != title, !new.isEmpty {
+            let references = store.references(to: title)
+            if !references.isEmpty {
+                Toggle(isOn: Binding(get: { store.relinkOnRename[title] ?? true }, set: { store.relinkOnRename[title] = $0 })) {
+                    Text("Update \(references.count) \(references.count == 1 ? "tiddler" : "tiddlers") that refer to “\(title)”")
+                        .help(references.prefix(12).joined(separator: ", "))
+                }
+                .font(.callout)
+            }
         }
     }
 
@@ -162,9 +195,28 @@ struct CardEditor: View {
         focus = .tag
     }
 
-    private func fields(_ draft: Tiddler) -> some View {
+    /// The fields this tiddler, as a tag, gives what it tags — or a way to
+    /// give some.
+    @ViewBuilder private func schema(_ draft: Tiddler) -> some View {
+        let specs = FieldSpec.specs(of: draft)
+        if !specs.isEmpty || definingFields {
+            SchemaEditor(tag: draft.title, specs: Binding {
+                FieldSpec.specs(of: store.draft(title) ?? draft)
+            } set: { specs in
+                guard var updated = store.draft(title) else { return }
+                updated[field: FieldSpec.field] = specs.isEmpty ? nil : .list(specs.map(\.item))
+                store.updateDraft(title, updated)
+            })
+        } else if !store.tagged(draft.title).isEmpty {
+            Button("Give Tiddlers Tagged “\(draft.title)” Fields…", systemImage: "list.bullet.rectangle") { definingFields = true }
+                .buttonStyle(.borderless)
+                .font(.callout)
+        }
+    }
+
+    private func fields(_ draft: Tiddler, excluding typed: Set<String>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(draft.fields.filter { $0.value.text != nil }, id: \.name) { field in
+            ForEach(draft.fields.filter { $0.value.text != nil && !typed.contains($0.name) }, id: \.name) { field in
                 HStack {
                     Text(field.name).foregroundStyle(.secondary).frame(width: 120, alignment: .trailing)
                     TextField("", text: Binding {

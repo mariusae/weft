@@ -11,6 +11,8 @@ public final class WikiStore {
 
     public private(set) var root: URL?
     private var wiki: Wiki?
+    /// The graph's Reflect notes and days, read once the graph is open.
+    private var notes: ReflectNotes?
     /// Bumped whenever the wiki changes, so views reading it are redrawn.
     public private(set) var revision = 0
 
@@ -21,6 +23,9 @@ public final class WikiStore {
     public private(set) var focusRequest = 0
     /// Cards being edited, by the title they are open under, and what they say so far.
     public private(set) var drafts: [String: Tiddler] = [:]
+    /// Whether renaming a card's tiddler updates what refers to it; yes
+    /// unless turned off in the editor.
+    public var relinkOnRename: [String: Bool] = [:]
     /// Cards showing only their titles.
     public var folded: Set<String> = []
 
@@ -64,9 +69,15 @@ public final class WikiStore {
         drafts = [:]
         folded = []
         UserDefaults.standard.set(url.path, forKey: "GraphPath")
-        river = (UserDefaults.standard.stringArray(forKey: riverKey) ?? []).filter { wiki[$0] != nil }
+        river = UserDefaults.standard.stringArray(forKey: riverKey) ?? []
         if river.isEmpty { river = defaultRiver(wiki) }
         revision += 1
+        let notes = ReflectNotes(root: url)
+        self.notes = notes
+        Task {
+            await Task.detached(priority: .userInitiated) { notes.scan() }.value
+            revision += 1
+        }
         sync = makeSync(url)
         sync?.onPulled = { [weak self] paths in self?.pulled(paths) }
         sync?.sync()
@@ -83,7 +94,13 @@ public final class WikiStore {
     /// stay as they are, to be put together with them when saved.
     private func pulled(_ paths: [String]) {
         guard let wiki else { return }
-        for path in paths where WikiFolder.isTiddler(path) { wiki.reload(path: path) }
+        for path in paths {
+            if WikiFolder.isTiddler(path) {
+                wiki.reload(path: path)
+            } else if path.hasSuffix(".md") {
+                notes?.refresh(path)
+            }
+        }
         revision += 1
     }
 
@@ -140,7 +157,46 @@ public final class WikiStore {
         return wiki?[title]
     }
 
-    public func exists(_ title: String) -> Bool { tiddler(title) != nil }
+    /// Whether a title leads anywhere: to a tiddler, or a Reflect note or day.
+    public func exists(_ title: String) -> Bool { tiddler(title) != nil || note(title) != nil }
+
+    // MARK: Reflect notes
+
+    /// The Reflect note or day a title leads to, when no tiddler has it.
+    public func note(_ title: String) -> ReflectNotes.Note? {
+        _ = revision
+        guard wiki?[title] == nil else { return nil }
+        return notes?.resolve(title)
+    }
+
+    public func body(of note: ReflectNotes.Note) -> String? {
+        _ = revision
+        return notes?.body(of: note)
+    }
+
+    /// The Reflect notes linking to any of these names.
+    public func notesLinking(to names: [String]) -> [ReflectNotes.Note] {
+        _ = revision
+        return notes?.linking(to: names) ?? []
+    }
+
+    /// The tiddlers linking to any of these names.
+    public func tiddlersLinking(to names: [String]) -> [String] {
+        _ = revision
+        return Array(Set(names.flatMap { wiki?.backlinks(to: $0) ?? [] })).sorted()
+    }
+
+    /// Reflect notes matching what is typed in search.
+    public func noteResults() -> [ReflectNotes.Note] {
+        _ = revision
+        let query = search.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return [] }
+        return notes?.search(query) ?? []
+    }
+
+    public func openToday() {
+        open(Day.today.description)
+    }
 
     public func backlinks(_ title: String) -> [String] {
         _ = revision
@@ -172,6 +228,12 @@ public final class WikiStore {
         _ = revision
         guard let wiki else { return [] }
         return query.run(in: wiki, this: this)
+    }
+
+    /// The fields a tiddler's tags give it.
+    public func schema(for tiddler: Tiddler) -> [FieldSpec] {
+        _ = revision
+        return wiki?.schema(for: tiddler) ?? []
     }
 
     /// Every title, for completing links.
@@ -224,6 +286,8 @@ public final class WikiStore {
     /// opened from another goes just after it, as in TiddlyWiki; otherwise
     /// at the top.
     public func open(_ title: String, from source: String? = nil) {
+        // A note opened by an alias, or in other case, is opened by its title.
+        let title = note(title)?.title ?? title
         if !river.contains(title) {
             if let source, let index = river.firstIndex(of: source) {
                 river.insert(title, at: index + 1)
@@ -312,6 +376,15 @@ public final class WikiStore {
             self.error = "Couldn't save “\(tiddler.title)”: \(error.localizedDescription)"
             return
         }
+        // Renamed: what named it names it still, unless asked not to.
+        if tiddler.title != title, wiki[title] == nil, relinkOnRename[title] ?? true {
+            do {
+                try wiki.relink(from: title, to: tiddler.title)
+            } catch {
+                self.error = "Couldn't update the tiddlers linking to “\(title)”: \(error.localizedDescription)"
+            }
+        }
+        relinkOnRename[title] = nil
         drafts[title] = nil
         draftBases[title] = nil
         sync?.noteChanged()
@@ -337,16 +410,39 @@ public final class WikiStore {
         sync?.noteChanged()
     }
 
-    /// A new tiddler, at the top of the river, being edited.
-    public func newTiddler() {
+    /// The tiddlers naming a title: linking, tagging, listing, asking for it.
+    public func references(to title: String) -> [String] {
+        _ = revision
+        return wiki?.references(to: title) ?? []
+    }
+
+    /// Takes a tiddler out, and its card. Its file goes; the history keeps it.
+    public func delete(_ title: String) {
+        do {
+            try wiki?.delete(title)
+        } catch {
+            self.error = "Couldn't delete “\(title)”: \(error.localizedDescription)"
+            return
+        }
+        close(title)
+        revision += 1
+        sync?.noteChanged()
+    }
+
+    /// A new tiddler, at the top of the river, being edited — tagged with
+    /// `tag`, when there is one, and given its fields.
+    public func newTiddler(taggedWith tag: String? = nil) {
         guard wiki != nil else { return }
-        var title = "New Tiddler"
+        var title = tag.map { "New \($0)" } ?? "New Tiddler"
+        let base = title
         var number = 1
         while exists(title) || river.contains(title) {
-            title = "New Tiddler \(number)"
+            title = "\(base) \(number)"
             number += 1
         }
-        drafts[title] = Tiddler(title: title)
+        var tiddler = Tiddler(title: title, tags: tag.map { [$0] } ?? [])
+        for spec in schema(for: tiddler) { tiddler[field: spec.name] = .text("") }
+        drafts[title] = tiddler
         open(title)
     }
 }

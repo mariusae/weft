@@ -427,6 +427,7 @@ private struct Converter {
             if let block = rewrite(call, block: true) { return block }
         }
         if let query = Self.query(forElement: trimmed) { return query.block }
+        if let heading = htmlHeading(trimmed) { return heading }
         if trimmed.hasPrefix("<$") || trimmed.hasPrefix("<<") && MacroCall(wholly: trimmed) != nil
             || trimmed.hasPrefix("{{{") && trimmed.hasSuffix("}}}") {
             let kind = trimmed.hasPrefix("<$") ? "widget" : trimmed.hasPrefix("<<") ? "macro" : "filter"
@@ -442,6 +443,20 @@ private struct Converter {
             return blocks(lines[1..<(lines.count - 1)]).joined(separator: "\n\n")
         }
         return inline(text, lineStarts: true)
+    }
+
+    /// A paragraph that is one HTML heading — `<h2 class="…" style="…">Text</h2>` —
+    /// as a Markdown heading, its styling gone.
+    private mutating func htmlHeading(_ text: String) -> String? {
+        let pattern = #"^<h([1-6])(?:\s[^>]*)?>(.*)</h\1>$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators, .caseInsensitive]),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let levelRange = Range(match.range(at: 1), in: text), let level = Int(text[levelRange]),
+              let bodyRange = Range(match.range(at: 2), in: text) else { return nil }
+        let body = text[bodyRange].split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            .joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        guard !body.isEmpty, !body.contains("<h") else { return nil }
+        return String(repeating: "#", count: level) + " " + inline(body)
     }
 
     // MARK: Inline

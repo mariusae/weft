@@ -122,4 +122,10 @@ import Testing
     @Test func tableCellAlignment() {
         #expect(md("|^ top|, bottom|") == "|  |  |\n| --- | --- |\n| top | bottom |\n")
     }
+
+    @Test func htmlHeadings() {
+        #expect(md("<h2\nclass=\"tc-hero-heading\"\nstyle=\"\n\ttext-align: center;\n\">\nWelcome to [[TiddlyWiki|Philosophy]]\n</h2>")
+            == "## Welcome to [[Philosophy|TiddlyWiki]]\n")
+        #expect(residue("<h1>Plain</h1>").isEmpty)
+    }
 }

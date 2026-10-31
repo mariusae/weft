@@ -60,6 +60,8 @@ private struct RiverToolbar: ToolbarContent {
                 .help("Tiddlers changed on two devices")
             }
             if let sync = store.sync { SyncButton(sync: sync) }
+            Button("Today", systemImage: "calendar") { store.openToday() }
+                .help("Today's Note (⌘T)")
             Button("New Tiddler", systemImage: "plus") { store.newTiddler() }
                 .help("New Tiddler (⌘N)")
             Button("Close All", systemImage: "rectangle.stack.badge.minus") { store.closeAll() }
@@ -167,10 +169,44 @@ private struct Sidebar: View {
                 .padding(.bottom, 6)
                 list
             } else {
-                titles(store.searchResults(), empty: "Nothing matches")
+                searchResults
             }
         }
         .onChange(of: store.searchFocusRequest) { searchFocused = true }
+    }
+
+    /// Tiddlers matching what is typed, then Reflect notes.
+    private var searchResults: some View {
+        let tiddlers = store.searchResults()
+        let notes = store.noteResults().filter { !tiddlers.contains($0.title) }
+        return List {
+            if !tiddlers.isEmpty {
+                SwiftUI.Section("Tiddlers") {
+                    ForEach(tiddlers, id: \.self) { title in
+                        Button { store.open(title) } label: {
+                            Text(title).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            if !notes.isEmpty {
+                SwiftUI.Section("Reflect") {
+                    ForEach(notes, id: \.path) { note in
+                        Button { store.open(note.title) } label: {
+                            Label(note.displayTitle, systemImage: note.day != nil ? "calendar" : "doc.text")
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .overlay {
+            if tiddlers.isEmpty && notes.isEmpty { Text("Nothing matches").foregroundStyle(.secondary) }
+        }
     }
 
     @ViewBuilder private var list: some View {
@@ -196,7 +232,7 @@ private struct Sidebar: View {
         List(titles, id: \.self) { title in
             HStack {
                 Button { store.open(title) } label: {
-                    Text(title)
+                    Text(missing ? title : store.note(title)?.displayTitle ?? title)
                         .italic(missing)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)

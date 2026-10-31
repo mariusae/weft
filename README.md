@@ -64,8 +64,29 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   the card shows both sides with **Keep This Device's**, **Keep the Other
   Device's** and **Keep Both**, and the toolbar says how many need review.
   A draft saved over a tiddler a sync changed meanwhile is merged with it.
-- **The sidebar**: search (⌘F) over titles, then text; Open, Recent, Tags,
-  and Missing (links to tiddlers no one has written).
+- **Reflect notes and days as cards**: a `[[link]]` no tiddler answers
+  leads where Reflect would take it — a date to its day, then a note's
+  title, then an alias — and opens it as a card, read-only for now. A
+  note's card shows its #tags, its body, and what links to it; a tiddler's
+  card lists the notes linking to it. Search finds notes too, as Reflect's
+  chooser does. Today (⌘T) opens today's note. Private notes never show.
+- **Typed tags**: a tag tiddler's `fields` list — `birthday (date)`,
+  `company (link)`, `status (active | paused | done)`, `rating (number)`,
+  `website (url)`, `met (yes/no)`, or a bare name for text — gives every
+  tiddler tagged with it those fields: shown as a panel by kind (a date
+  links to its day), edited with a date picker, a menu, a toggle, a field
+  offering titles. The tag's card has **New *Tag***, and a query table of
+  it shows those fields as columns. The tag's editor edits the list.
+- **Renaming and deleting**: renaming a tiddler updates the tiddlers that
+  name it — links, embeds, tags, `list` fields, query blocks, link fields —
+  unless the editor's toggle says not to. **Delete Tiddler…** in a card's
+  menu asks first; the graph's history keeps it.
+- **Instant sync**: signed in to GitHub (File ▸ GitHub Account… on the Mac;
+  the phone signs in to clone), weft follows the sync relay and syncs as
+  soon as another device pushes. The phone also registers for the relay's
+  silent pushes, to sync in the background.
+- **The sidebar**: search (⌘F) over titles, then text, then Reflect notes;
+  Open, Recent, Tags, and Missing (links to tiddlers no one has written).
 - ⌘N makes a new tiddler; ⇧⌘W closes every card not being edited.
 
 WikiText the importer couldn't convert shows as a dashed placeholder, the
@@ -75,14 +96,15 @@ WikiText a click away.
 
 - `Sources/WeftCore` — no UI. `Tiddler` and `TiddlerFile` (the file format),
   `Wiki` (every tiddler, links, tags), `MarkdownBlock` (a body as blocks to
-  show), `Query`, `TiddlerMerge` and `WikiSync` (the sync, over
-  reflect-mac's `Git`), `TiddlyWiki/` (the import).
+  show), `Query`, `FieldSpec` (typed tags), `Relink`, `ReflectNotes` (the
+  graph's notes, through reflect-mac's `NoteIndex`), `TiddlerMerge` and
+  `WikiSync` (the sync, over reflect-mac's `Git`), `TiddlyWiki/` (the import).
 - `Sources/WeftUI` — the views, for the Mac and the phone: `WikiStore` (the
   graph, the river, drafts, the sync), `ContentView` (sidebar and river),
   `Card`, `CardEditor`, `MarkdownView`, `QueryView`, `ConflictView`, and
   `Editor/` (the text view, its styling and completion).
-- `Sources/WeftGitHub` — the phone's graph: a GitHub clone, synced with
-  libgit2 (reflect-mac's `ReflectGit2`).
+- `Sources/WeftGitHub` — GitHub: the phone's graph, a clone synced with
+  libgit2 (reflect-mac's `ReflectGit2`), and the sync relay, followed.
 - `Sources/WeftMac` — the Mac app around them. `Snapshot` draws the window
   to a PNG for checking the app without a person at it:
   `WEFT_SNAPSHOT=out.png WEFT_OPEN="A|B" WEFT_EDIT=A WEFT_DELAY=3`.

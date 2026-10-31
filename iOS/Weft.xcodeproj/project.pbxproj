@@ -16,6 +16,7 @@
 		AE0000000000000000000005 /* Weft.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Weft.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE000000000000000000001B /* GitHub.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = GitHub.xcconfig; sourceTree = "<group>"; };
 		AE000000000000000000001C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AE000000000000000000001D /* Weft.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Weft.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -46,6 +47,7 @@
 				AE0000000000000000000003 /* Weft */,
 				AE000000000000000000001B /* GitHub.xcconfig */,
 				AE000000000000000000001C /* Info.plist */,
+				AE000000000000000000001D /* Weft.entitlements */,
 				AE0000000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -186,6 +188,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = AE000000000000000000001B /* GitHub.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Weft.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G3V66M4637;
@@ -214,6 +217,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = AE000000000000000000001B /* GitHub.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Weft.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G3V66M4637;

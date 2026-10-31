@@ -82,6 +82,38 @@ public final class Wiki {
         index(tiddler)
     }
 
+    /// Takes a tiddler out: its file goes. The repository's history keeps it.
+    public func delete(_ title: String) throws {
+        guard let entry = entries[title] else { return }
+        try FileManager.default.removeItem(at: root.appendingPathComponent(entry.path))
+        unindex(entry.tiddler)
+        entries[title] = nil
+    }
+
+    // MARK: Renaming
+
+    /// The tiddlers that name `title`: linking to it, embedding it, tagged
+    /// with it, listing it, asking for it in a query, or holding it in a field.
+    public func references(to title: String) -> [String] {
+        entries.values.filter { $0.tiddler.title != title && Relink.tiddler($0.tiddler, from: title, to: title + "\u{0}") != $0.tiddler }
+            .map(\.tiddler.title).sorted()
+    }
+
+    /// Every tiddler naming `old` made to name `new` instead, and saved.
+    /// Returns how many changed.
+    @discardableResult
+    public func relink(from old: String, to new: String) throws -> Int {
+        var changed = 0
+        for title in references(to: old) {
+            guard let tiddler = self[title] else { continue }
+            let relinked = Relink.tiddler(tiddler, from: old, to: new)
+            guard relinked != tiddler else { continue }
+            try save(relinked)
+            changed += 1
+        }
+        return changed
+    }
+
     // MARK: Conflicts
 
     /// Tiddlers a sync left both devices' changes in, between markers.

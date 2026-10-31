@@ -35,6 +35,7 @@ public final class WikiSync {
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private var running = false
     @ObservationIgnored private var pending: Git.Mode?
+    @ObservationIgnored private var completions: [(Bool) -> Void] = []
 
     public init(git: Git) {
         self.git = git
@@ -60,6 +61,13 @@ public final class WikiSync {
     /// The full round, now.
     public func sync() { run(.full) }
 
+    /// The full round, now, and then told whether it brought anything in:
+    /// for a silent push, whose time the system measures.
+    public func sync(completion: @escaping (Bool) -> Void) {
+        completions.append(completion)
+        run(.full)
+    }
+
     /// Commits and pushes what is written, now.
     public func push() { run(.push) }
 
@@ -72,10 +80,14 @@ public final class WikiSync {
         }
         running = true
         status = .syncing
+        let toTell = mode == .full ? completions : []
+        if mode == .full { completions = [] }
         Task {
+            var pulled = false
             do {
                 try await prepare?()
                 let report = try await git.sync(mode)
+                pulled = report.pulled
                 if report.pulled { onPulled(report.changed) }
                 status = .synced(Date())
             } catch is SyncStopped {
@@ -83,6 +95,7 @@ public final class WikiSync {
             } catch {
                 status = .failed(error.localizedDescription)
             }
+            for completion in toTell { completion(pulled) }
             running = false
             if let next = pending {
                 pending = nil

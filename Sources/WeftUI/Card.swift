@@ -8,6 +8,7 @@ struct Card: View {
     @Environment(WikiStore.self) private var store
     let title: String
     @State private var hovering = false
+    @State private var confirmingDelete = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -21,6 +22,8 @@ struct Card: View {
                         ConflictView(title: title)
                     } else if let tiddler = store.tiddler(title) {
                         content(tiddler)
+                    } else if let note = store.note(title) {
+                        noteContent(note)
                     } else {
                         missing
                     }
@@ -35,6 +38,13 @@ struct Card: View {
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor.opacity(store.focus == title ? 0.45 : 0)))
         .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
         .onHover { hovering = $0 }
+        .confirmationDialog("Delete “\(title)”?", isPresented: $confirmingDelete) {
+            Button("Delete", role: .destructive) { withAnimation { store.delete(title) } }
+        } message: {
+            let references = store.references(to: title).count
+            Text(references == 0 ? "Its file is removed; the graph's history keeps it."
+                 : "\(references) \(references == 1 ? "tiddler refers" : "tiddlers refer") to it. Its file is removed; the graph's history keeps it.")
+        }
         .environment(\.openURL, OpenURLAction { url in
             if let target = InlineMarkdown.title(from: url) {
                 store.open(target, from: title)
@@ -45,16 +55,24 @@ struct Card: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(title)
+        let note = store.note(title)
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            if let note {
+                Image(systemName: note.day != nil ? "calendar" : "doc.text")
+                    .foregroundStyle(.secondary)
+                    .help(note.day != nil ? "A day in Reflect" : "A note in Reflect")
+            }
+            Text(note?.displayTitle ?? title)
                 .font(.system(size: 22, weight: .semibold))
                 .italic(!store.exists(title))
                 .foregroundStyle(store.exists(title) ? .primary : .secondary)
                 .textSelection(.enabled)
-                .onTapGesture(count: 2) { store.edit(title) }
+                .onTapGesture(count: 2) { if note == nil { store.edit(title) } }
             Spacer(minLength: 8)
             HStack(spacing: 2) {
-                CardButton(symbol: "pencil", help: "Edit") { store.edit(title) }
+                if note == nil {
+                    CardButton(symbol: "pencil", help: "Edit") { store.edit(title) }
+                }
                 CardButton(symbol: store.folded.contains(title) ? "chevron.down" : "chevron.up",
                            help: store.folded.contains(title) ? "Unfold" : "Fold") {
                     withAnimation(.snappy(duration: 0.2)) { store.toggleFold(title) }
@@ -62,8 +80,12 @@ struct Card: View {
                 Menu {
                     Button("Close Other Cards") { withAnimation { store.closeOthers(title) } }
                     Button("Copy Link") { Platform.copy("[[\(title)]]") }
-                    if Platform.canReveal, let path = store.path(of: title) {
+                    if Platform.canReveal, let path = store.path(of: title) ?? note.flatMap({ store.file($0.path) }) {
                         Button("Show in Finder") { Platform.reveal(path) }
+                    }
+                    if store.tiddler(title) != nil {
+                        Divider()
+                        Button("Delete Tiddler…", role: .destructive) { confirmingDelete = true }
                     }
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 26, height: 24)
@@ -92,14 +114,35 @@ struct Card: View {
                 }
             }
         }
+        let specs = store.schema(for: tiddler)
+        if !specs.isEmpty {
+            PropertiesView(tiddler: tiddler, specs: specs)
+        }
         if !tiddler.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             MarkdownView(blocks: MarkdownBlock.parse(tiddler.text), card: title)
+        }
+        // A tag with fields of its own: what they are, and one more of it.
+        let own = FieldSpec.specs(of: tiddler)
+        if !own.isEmpty || !store.tagged(title).isEmpty {
+            HStack(spacing: 10) {
+                if !own.isEmpty {
+                    Label(own.map(\.name).joined(separator: ", "), systemImage: "list.bullet.rectangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .help("The fields of tiddlers tagged “\(title)”")
+                }
+                Spacer()
+                Button("New \(title)", systemImage: "plus") { store.newTiddler(taggedWith: title) }
+                    .font(.callout)
+            }
         }
         let tagged = store.tagged(title)
         if !tagged.isEmpty, !Self.listsTagged(tiddler) {
             Section(label: "Tagged “\(title)”", titles: tagged)
         }
-        let fields = tiddler.fields.filter { $0.name != "list" }
+        let fields = tiddler.fields.filter { field in
+            field.name != "list" && field.name != FieldSpec.field && !specs.contains { $0.name == field.name }
+        }
         if !fields.isEmpty {
             DisclosureGroup {
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 4) {
@@ -120,6 +163,40 @@ struct Card: View {
         let backlinks = store.backlinks(title)
         if !backlinks.isEmpty {
             Section(label: "Linked from", titles: backlinks)
+        }
+        let notes = store.notesLinking(to: [title])
+        if !notes.isEmpty {
+            Section(label: "In Reflect", titles: notes.map(\.title))
+        }
+    }
+
+    /// A Reflect note or day: its tags, its body, and what links to it.
+    @ViewBuilder private func noteContent(_ note: ReflectNotes.Note) -> some View {
+        if !note.tags.isEmpty {
+            FlowLayout(spacing: 6) {
+                ForEach(note.tags, id: \.self) { tag in
+                    Text("#" + tag)
+                        .font(.callout)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .foregroundStyle(.secondary)
+                        .background(.quaternary.opacity(0.5), in: Capsule())
+                }
+            }
+        }
+        if let body = store.body(of: note), !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            MarkdownView(blocks: MarkdownBlock.parse(body), card: title, editable: false)
+        } else {
+            Text(note.day != nil ? "Nothing written on this day." : "This note is empty.")
+                .foregroundStyle(.secondary)
+        }
+        let tiddlers = store.tiddlersLinking(to: note.names)
+        if !tiddlers.isEmpty {
+            Section(label: "Linked from", titles: tiddlers)
+        }
+        let notes = store.notesLinking(to: note.names).filter { $0.path != note.path }
+        if !notes.isEmpty {
+            Section(label: "In Reflect", titles: notes.map(\.title))
         }
     }
 

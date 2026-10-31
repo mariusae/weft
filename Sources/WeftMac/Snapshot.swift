@@ -11,6 +11,8 @@ import WeftUI
 /// `WEFT_SEARCH`, draws the window into the file, and quits.
 @MainActor
 enum Snapshot {
+    static var isAsked: Bool { ProcessInfo.processInfo.environment["WEFT_SNAPSHOT"] != nil }
+
     static func takeIfAsked(store: WikiStore) {
         let environment = ProcessInfo.processInfo.environment
         guard let output = environment["WEFT_SNAPSHOT"] else { return }

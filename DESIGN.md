@@ -152,7 +152,19 @@ converter.
 - From `../reflect-mac`: `ReflectCore` (graph, git, conflicts, commit
   messages) and `ReflectGit2` (libgit2, GitHub sign-in, relay).
 
-## First steps
+## Where it stands
+
+Built: the file format and import; the river, cards and sidebar on the Mac,
+iPad and iPhone; query blocks; the native editor; sync through Reflect's
+`Git`, with frontmatter merged field by field and conflicts reviewed on the
+card; Reflect notes and days as read-only cards; typed tags; renaming with
+relinking, and deleting; instant sync through the relay.
+
+Next: Reflect notes edited in their card, with reflect-mac's outline
+editor; queries over notes as well as tiddlers; a tiddler's history from
+git, as TiddlyWiki's revisions.
+
+## First steps (as planned)
 
 1. `WeftCore`: the tiddler model and its file format, with round-trip tests.
 2. The importer, run against tiddlywiki.com into a test graph: the format

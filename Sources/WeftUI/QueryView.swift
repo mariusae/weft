@@ -7,6 +7,14 @@ struct QueryView: View {
     @Environment(WikiStore.self) private var store
     let query: Query
     let card: String
+    /// A table's columns: those the query names, or else the fields its
+    /// first tag gives what it tags.
+    private var columns: [String] {
+        guard query.columns.isEmpty, let tag = query.tags.first else { return query.columns }
+        let resolved = tag == Query.this ? card : tag
+        return store.tiddler(resolved).map { FieldSpec.specs(of: $0).map(\.name) } ?? []
+    }
+
     /// Which of the card's query blocks this is, when it can be edited in
     /// place; nil inside an embed or a quote.
     let index: Int?
@@ -74,7 +82,7 @@ struct QueryView: View {
                 Text("\(titles.count) \(titles.count == 1 ? "tiddler" : "tiddlers")")
                     .font(.title3.weight(.semibold))
             case .table:
-                QueryTable(titles: titles, columns: query.columns)
+                QueryTable(titles: titles, columns: columns)
             case .cards:
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(titles.prefix(30), id: \.self) { title in
@@ -128,10 +136,15 @@ private struct QueryTable: View {
                 .foregroundStyle(.secondary)
                 Divider()
                 ForEach(titles, id: \.self) { title in
+                    let specs = store.tiddler(title).map { store.schema(for: $0) } ?? []
                     GridRow {
                         TiddlerLink(title: title)
                         ForEach(columns, id: \.self) { column in
-                            InlineText(text: value(column, of: title))
+                            if let spec = specs.first(where: { $0.name == column }) {
+                                TypedValue(spec: spec, text: value(column, of: title))
+                            } else {
+                                InlineText(text: value(column, of: title))
+                            }
                         }
                     }
                 }

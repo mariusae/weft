@@ -10,5 +10,9 @@
 	<string>$(GITHUB_CLIENT_SECRET)</string>
 	<key>SyncRelayHost</key>
 	<string>$(SYNC_RELAY_HOST)</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

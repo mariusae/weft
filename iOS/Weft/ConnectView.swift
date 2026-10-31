@@ -1,6 +1,7 @@
 import AuthenticationServices
 import ReflectGit2
 import SwiftUI
+import WeftGitHub
 
 /// Before there is a graph: sign in to GitHub, choose the repository the
 /// notes are kept in, and bring it down — as Prism does.
@@ -126,15 +127,6 @@ struct ConnectView: View {
                 self.error = error.localizedDescription
             }
             busy = false
-        }
-    }
-}
-
-extension WebAuthenticationSession {
-    /// GitHub's pages in the system's browser sheet, to sign in through.
-    var github: GitHubAuthenticator {
-        { url, scheme in
-            try await authenticate(using: url, callback: .customScheme(scheme), preferredBrowserSession: .shared, additionalHeaderFields: [:])
         }
     }
 }
