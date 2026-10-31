@@ -19,62 +19,80 @@ struct CardEditor: View {
         if let draft = store.draft(title) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline) {
-                    TextField("Title", text: binding(\.title))
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 22, weight: .semibold))
-                        .focused($focus, equals: .title)
+                    if store.isPreviewing(title) {
+                        Text(draft.title).font(.system(size: 22, weight: .semibold))
+                    } else {
+                        TextField("Title", text: binding(\.title))
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 22, weight: .semibold))
+                            .focused($focus, equals: .title)
+                    }
                     Spacer()
+                    Picker("", selection: Binding(get: { store.isPreviewing(title) },
+                                                  set: { if $0 != store.isPreviewing(title) { store.togglePreview(title) } })) {
+                        Text("Edit").tag(false)
+                        Text("Preview").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Edit or Preview (⌘↩)")
                     Button("Cancel") { withAnimation { store.cancel(title) } }
                         .keyboardShortcut(.cancelAction)
                     Button("Done") { withAnimation { store.save(title) } }
-                        .keyboardShortcut(.return, modifiers: .command)
+                        .keyboardShortcut("s")
                         .buttonStyle(.borderedProminent)
+                        .help("Save (⌘S)")
                 }
-                renaming(draft)
-                tags(draft)
-                VStack(alignment: .leading, spacing: 0) {
-                    #if os(macOS)
-                    HStack(spacing: 2) {
-                        FormattingButtons(controller: controller)
-                        Divider().frame(height: 16).padding(.horizontal, 4)
-                        insertQueryButton
-                        Spacer()
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    Divider()
-                    #else
-                    HStack {
-                        Spacer()
-                        insertQueryButton
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.top, 6)
-                    #endif
-                    TiddlerEditor(text: binding(\.text), controller: controller,
-                                  titles: { store.titles }, exists: { store.exists($0) },
-                                  focusOnAppear: store.exists(title))
-                        .padding(.horizontal, 6)
-                }
-                .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
-                let specs = store.schema(for: draft)
-                if !specs.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(specs, id: \.name) { spec in
-                            TypedFieldEditor(spec: spec, value: Binding {
-                                store.draft(title)?[field: spec.name]?.text ?? ""
-                            } set: { value in
-                                guard var updated = store.draft(title) else { return }
-                                updated[field: spec.name] = .text(value)
-                                store.updateDraft(title, updated)
-                            })
+                if store.isPreviewing(title) {
+                    preview(draft)
+                } else {
+                    renaming(draft)
+                    tags(draft)
+                    VStack(alignment: .leading, spacing: 0) {
+                        #if os(macOS)
+                        HStack(spacing: 2) {
+                            FormattingButtons(controller: controller)
+                            Divider().frame(height: 16).padding(.horizontal, 4)
+                            insertQueryButton
+                            Spacer()
                         }
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        Divider()
+                        #else
+                        HStack {
+                            Spacer()
+                            insertQueryButton
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.top, 6)
+                        #endif
+                        TiddlerEditor(text: binding(\.text), controller: controller,
+                                      titles: { store.titles }, exists: { store.exists($0) },
+                                      focusOnAppear: store.exists(title))
+                            .padding(.horizontal, 6)
                     }
-                    .font(.callout)
+                    .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                    let specs = store.schema(for: draft)
+                    if !specs.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(specs, id: \.name) { spec in
+                                TypedFieldEditor(spec: spec, value: Binding {
+                                    store.draft(title)?[field: spec.name]?.text ?? ""
+                                } set: { value in
+                                    guard var updated = store.draft(title) else { return }
+                                    updated[field: spec.name] = .text(value)
+                                    store.updateDraft(title, updated)
+                                })
+                            }
+                        }
+                        .font(.callout)
+                    }
+                    schema(draft)
+                    fields(draft, excluding: Set(specs.map(\.name)))
                 }
-                schema(draft)
-                fields(draft, excluding: Set(specs.map(\.name)))
             }
             .onAppear { if !store.exists(title) { focus = .title } }
         }
@@ -92,6 +110,24 @@ struct CardEditor: View {
                 }
                 .font(.callout)
             }
+        }
+    }
+
+    /// The draft as its card will show it, saved or not.
+    @ViewBuilder private func preview(_ draft: Tiddler) -> some View {
+        if !draft.tags.isEmpty {
+            FlowLayout(spacing: 6) {
+                ForEach(draft.tags, id: \.self) { TagPill(tag: $0) }
+            }
+        }
+        let specs = store.schema(for: draft)
+        if !specs.isEmpty {
+            PropertiesView(tiddler: draft, specs: specs)
+        }
+        if draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Text("Nothing written yet.").foregroundStyle(.secondary)
+        } else {
+            MarkdownView(blocks: MarkdownBlock.parse(draft.text), card: title, editable: false)
         }
     }
 

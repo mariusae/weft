@@ -38,6 +38,8 @@ struct Card: View {
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor.opacity(store.focus == title ? 0.45 : 0)))
         .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
         .onHover { hovering = $0 }
+        // A click makes it the card ⌘↩ goes to.
+        .simultaneousGesture(TapGesture().onEnded { store.select(title) })
         .confirmationDialog("Delete “\(title)”?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) { withAnimation { store.delete(title) } }
         } message: {

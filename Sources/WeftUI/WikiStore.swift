@@ -23,9 +23,15 @@ public final class WikiStore {
     public private(set) var focusRequest = 0
     /// Cards being edited, by the title they are open under, and what they say so far.
     public private(set) var drafts: [String: Tiddler] = [:]
+    /// Which cards are being edited, apart from what their drafts say: a
+    /// card asks only this, so typing in one redraws that card's editor and
+    /// not the river.
+    public private(set) var editing: Set<String> = []
     /// Whether renaming a card's tiddler updates what refers to it; yes
     /// unless turned off in the editor.
     public var relinkOnRename: [String: Bool] = [:]
+    /// Cards being edited that show their draft as it will read, for now.
+    public private(set) var previewing: Set<String> = []
     /// Cards showing only their titles.
     public var folded: Set<String> = []
 
@@ -77,6 +83,7 @@ public final class WikiStore {
         root = url.standardizedFileURL
         self.wiki = wiki
         drafts = [:]
+        editing = []
         folded = []
         UserDefaults.standard.set(url.path, forKey: "GraphPath")
         river = UserDefaults.standard.stringArray(forKey: riverKey) ?? []
@@ -323,9 +330,34 @@ public final class WikiStore {
         focusRequest += 1
     }
 
+    /// Makes a card the one ⌘↩ and the outline go to, without moving the river.
+    public func select(_ title: String) {
+        if focus != title { focus = title }
+    }
+
+    /// ⌘↩: the selected card from reading to editing, and while it is
+    /// edited, between its editor and a preview of what it will say.
+    public func toggleEditing() {
+        guard let title = focus, river.contains(title) else { return }
+        if isEditing(title) {
+            togglePreview(title)
+        } else if note(title) == nil {
+            edit(title)
+        }
+    }
+
+    public func isPreviewing(_ title: String) -> Bool { previewing.contains(title) }
+
+    public func togglePreview(_ title: String) {
+        guard isEditing(title) else { return }
+        if previewing.remove(title) == nil { previewing.insert(title) }
+    }
+
     public func close(_ title: String) {
         river.removeAll { $0 == title }
         drafts[title] = nil
+        editing.remove(title)
+        previewing.remove(title)
         draftBases[title] = nil
         folded.remove(title)
         saveRiver()
@@ -345,12 +377,13 @@ public final class WikiStore {
 
     // MARK: Editing
 
-    public func isEditing(_ title: String) -> Bool { drafts[title] != nil }
+    public func isEditing(_ title: String) -> Bool { editing.contains(title) }
 
     public func draft(_ title: String) -> Tiddler? { drafts[title] }
 
     public func edit(_ title: String) {
         drafts[title] = tiddler(title) ?? Tiddler(title: title)
+        editing.insert(title)
         draftBases[title] = tiddler(title)
         open(title)
     }
@@ -361,6 +394,8 @@ public final class WikiStore {
 
     public func cancel(_ title: String) {
         drafts[title] = nil
+        editing.remove(title)
+        previewing.remove(title)
         draftBases[title] = nil
         // A new tiddler never saved goes with its draft.
         if !exists(title) { close(title) }
@@ -403,7 +438,9 @@ public final class WikiStore {
             }
         }
         relinkOnRename[title] = nil
+        previewing.remove(title)
         drafts[title] = nil
+        editing.remove(title)
         draftBases[title] = nil
         sync?.noteChanged()
         if tiddler.title != title, let index = river.firstIndex(of: title) {
@@ -461,6 +498,7 @@ public final class WikiStore {
         var tiddler = Tiddler(title: title, tags: tag.map { [$0] } ?? [])
         for spec in schema(for: tiddler) { tiddler[field: spec.name] = .text("") }
         drafts[title] = tiddler
+        editing.insert(title)
         open(title)
     }
 }

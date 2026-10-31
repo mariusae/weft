@@ -7,7 +7,8 @@ import WeftUI
 ///     WEFT_SNAPSHOT=out.png WEFT_OPEN="HelloThere|Filters" WEFT_EDIT=Filters \
 ///       build/Weft.app/Contents/MacOS/WeftMac -GraphPath <graph>
 ///
-/// opens the cards named (the first at the top), edits one, searches for
+/// opens the cards named (the first at the top), edits one (previewing it,
+/// with `WEFT_PREVIEW=1`), searches for
 /// `WEFT_SEARCH`, draws the window into the file, and quits.
 @MainActor
 enum Snapshot {
@@ -18,7 +19,10 @@ enum Snapshot {
         guard let output = environment["WEFT_SNAPSHOT"] else { return }
         let titles = environment["WEFT_OPEN"]?.split(separator: "|").map(String.init) ?? []
         for title in titles.reversed() { store.open(title) }
-        if let edit = environment["WEFT_EDIT"] { store.edit(edit) }
+        if let edit = environment["WEFT_EDIT"] {
+            store.edit(edit)
+            if environment["WEFT_PREVIEW"] != nil { store.togglePreview(edit) }
+        }
         if let search = environment["WEFT_SEARCH"] { store.search = search }
         // Once the cards are laid out, the one named in WEFT_SCROLL (or the
         // first) is brought into view, as a click on a link would.

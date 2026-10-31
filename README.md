@@ -62,8 +62,10 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   slanted), emphasis and headings show, markup is faded. Typing `[[` offers
   titles (the completion list on the Mac, a bar above the keyboard on the
   phone). The formatting bar does bold, italic, code, headings, lists,
-  links, embeds and callouts. Tags offer the ones already in use. ⌘↩ saves,
-  Escape cancels; a save writes only what changed in the file.
+  links, embeds and callouts. Tags offer the ones already in use. ⌘↩ edits
+  the selected card (the one clicked, or opened last), and while editing
+  goes between the editor and a preview of the draft; ⌘S saves, Escape
+  cancels. A save writes only what changed in the file.
 - **Sync**: Reflect's own — commit thirty seconds after writing stops, a
   full sync at launch, on coming to the front, and on ⌘R. The Mac syncs the
   graph's checkout with its own `git`; the phone its clone with libgit2 and

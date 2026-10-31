@@ -10,6 +10,11 @@ public final class ReflectNotes: @unchecked Sendable {
     private let lock = NSLock()
     /// The notes linking to each name, by the name's fold key.
     private var linkers: [String: Set<String>] = [:]
+    /// The note each name leads to, by its fold key — a title before an
+    /// alias, the first by path of each — as `NoteIndex.resolve` finds
+    /// them, but without sorting every note for every link: cards resolve
+    /// links each time they are drawn.
+    private var names: [String: String] = [:]
 
     public init(root: URL) {
         index = NoteIndex(root: root)
@@ -26,6 +31,20 @@ public final class ReflectNotes: @unchecked Sendable {
             }
         }
         lock.withLock { linkers = found }
+        indexNames()
+    }
+
+    private func indexNames() {
+        var titles: [String: String] = [:], aliases: [String: String] = [:]
+        for entry in index.all.sorted(by: { $0.path < $1.path }) {
+            let title = NoteIndex.foldKey(entry.title)
+            if titles[title] == nil { titles[title] = entry.path }
+            for alias in entry.aliases {
+                let key = NoteIndex.foldKey(alias)
+                if aliases[key] == nil { aliases[key] = entry.path }
+            }
+        }
+        lock.withLock { names = titles.merging(aliases) { title, _ in title } }
     }
 
     /// Reads one note again, after a sync or another app wrote it.
@@ -37,11 +56,15 @@ public final class ReflectNotes: @unchecked Sendable {
             for target in before.subtracting(after) { linkers[NoteIndex.foldKey(target)]?.remove(path) }
             for target in after { linkers[NoteIndex.foldKey(target), default: []].insert(path) }
         }
+        indexNames()
     }
 
     /// A note or day by a name, as a link to it resolves.
     public func resolve(_ name: String) -> Note? {
-        guard let path = index.resolve(name) else { return nil }
+        let raw = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A date or a week is its note, whether or not one is written yet.
+        let path = Day(raw) != nil || Week(raw) != nil ? index.resolve(raw) : lock.withLock { names[NoteIndex.foldKey(raw)] }
+        guard let path else { return nil }
         if let day = GraphPaths.day(fromDailyPath: path) {
             return Note(path: path, title: day.description, day: day, entry: index.entry(path))
         }

@@ -60,6 +60,7 @@ private struct RiverToolbar: ToolbarContent {
                 .help("Tiddlers changed on two devices")
             }
             if let sync = store.sync { SyncButton(sync: sync) }
+            EditToggle()
             Button("Today", systemImage: "calendar") { store.openToday() }
                 .help("Today's Note (⌘T)")
             Button("New Tiddler", systemImage: "plus") { store.newTiddler() }
@@ -67,6 +68,23 @@ private struct RiverToolbar: ToolbarContent {
             Button("Close All", systemImage: "rectangle.stack.badge.minus") { store.closeAll() }
                 .help("Close All Cards (⇧⌘W)")
         }
+    }
+}
+
+/// ⌘↩: the selected card from reading to editing, and while it is edited,
+/// between its editor and a preview.
+private struct EditToggle: View {
+    @Environment(WikiStore.self) private var store
+
+    var body: some View {
+        let title = store.focus.flatMap { store.river.contains($0) ? $0 : nil }
+        let editing = title.map(store.isEditing) ?? false
+        let previewing = title.map(store.isPreviewing) ?? false
+        Button(editing && !previewing ? "Preview" : "Edit",
+               systemImage: editing && !previewing ? "eye" : "pencil") { store.toggleEditing() }
+            .keyboardShortcut(.return, modifiers: .command)
+            .disabled(title == nil || (!editing && store.note(title!) != nil))
+            .help(editing && !previewing ? "Preview the Card Being Edited (⌘↩)" : "Edit the Selected Card (⌘↩)")
     }
 }
 

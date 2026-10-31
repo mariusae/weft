@@ -13,7 +13,7 @@ enum ShadowTiddlers {
         ## Making tiddlers
 
         - **⌘N**, or **+** above the river, makes one. Its title is how you link to it.
-        - Double-click a title, or the pencil, to edit. **⌘↩** saves; **Escape** cancels.
+        - Double-click a title, the pencil, or **⌘↩** to edit. While editing, **⌘↩** goes between the editor and a preview; **⌘S** saves; **Escape** cancels.
         - Tag it in the editor. A tag is a tiddler too: its card lists everything tagged with it.
 
         ## Linking
