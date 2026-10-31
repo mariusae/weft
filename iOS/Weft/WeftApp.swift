@@ -22,13 +22,12 @@ struct WeftApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if store.root == nil {
-                    ConnectView { repository in
-                        try await GitHubGraph.clone(repository)
-                        store.open(graph: GitHubGraph.root)
-                    }
-                } else {
+                if store.onboarded && store.root != nil {
                     ContentView()
+                } else {
+                    Onboarding(allowsFolder: false,
+                               openClone: { store.open(graph: GitHubGraph.root) },
+                               finish: { store.finishOnboarding() })
                 }
             }
             .environment(store)
@@ -52,6 +51,6 @@ struct WeftApp: App {
     private func openGraph() {
         guard store.root == nil else { return }
         store.openInitialGraph()
-        if store.root == nil, GitHubGraph.exists { store.open(graph: GitHubGraph.root) }
+        if store.root == nil, store.onboarded, GitHubGraph.exists { store.open(graph: GitHubGraph.root) }
     }
 }

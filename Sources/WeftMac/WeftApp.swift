@@ -1,6 +1,6 @@
+import ReflectCore
 import SwiftUI
 import WeftCore
-import ReflectCore
 import WeftGitHub
 import WeftUI
 
@@ -8,12 +8,17 @@ import WeftUI
 struct WeftApp: App {
     @State private var store: WikiStore = {
         let store = WikiStore()
-        store.chooseGraph = { [unowned store] in GraphPanel.choose(for: store) }
-        // On the Mac, the graph's checkout is synced through its own `git`,
-        // with the Mac's credentials, as Reflect Mac does.
+        store.chooseGraph = { [unowned store] in _ = GraphPanel.choose(for: store) }
         // A snapshot looks, and must not commit or push anything.
         if !Snapshot.isAsked {
-            store.makeSync = { root in CommandLineGit.open(root).map { WikiSync(git: Git(backend: $0)) } }
+            store.makeSync = { root in
+                // Weft's own clone of a GitHub repository is synced as the
+                // phone's is: libgit2, with the GitHub App's token. A folder
+                // of the Mac's — Reflect Mac's checkout — through its own
+                // `git`, with the Mac's credentials.
+                if root.standardizedFileURL == GitHubGraph.root.standardizedFileURL { return GitHubGraph.sync(for: root) }
+                return CommandLineGit.open(root).map { WikiSync(git: Git(backend: $0)) }
+            }
         }
         return store
     }()
@@ -26,33 +31,39 @@ struct WeftApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(store)
-                .frame(minWidth: 760, minHeight: 480)
-                .onAppear {
-                    store.openInitialGraph()
-                    Snapshot.takeIfAsked(store: store)
+            Group {
+                if store.onboarded && store.root != nil {
+                    ContentView()
+                        .frame(minWidth: 760, minHeight: 480)
+                } else {
+                    Onboarding(allowsFolder: true,
+                               chooseFolder: { GraphPanel.choose(for: store) },
+                               openClone: { store.open(graph: GitHubGraph.root) },
+                               finish: { store.finishOnboarding() })
                 }
-                // Told by the relay of another device's push: sync at once.
-                .onChange(of: store.root, initial: true) { followRelay() }
-                .onChange(of: GitHubGraph.account.isSignedIn) { followRelay() }
-                .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
-                    relay.reconnect()
-                }
+            }
+            .environment(store)
+            .environment(GitHubGraph.account)
+            .onAppear {
+                store.openInitialGraph()
+                Snapshot.takeIfAsked(store: store)
+            }
+            // Told by the relay of another device's push: sync at once.
+            .onChange(of: store.root, initial: true) { followRelay() }
+            .onChange(of: GitHubGraph.account.isSignedIn) { followRelay() }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+                relay.reconnect()
+            }
         }
         .defaultSize(width: 1240, height: 860)
-
-        Window("GitHub Account", id: "github") {
-            GitHubAccountView().environment(GitHubGraph.account)
-        }
-        .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Tiddler") { store.newTiddler() }
                     .keyboardShortcut("n")
                     .disabled(store.root == nil)
-                Button("Open Graph…") { store.chooseGraph() }
+                Button("Open Folder…") { store.chooseGraph() }
                     .keyboardShortcut("o")
+                ConnectMenuItem()
             }
             CommandGroup(after: .textEditing) {
                 Button("Find Tiddler") { store.searchFocusRequest += 1 }
@@ -62,7 +73,6 @@ struct WeftApp: App {
                 Button("Sync Now") { store.sync?.sync() }
                     .keyboardShortcut("r")
                     .disabled(store.sync == nil)
-                GitHubAccountMenuItem()
             }
             CommandMenu("Story") {
                 Button("Today") { store.openToday() }
@@ -72,5 +82,41 @@ struct WeftApp: App {
                     .keyboardShortcut("w", modifiers: [.command, .shift])
             }
         }
+
+        Window("GitHub", id: "github") {
+            GitHubWindow()
+                .environment(store)
+                .environment(GitHubGraph.account)
+        }
+        .defaultSize(width: 480, height: 560)
+    }
+}
+
+/// File ▸ Connect to GitHub…: signing in, and bringing a graph down — or,
+/// with a folder open, signing in for instant sync.
+private struct GitHubWindow: View {
+    @Environment(WikiStore.self) private var store
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    var body: some View {
+        VStack(spacing: 0) {
+            GitHubConnect {
+                store.open(graph: GitHubGraph.root)
+                dismissWindow(id: "github")
+            }
+            Text("Signed in, Weft also hears from the sync relay as soon as another device pushes, whichever graph is open.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(14)
+        }
+    }
+}
+
+private struct ConnectMenuItem: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Connect to GitHub…") { openWindow(id: "github") }
     }
 }

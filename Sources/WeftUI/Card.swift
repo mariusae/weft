@@ -83,7 +83,7 @@ struct Card: View {
                     if Platform.canReveal, let path = store.path(of: title) ?? note.flatMap({ store.file($0.path) }) {
                         Button("Show in Finder") { Platform.reveal(path) }
                     }
-                    if store.tiddler(title) != nil {
+                    if store.tiddler(title) != nil, !store.isShadow(title) {
                         Divider()
                         Button("Delete Tiddler…", role: .destructive) { confirmingDelete = true }
                     }
@@ -106,6 +106,11 @@ struct Card: View {
     }
 
     @ViewBuilder private func content(_ tiddler: Tiddler) -> some View {
+        if store.isShadow(title) {
+            Label("Built into Weft. Edit it, and it becomes one of your tiddlers.", systemImage: "sparkles")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
         if !tiddler.tags.isEmpty {
             FlowLayout(spacing: 6) {
                 ForEach(tiddler.tags, id: \.self) { tag in

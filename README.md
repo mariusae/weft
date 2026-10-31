@@ -13,13 +13,22 @@ scripts/build-app.sh run -GraphPath ~/reflect   # and open it on a graph
 swift test
 ```
 
-The Mac's graph is chosen on first launch (File ▸ Open Graph…, ⌘O), or given
-with `-GraphPath <folder>`.
+The first launch is onboarding: what weft is, then where the graph is.
+**Connect to GitHub** signs in with the same GitHub App as Prism, and
+brings the graph's repository down into weft's own folder
+(`~/Library/Application Support/Weft/Graph` on the Mac), synced through
+libgit2 with the account — as the phone does, and as Prism does. On the
+Mac, **Use a Folder on This Mac** opens a checkout already there, such as
+Reflect Mac's, synced through the Mac's own `git`. Later, File ▸ Connect to
+GitHub… and File ▸ Open Folder… (⌘O) switch. `-GraphPath <folder>` skips
+onboarding and opens that folder.
 
-The iPhone and iPad app is `iOS/Weft.xcodeproj`. It signs in with the same
-GitHub App as Prism, whose details it takes from reflect-mac's
-`iOS/GitHub.local.xcconfig` (or a `GitHub.local.xcconfig` beside its own),
-and clones the graph's repository into its own folder.
+The GitHub App's details come from reflect-mac's `iOS/GitHub.local.xcconfig`:
+read by `scripts/build-app.sh` on the Mac, included by the xcconfig of
+`iOS/Weft.xcodeproj`, the iPhone and iPad app.
+
+An empty wiki shows **Getting Started**, a tiddler built into weft, as
+TiddlyWiki has shadow tiddlers: written to the graph only when edited.
 
 ## Trying it on TiddlyWiki's own documentation
 
@@ -103,11 +112,13 @@ WikiText a click away.
   graph, the river, drafts, the sync), `ContentView` (sidebar and river),
   `Card`, `CardEditor`, `MarkdownView`, `QueryView`, `ConflictView`, and
   `Editor/` (the text view, its styling and completion).
-- `Sources/WeftGitHub` — GitHub: the phone's graph, a clone synced with
-  libgit2 (reflect-mac's `ReflectGit2`), and the sync relay, followed.
+- `Sources/WeftGitHub` — GitHub: a graph cloned into weft's own folder and
+  synced with libgit2 (reflect-mac's `ReflectGit2`), signing in and
+  choosing it (`GitHubConnect`), onboarding, and the sync relay, followed.
 - `Sources/WeftMac` — the Mac app around them. `Snapshot` draws the window
   to a PNG for checking the app without a person at it:
-  `WEFT_SNAPSHOT=out.png WEFT_OPEN="A|B" WEFT_EDIT=A WEFT_DELAY=3`.
+  `WEFT_SNAPSHOT=out.png WEFT_OPEN="A|B" WEFT_EDIT=A WEFT_DELAY=3`, or an
+  onboarding page with `WEFT_ONBOARDING_STEP=place`. It never syncs.
 - `iOS/Weft` — the iPhone and iPad app around them, and signing in to GitHub.
 - `Sources/weft` — the command line: `weft import`, `weft show`.
 

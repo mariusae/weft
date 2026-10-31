@@ -47,9 +47,19 @@ public final class WikiStore {
 
     // MARK: The graph
 
+    /// Whether the first launch's onboarding is done — or skipped, for a
+    /// graph given with `-GraphPath`.
+    public private(set) var onboarded = UserDefaults.standard.bool(forKey: "Onboarded")
+        || ProcessInfo.processInfo.arguments.contains("-GraphPath")
+
+    public func finishOnboarding() {
+        UserDefaults.standard.set(true, forKey: "Onboarded")
+        onboarded = true
+    }
+
     /// The graph given with `-GraphPath`, or the one open last.
     public func openInitialGraph() {
-        guard let path = UserDefaults.standard.string(forKey: "GraphPath") else { return }
+        guard onboarded, let path = UserDefaults.standard.string(forKey: "GraphPath") else { return }
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder), isFolder.boolValue else { return }
@@ -147,14 +157,22 @@ public final class WikiStore {
 
     private func defaultRiver(_ wiki: Wiki) -> [String] {
         if wiki["HelloThere"] != nil { return ["HelloThere"] }
-        return Array(wiki.recent(limit: 1))
+        let recent = wiki.recent(limit: 1)
+        return recent.isEmpty ? [ShadowTiddlers.gettingStarted] : recent
     }
 
     // MARK: Reading
 
     public func tiddler(_ title: String) -> Tiddler? {
         _ = revision
-        return wiki?[title]
+        guard let wiki else { return nil }
+        return wiki[title] ?? ShadowTiddlers.all[title]
+    }
+
+    /// Whether a title is one of weft's own tiddlers, not yet the wiki's.
+    public func isShadow(_ title: String) -> Bool {
+        _ = revision
+        return wiki?[title] == nil && ShadowTiddlers.all[title] != nil
     }
 
     /// Whether a title leads anywhere: to a tiddler, or a Reflect note or day.
@@ -354,7 +372,7 @@ public final class WikiStore {
     public func save(_ title: String) {
         guard let wiki, var tiddler = drafts[title] else { return }
         // Changed by a sync while it was being written: the two put together.
-        if let base = draftBases[title], let current = wiki[title], current != base {
+        if let base = draftBases[title], let current = wiki[title], current != base, ShadowTiddlers.all[title] != base {
             tiddler = TiddlerMerge.merge(draft: tiddler, base: base, current: current)
         }
         tiddler.title = tiddler.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -362,7 +380,7 @@ public final class WikiStore {
             error = "A tiddler needs a title."
             return
         }
-        if tiddler.title != title, wiki[tiddler.title] != nil {
+        if tiddler.title != title, wiki[tiddler.title] != nil || ShadowTiddlers.all[tiddler.title] != nil {
             error = "There is already a tiddler called “\(tiddler.title)”."
             return
         }
