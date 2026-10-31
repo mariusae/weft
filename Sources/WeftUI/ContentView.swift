@@ -324,6 +324,8 @@ private struct Sidebar: View {
 private struct River: View {
     @Environment(WikiStore.self) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// The card at the top of the river, as it is scrolled.
+    @State private var inView: String?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -336,13 +338,26 @@ private struct River: View {
                                                     removal: .opacity.combined(with: .scale(scale: 0.97))))
                     }
                 }
+                .scrollTargetLayout()
                 .animation(.snappy(duration: 0.28), value: store.river)
                 .padding(.horizontal, sizeClass == .compact ? 10 : 28)
                 .padding(.vertical, sizeClass == .compact ? 12 : 22)
                 .frame(maxWidth: 820)
                 .frame(maxWidth: .infinity)
             }
+            .scrollPosition(id: $inView, anchor: .top)
+            .onChange(of: inView) { store.cardInView = inView }
             .background(Color.river)
+            #if os(macOS)
+            .overlay(alignment: .trailing) {
+                if store.river.count > 1 {
+                    RiverRail(inView: inView ?? store.river.first) { title in
+                        store.select(title)
+                        withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(title, anchor: .top) }
+                    }
+                }
+            }
+            #endif
             .overlay {
                 if store.isLoading {
                     ProgressView().controlSize(.large)
@@ -359,3 +374,53 @@ private struct River: View {
         }
     }
 }
+
+#if os(macOS)
+/// The river at a glance, at its right edge, with the sidebar shut: a tick
+/// for each open card, the one in view marked; under the pointer, their
+/// titles — one clicked brought into view.
+private struct RiverRail: View {
+    @Environment(WikiStore.self) private var store
+    let inView: String?
+    let go: (String) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .trailing, spacing: hovering ? 1 : 6) {
+                ForEach(store.river, id: \.self) { title in
+                    let current = title == inView
+                    Button { go(title) } label: {
+                        HStack(spacing: 9) {
+                            if hovering {
+                                Text(store.shownTitle(title))
+                                    .font(.callout.weight(current ? .semibold : .regular))
+                                    .foregroundStyle(current ? Ink.text.color : Ink.secondary.color)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: 260, alignment: .trailing)
+                            }
+                            Capsule()
+                                .fill(current ? Ink.accent.color : Ink.faint.color.opacity(0.7))
+                                .frame(width: current ? 18 : 11, height: 3)
+                        }
+                        .padding(.vertical, hovering ? 4 : 0)
+                        .padding(.horizontal, hovering ? 6 : 0)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(hovering ? "" : store.shownTitle(title))
+                }
+            }
+            .padding(hovering ? 10 : 8)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxHeight: 520)
+        .background {
+            if hovering { RoundedRectangle(cornerRadius: 14).fill(.regularMaterial).shadow(color: .black.opacity(0.12), radius: 12, y: 4) }
+        }
+        .onHover { hovering = $0 }
+        .animation(.snappy(duration: 0.18), value: hovering)
+        .padding(.trailing, 8)
+    }
+}
+#endif

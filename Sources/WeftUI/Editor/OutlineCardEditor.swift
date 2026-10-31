@@ -35,7 +35,7 @@ struct OutlineCardEditor: NSViewRepresentable {
     func updateNSView(_ editor: PageOutlineEditor, context: Context) {
         editor.load(text)
         // The graph again when it changed: what a query finds may have.
-        let revision = store.revision
+        let revision = store.graphVersion
         let asks = text.contains("```query") || text.contains("![[")
         if context.coordinator.revision != revision {
             context.coordinator.revision = revision

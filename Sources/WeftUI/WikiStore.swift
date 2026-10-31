@@ -13,16 +13,87 @@ public final class WikiStore {
     /// Every page of the graph — its days, weeks and notes — as GraphKit
     /// reads them, Prism's way.
     private var wiki: Wiki?
-    /// Bumped whenever the wiki changes, so views reading it are redrawn.
-    public private(set) var revision = 0
+    // What changed, told each view in its own measure — so a save redraws
+    // the card saved, the cards it links to and is tagged into, and a list
+    // only while it shows — never the whole river.
+
+    /// One page's signal: bumped when it, what links to it, or what is
+    /// tagged with it changes. By the fold key of any name, so a link in
+    /// other case, or to a page not yet written, hears of it too.
+    @Observable final class PageSignal { var version = 0 }
+    @ObservationIgnored private var signals: [String: PageSignal] = [:]
+    /// A card's draft, apart from every other's: typing in one redraws its
+    /// editor alone.
+    @ObservationIgnored private var draftSignals: [String: PageSignal] = [:]
+    /// Bumped when a name comes or goes; when any list of pages may read
+    /// otherwise — the recent, the tags, the missing; and when anything is
+    /// written, for what queries find.
+    public private(set) var namesVersion = 0
+    public private(set) var listsVersion = 0
+    public private(set) var graphVersion = 0
+
+    private func signal(_ name: String) -> PageSignal {
+        let key = NoteIndex.foldKey(name)
+        if let signal = signals[key] { return signal }
+        let signal = PageSignal()
+        signals[key] = signal
+        return signal
+    }
+
+    /// Reads a page's signal: what is asked next is asked again when it changes.
+    private func watch(_ title: String) { _ = signal(title).version }
+
+    private func watchDraft(_ title: String) {
+        let signal = draftSignals[title] ?? { let made = PageSignal(); draftSignals[title] = made; return made }()
+        _ = signal.version
+    }
+
+    private func draftChanged(_ title: String) { draftSignals[title]?.version += 1 }
+
+    /// A page changed: those that showed it are told — itself, the pages it
+    /// links to (their backlinks), its tags (what they list), and, when a
+    /// name came or went, every link written with it.
+    private func changed(_ before: Wiki.Entry?, _ after: Wiki.Entry?) {
+        guard let wiki else { return }
+        var told = Set<String>()
+        func tell(_ name: String) { if told.insert(NoteIndex.foldKey(name)).inserted { signal(name).version += 1 } }
+        for entry in [before, after].compactMap({ $0 }) {
+            entry.names.forEach(tell)
+            for target in WikiLinks.targets(in: entry.page.text) {
+                tell(target)
+                if let title = wiki.title(for: target) { tell(title) }
+            }
+        }
+        if before?.tags != after?.tags || before?.page.title != after?.page.title || before?.page[field: "list"] != after?.page[field: "list"] {
+            for tag in (before?.tags ?? []) + (after?.tags ?? []) { tell(tag) }
+        }
+        if before?.names != after?.names { namesVersion += 1 }
+        listsVersion += 1
+        graphVersion += 1
+    }
 
     /// The open cards, top to bottom.
     public private(set) var river: [String] = []
     /// The card to bring into view, and a count so that asking again does.
-    public private(set) var focus: String?
+    public private(set) var focus: String? {
+        didSet {
+            guard focus != oldValue else { return }
+            for title in [oldValue, focus].compactMap({ $0 }) { selectionSignals[title]?.version += 1 }
+        }
+    }
+    /// Each card's own word of whether it is the selected one: selecting a
+    /// card redraws it and the one before, not every card.
+    @ObservationIgnored private var selectionSignals: [String: PageSignal] = [:]
+
+    public func isSelected(_ title: String) -> Bool {
+        let signal = selectionSignals[title] ?? { let made = PageSignal(); selectionSignals[title] = made; return made }()
+        _ = signal.version
+        // Read past the observation: the card's own signal is what it watches.
+        return _focus == title
+    }
     public private(set) var focusRequest = 0
     /// Cards being edited, by the title they are open under, and what they say so far.
-    public private(set) var drafts: [String: Tiddler] = [:]
+    @ObservationIgnored private var drafts: [String: Tiddler] = [:]
     /// Which cards are being edited, apart from what their drafts say: a
     /// card asks only this, so typing in one redraws that card's editor and
     /// not the river.
@@ -94,7 +165,7 @@ public final class WikiStore {
         linkNotes = nil
         river = []
         sync = nil
-        revision += 1
+        listsVersion += 1
         Task {
             let failure: String? = await Task.detached(priority: .userInitiated) {
                 do {
@@ -118,10 +189,13 @@ public final class WikiStore {
 
     private func loaded(_ wiki: Wiki, at url: URL) {
         self.wiki = wiki
+        wiki.onChanged = { [weak self] before, after in self?.changed(before, after) }
         UserDefaults.standard.set(url.path, forKey: "GraphPath")
         river = UserDefaults.standard.stringArray(forKey: riverKey) ?? []
         if river.isEmpty { river = defaultRiver(wiki) }
-        revision += 1
+        namesVersion += 1
+        listsVersion += 1
+        graphVersion += 1
         sync = makeSync(url)
         sync?.onPulled = { [weak self] paths in self?.pulled(paths) }
         sync?.onFinished = { [weak self] result in self?.syncFinished(result) }
@@ -216,24 +290,23 @@ public final class WikiStore {
     private func pulled(_ paths: [String]) {
         guard let wiki else { return }
         for path in paths where PageFolder.isPage(path) { wiki.reload(path: path) }
-        revision += 1
     }
 
     // MARK: Conflicts
 
     public func needsReview(_ title: String) -> Bool {
-        _ = revision
+        watch(title)
         return wiki?.needsReview(title) ?? false
     }
 
     public func conflicted() -> [String] {
-        _ = revision
+        _ = listsVersion
         return wiki?.conflicted() ?? []
     }
 
     /// A tiddler's text with its conflict markers, to show both sides.
     public func source(_ title: String) -> String? {
-        _ = revision
+        watch(title)
         return wiki?.entries[title]?.source
     }
 
@@ -243,7 +316,6 @@ public final class WikiStore {
         } catch {
             self.error = "Couldn't save “\(title)”: \(error.localizedDescription)"
         }
-        revision += 1
         sync?.noteChanged()
     }
 
@@ -269,14 +341,14 @@ public final class WikiStore {
     // MARK: Reading
 
     public func tiddler(_ title: String) -> Tiddler? {
-        _ = revision
+        watch(title)
         guard let wiki else { return nil }
         return wiki[title] ?? ShadowTiddlers.all[title]
     }
 
     /// Whether a title is one of weft's own tiddlers, not yet the wiki's.
     public func isShadow(_ title: String) -> Bool {
-        _ = revision
+        watch(title)
         return wiki?[title] == nil && ShadowTiddlers.all[title] != nil
     }
 
@@ -287,7 +359,7 @@ public final class WikiStore {
     /// What a page is, by where it is — a day's, a week's, or a note's —
     /// and whether it is in the wiki.
     public func kind(_ title: String) -> LinkTarget.Kind {
-        _ = revision
+        watch(title)
         if Day(title) != nil || Week(title) != nil { return .day }
         if let entry = wiki?.entries[title] {
             if case .note = entry.kind { return entry.page.isWiki ? .wiki : .note }
@@ -305,15 +377,15 @@ public final class WikiStore {
 
     /// The pages linking to a page, by any name it answers to.
     public func linking(to title: String) -> [String] {
-        _ = revision
+        watch(title)
         return wiki?.backlinks(to: title) ?? []
     }
 
     /// The wiki's pages, by title.
     public func wikiPages() -> [String] {
-        _ = revision
+        _ = listsVersion
         guard let wiki else { return [] }
-        return wiki.titles.filter { wiki[$0]?.isWiki == true }
+        return wiki.pages(flagged: .wiki).sorted()
     }
 
     /// Whether a page is part of the wiki.
@@ -336,64 +408,65 @@ public final class WikiStore {
     }
 
     public func backlinks(_ title: String) -> [String] {
-        _ = revision
+        watch(title)
         return wiki?.backlinks(to: title) ?? []
     }
 
     public func tagged(_ tag: String) -> [String] {
-        _ = revision
+        watch(tag)
         return wiki?.tagged(tag) ?? []
     }
 
     public func tags() -> [(tag: String, count: Int)] {
-        _ = revision
+        _ = listsVersion
         return wiki?.tags() ?? []
     }
 
     public func recent() -> [String] {
-        _ = revision
+        _ = listsVersion
         return wiki?.recent(limit: 100) ?? []
     }
 
     public func missing() -> [String] {
-        _ = revision
+        _ = listsVersion
         return wiki?.missing() ?? []
     }
 
     /// What a query finds, asked from a tiddler.
     public func run(_ query: Query, this: String) -> [String] {
-        _ = revision
+        _ = graphVersion
         guard let wiki else { return [] }
         return query.run(in: wiki, this: this)
     }
 
     /// The fields a tiddler's tags give it.
     public func schema(for tiddler: Tiddler) -> [FieldSpec] {
-        _ = revision
+        // A tag's page says its fields.
+        for tag in tiddler.tags + NoteIndex.tags(in: tiddler.text) { watch(tag) }
         return wiki?.schema(for: tiddler) ?? []
     }
 
     /// Every title, for completing links.
     public var titles: [String] {
-        _ = revision
+        _ = namesVersion
         return wiki?.titles ?? []
     }
 
     public var count: Int {
-        _ = revision
+        _ = namesVersion
         return wiki?.entries.count ?? 0
     }
 
     /// Titles matching what is typed — those with it in the title first,
     /// starting with it before containing it — then those with it in the text.
     public func searchResults(limit: Int = 200) -> [String] {
-        _ = revision
+        _ = listsVersion
         return wiki?.search(search, limit: limit) ?? []
     }
 
     /// A tiddler's file.
     public func path(of title: String) -> URL? {
-        _ = revision
+        watch(title)
         guard let root, let entry = wiki?.entries[title] else { return nil }
         return root.appendingPathComponent(entry.path)
     }
@@ -430,6 +503,18 @@ public final class WikiStore {
         focusRequest += 1
     }
 
+    /// The card at the top of the river as it is scrolled, as the river says.
+    @ObservationIgnored public var cardInView: String?
+
+    /// ⌥⌘↑, ⌥⌘↓: the card before or after the one selected — or the one in
+    /// view — selected and brought into view.
+    public func step(_ by: Int) {
+        guard !river.isEmpty else { return }
+        let from = focus.flatMap { river.firstIndex(of: $0) } ?? cardInView.flatMap { river.firstIndex(of: $0) }
+        let index = from.map { min(max($0 + by, 0), river.count - 1) } ?? 0
+        bringIntoView(river[index])
+    }
+
     /// Makes a card the one ⌘↩ and the outline go to, without moving the river.
     public func select(_ title: String) {
         if focus != title { focus = title }
@@ -449,6 +534,7 @@ public final class WikiStore {
         if isEditing(title) { finishEditing(title, closing: true) }
         river.removeAll { $0 == title }
         drafts[title] = nil
+        draftChanged(title)
         editing.remove(title)
         draftBases[title] = nil
         folded.remove(title)
@@ -493,7 +579,7 @@ public final class WikiStore {
 
     /// The graph's pages, for an outline's queries and embeds to ask.
     public var pages: PageIndex? {
-        _ = revision
+        _ = graphVersion
         return wiki
     }
 
@@ -513,11 +599,15 @@ public final class WikiStore {
         }
     }
 
-    public func draft(_ title: String) -> Tiddler? { drafts[title] }
+    public func draft(_ title: String) -> Tiddler? {
+        watchDraft(title)
+        return drafts[title]
+    }
 
     public func edit(_ title: String) {
         guard !isEditing(title) else { return open(title) }
         drafts[title] = tiddler(title) ?? Tiddler(title: title)
+        draftChanged(title)
         editing.insert(title)
         draftBases[title] = wiki?[title]
         open(title)
@@ -525,6 +615,7 @@ public final class WikiStore {
 
     public func updateDraft(_ title: String, _ tiddler: Tiddler) {
         drafts[title] = tiddler
+        draftChanged(title)
         autosaves[title]?.cancel()
         autosaves[title] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(0.8))
@@ -563,10 +654,10 @@ public final class WikiStore {
         autosaves[title]?.cancel()
         autosaves[title] = nil
         guard let wiki, var tiddler = drafts[title] else { return }
-        defer { revision += 1 }
         if isUntouched(title, tiddler) {
             // Made and left empty: it goes, card and all.
             drafts[title] = nil
+            draftChanged(title)
             editing.remove(title)
             draftBases[title] = nil
             if !closing, !exists(title) { close(title) }
@@ -588,6 +679,7 @@ public final class WikiStore {
         }
         relinkOnRename[title] = nil
         drafts[title] = nil
+        draftChanged(title)
         editing.remove(title)
         draftBases[title] = nil
         createdWhileEditing.remove(title)
@@ -632,7 +724,6 @@ public final class WikiStore {
             return false
         }
         if !existed { createdWhileEditing.insert(title) }
-        revision += 1
         sync?.noteChanged()
         return true
     }
@@ -647,13 +738,12 @@ public final class WikiStore {
         } catch {
             self.error = "Couldn't save “\(title)”: \(error.localizedDescription)"
         }
-        revision += 1
         sync?.noteChanged()
     }
 
     /// The tiddlers naming a title: linking, tagging, listing, asking for it.
     public func references(to title: String) -> [String] {
-        _ = revision
+        _ = graphVersion
         return wiki?.references(to: title) ?? []
     }
 
@@ -666,7 +756,6 @@ public final class WikiStore {
             return
         }
         close(title)
-        revision += 1
         sync?.noteChanged()
     }
 
@@ -687,6 +776,7 @@ public final class WikiStore {
         for spec in schema(for: tiddler) { tiddler[field: spec.name] = .text("") }
         schemaTags[title] = tiddler.tags
         drafts[title] = tiddler
+        draftChanged(title)
         editing.insert(title)
         open(title)
     }
@@ -750,7 +840,7 @@ extension WikiStore {
 
     /// Every name a page answers to: its title and aliases.
     func pageNames(_ title: String) -> [String] {
-        _ = revision
+        watch(title)
         return wiki?.entries[title]?.names ?? [title]
     }
 

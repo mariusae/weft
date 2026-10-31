@@ -9,6 +9,9 @@ struct Card: View {
     let title: String
     @State private var hovering = false
     @State private var confirmingDelete = false
+    /// How many pages refer to it, counted when its deletion is asked for —
+    /// not each time the card is drawn.
+    @State private var referring = 0
     @Environment(\.horizontalSizeClass) private var sizeClass
     private var compact: Bool { sizeClass == .compact }
 
@@ -51,8 +54,8 @@ struct Card: View {
         .padding(.vertical, sizeClass == .compact ? 14 : 18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.card, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.rule.color.opacity(store.focus == title ? 0 : 1)))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.accent.color.opacity(store.focus == title ? 0.45 : 0)))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.rule.color.opacity(store.isSelected(title) ? 0 : 1)))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.accent.color.opacity(store.isSelected(title) ? 0.45 : 0)))
         .shadow(color: .black.opacity(0.07), radius: 10, y: 3)
         .onHover { hovering = $0 }
         // A click makes it the card ⌘↩ goes to.
@@ -60,9 +63,8 @@ struct Card: View {
         .confirmationDialog("Delete “\(title)”?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) { withAnimation { store.delete(title) } }
         } message: {
-            let references = store.references(to: title).count
-            Text(references == 0 ? "Its file is removed; the graph's history keeps it."
-                 : "\(references) \(references == 1 ? "tiddler refers" : "tiddlers refer") to it. Its file is removed; the graph's history keeps it.")
+            Text(referring == 0 ? "Its file is removed; the graph's history keeps it."
+                 : "\(referring) \(referring == 1 ? "page refers" : "pages refer") to it. Its file is removed; the graph's history keeps it.")
         }
         .environment(\.openURL, OpenURLAction { url in
             if let target = InlineMarkdown.title(from: url) {
@@ -162,7 +164,10 @@ struct Card: View {
                     }
                     if store.tiddler(title) != nil, !store.isShadow(title) {
                         Divider()
-                        Button("Delete Tiddler…", role: .destructive) { confirmingDelete = true }
+                        Button("Delete Page…", role: .destructive) {
+                            referring = store.references(to: title).count
+                            confirmingDelete = true
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -191,7 +196,7 @@ struct Card: View {
             .glassEffect(.regular.interactive(), in: .capsule)
         }
         #if os(macOS)
-        .opacity(hovering || editing || store.focus == title ? 1 : 0.55)
+        .opacity(hovering || editing || store.isSelected(title) ? 1 : 0.55)
         .animation(.easeOut(duration: 0.15), value: hovering)
         #endif
     }
@@ -215,7 +220,7 @@ struct Card: View {
             PropertiesView(tiddler: tiddler, specs: specs)
         }
         if !tiddler.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            MarkdownView(blocks: MarkdownBlock.parse(tiddler.text), card: title)
+            MarkdownView(blocks: MarkdownCache.blocks(tiddler.text), card: title)
         }
         // A tag with fields of its own: what they are, and one more of it.
         let own = FieldSpec.specs(of: tiddler)
@@ -261,7 +266,7 @@ struct Card: View {
     /// Whether the body has a query for what is tagged with this tiddler,
     /// which the foot of the card would only repeat.
     private static func listsTagged(_ tiddler: Tiddler) -> Bool {
-        MarkdownBlock.parse(tiddler.text).contains { block in
+        MarkdownCache.blocks(tiddler.text).contains { block in
             guard case .query(let query) = block else { return false }
             return query.tags.contains(Query.this) || query.tags.contains(tiddler.title)
         }

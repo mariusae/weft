@@ -20,13 +20,27 @@ struct MarkdownStyler {
     static let defaultSize: CGFloat = 17
     #endif
 
-    func style(_ storage: NSTextStorage) {
+    func style(_ storage: NSTextStorage) { style(storage, around: nil) }
+
+    /// Styles the paragraphs an edit touched — or every one, when `edited`
+    /// is nil — knowing whether they are inside a fenced block from the
+    /// fences before them. Styling only what changed leaves the rest of the
+    /// text laid out as it was: typing costs a paragraph, however long the page.
+    func style(_ storage: NSTextStorage, around edited: NSRange?) {
         let text = storage.string as NSString
         let whole = NSRange(location: 0, length: text.length)
-        storage.beginEditing()
-        storage.setAttributes(base, range: whole)
+        let range = edited.map { text.paragraphRange(for: NSRange(location: min($0.location, text.length), length: min($0.length, text.length - min($0.location, text.length)))) } ?? whole
         var fence: String?
-        text.enumerateSubstrings(in: whole, options: [.byParagraphs]) { line, range, _, _ in
+        if range.location > 0 {
+            // Inside a fence or not: the fences before say.
+            text.enumerateSubstrings(in: NSRange(location: 0, length: range.location), options: [.byParagraphs]) { line, _, _, _ in
+                guard let line, line.hasPrefix("```") else { return }
+                fence = fence == nil ? line.drop { $0 == "`" }.trimmingCharacters(in: .whitespaces) : nil
+            }
+        }
+        storage.beginEditing()
+        storage.setAttributes(base, range: range)
+        text.enumerateSubstrings(in: range, options: [.byParagraphs]) { line, range, _, _ in
             guard let line else { return }
             if let current = fence {
                 storage.addAttributes([.font: mono, .foregroundColor: current == "query" ? Palette.accent : Palette.text], range: range)
@@ -41,6 +55,22 @@ struct MarkdownStyler {
             styleLine(line, range: range, in: storage)
         }
         storage.endEditing()
+    }
+
+    /// How many fence lines a text has: when an edit changes it, what is
+    /// inside a block and what is not may have changed below it too.
+    static func fences(in text: NSString) -> Int {
+        var count = 0
+        var at = 0
+        while at < text.length {
+            let found = text.range(of: "```", options: .literal, range: NSRange(location: at, length: text.length - at))
+            guard found.location != NSNotFound else { break }
+            if found.location == 0 || text.character(at: found.location - 1) == 10 { count += 1 }
+            at = found.location + 3
+            // The rest of a fence's backticks are not another.
+            while at < text.length, text.character(at: at) == 96 { at += 1 }
+        }
+        return count
     }
 
     private var base: [NSAttributedString.Key: Any] {

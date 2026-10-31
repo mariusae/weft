@@ -174,7 +174,7 @@ private struct QueryCard: View {
         VStack(alignment: .leading, spacing: 6) {
             TiddlerLink(title: title).font(.headline)
             if depth < 2, let tiddler = store.tiddler(title), !tiddler.text.isEmpty {
-                MarkdownView(blocks: MarkdownBlock.parse(tiddler.text), card: card, depth: depth + 1)
+                MarkdownView(blocks: MarkdownCache.blocks(tiddler.text), card: card, depth: depth + 1)
             }
         }
         .padding(10)

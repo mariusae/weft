@@ -454,9 +454,15 @@ private struct EditorRepresentable: NSViewRepresentable {
             parent.text = view.string
         }
 
+        /// Fence lines in the text as last styled.
+        var fences = -1
+
         func textStorage(_ storage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range: NSRange, changeInLength: Int) {
             guard editedMask.contains(.editedCharacters) else { return }
-            parent.styler.style(storage)
+            let count = MarkdownStyler.fences(in: storage.string as NSString)
+            // A fence come or gone changes what is inside a block below it: all of it styled again.
+            parent.styler.style(storage, around: count == fences ? range : nil)
+            fences = count
         }
     }
 }
@@ -571,9 +577,15 @@ private struct EditorRepresentable: UIViewRepresentable {
             (view as? TiddlerTextView)?.offerCompletions()
         }
 
+        /// Fence lines in the text as last styled.
+        var fences = -1
+
         func textStorage(_ storage: NSTextStorage, didProcessEditing editedMask: NSTextStorage.EditActions, range: NSRange, changeInLength: Int) {
             guard editedMask.contains(.editedCharacters) else { return }
-            parent.styler.style(storage)
+            let count = MarkdownStyler.fences(in: storage.string as NSString)
+            // A fence come or gone changes what is inside a block below it: all of it styled again.
+            parent.styler.style(storage, around: count == fences ? range : nil)
+            fences = count
         }
     }
 }

@@ -87,6 +87,13 @@ struct WeftApp: App {
                     .disabled(store.root == nil)
                 Button("Close All Cards") { store.closeAll() }
                     .keyboardShortcut("w", modifiers: [.command, .shift])
+                Divider()
+                Button("Previous Card") { store.step(-1) }
+                    .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                    .disabled(store.river.isEmpty)
+                Button("Next Card") { store.step(1) }
+                    .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                    .disabled(store.river.isEmpty)
             }
         }
 

@@ -1,3 +1,4 @@
+import ReflectCore
 import SwiftUI
 import WeftCore
 
@@ -63,7 +64,7 @@ struct MarkdownView: View {
         case .table(let header, let rows):
             TableBlock(header: header, rows: rows)
         case .image(let alt, let source, let width):
-            Picture(source: source, alt: alt, width: width)
+            PictureView(reference: ImageReference(source: source, alt: alt, width: width))
         case .embed(let title):
             Embed(title: title, card: card, depth: depth)
         case .rule:
@@ -82,35 +83,47 @@ struct MarkdownView: View {
 }
 
 /// A line of inline Markdown: emphasis, code, links — a link to a tiddler
-/// no one has written shown faded and slanted, as TiddlyWiki shows them.
+/// no one has written shown faded and slanted, as TiddlyWiki shows them —
+/// its pictures under its words, and a link alone in it shown as its card.
 struct InlineText: View {
     @Environment(WikiStore.self) private var store
     let text: String
+    /// Whether a link alone shows its card: not where the card itself
+    /// falls back to its link.
+    var cards = true
 
     var body: some View {
-        Text(attributed)
+        let pieces = MarkdownCache.pieces(text)
+        if cards, let card = pieces.card {
+            LinkCardView(source: card.source, text: card.text)
+        } else if pieces.pictures.isEmpty {
+            words(text)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                if !pieces.words.isEmpty { words(pieces.words) }
+                ForEach(Array(pieces.pictures.enumerated()), id: \.offset) { _, picture in
+                    PictureView(reference: picture)
+                }
+            }
+        }
+    }
+
+    private func words(_ text: String) -> some View {
+        Text(attributed(text))
             .textSelection(.enabled)
             .lineSpacing(2)
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var attributed: AttributedString {
-        let prepared = InlineMarkdown.prepared(text)
-        var string = (try? AttributedString(markdown: prepared, options: .init(
-            allowsExtendedAttributes: true, interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible
-        ))) ?? AttributedString(text)
+    private func attributed(_ text: String) -> AttributedString {
+        var string = MarkdownCache.attributed(text)
         for run in string.runs {
-            if let url = run.link, let title = InlineMarkdown.title(from: url) {
-                if store.exists(title) {
-                    string[run.range].foregroundColor = .accentColor
-                } else {
-                    string[run.range].foregroundColor = .secondary
-                    string[run.range].inlinePresentationIntent = (run.inlinePresentationIntent ?? []).union(.emphasized)
-                }
-            }
-            if run.inlinePresentationIntent?.contains(.code) == true {
-                string[run.range].font = .system(.body, design: .monospaced).weight(.regular)
-                string[run.range].backgroundColor = Color.secondary.opacity(0.12)
+            guard let url = run.link, let title = InlineMarkdown.title(from: url) else { continue }
+            if store.exists(title) {
+                string[run.range].foregroundColor = .accentColor
+            } else {
+                string[run.range].foregroundColor = .secondary
+                string[run.range].inlinePresentationIntent = (run.inlinePresentationIntent ?? []).union(.emphasized)
             }
         }
         return string
@@ -274,36 +287,6 @@ private struct TableBlock: View {
     private var width: Int { max(header.count, rows.map(\.count).max() ?? 0) }
 }
 
-/// A picture: from the graph's `assets/`, or the web.
-private struct Picture: View {
-    @Environment(WikiStore.self) private var store
-    let source: String
-    let alt: String
-    let width: Double?
-
-    var body: some View {
-        Group {
-            if let file = store.file(source), let image = Platform.image(at: file) {
-                Image(platformImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: width.map { CGFloat($0) } ?? image.size.width)
-            } else if let url = URL(string: source), url.scheme?.hasPrefix("http") == true {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFit()
-                } placeholder: {
-                    ProgressView().frame(maxWidth: .infinity, minHeight: 60)
-                }
-                .frame(maxWidth: width.map { CGFloat($0) })
-            } else {
-                Label(alt.isEmpty ? source : alt, systemImage: "photo").foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .help(alt)
-    }
-}
-
 /// Another tiddler shown inside this one, live — TiddlyWiki's transclusion.
 private struct Embed: View {
     @Environment(WikiStore.self) private var store
@@ -320,7 +303,7 @@ private struct Embed: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                MarkdownView(blocks: MarkdownBlock.parse(tiddler.text), card: card, depth: depth + 1)
+                MarkdownView(blocks: MarkdownCache.blocks(tiddler.text), card: card, depth: depth + 1)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
