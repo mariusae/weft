@@ -30,9 +30,24 @@ public struct ContentView: View {
                 }
             }
         }
+        .overlay(alignment: .top) {
+            if store.quickOpenShown && store.root != nil {
+                ZStack(alignment: .top) {
+                    Color.black.opacity(0.12)
+                        .ignoresSafeArea()
+                        .onTapGesture { store.quickOpenShown = false }
+                    QuickOpen().padding(.top, 70)
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: store.quickOpenShown)
+        // Prism's warm ink and its accent, throughout.
+        .foregroundStyle(Ink.text.color)
+        .tint(Ink.accent.color)
         .onChange(of: store.focusRequest) { compactColumn = .detail }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { store.activated() }
+            if phase == .active { store.activated() } else { store.saveEditing() }
         }
         .alert("Weft", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
             Button("OK") { store.error = nil }
@@ -60,6 +75,10 @@ private struct RiverToolbar: ToolbarContent {
                 .help("Tiddlers changed on two devices")
             }
             if let sync = store.sync { SyncButton(sync: sync) }
+            #if os(iOS)
+            Button("Quick Open", systemImage: "magnifyingglass") { store.quickOpenShown = true }
+                .keyboardShortcut("o")
+            #endif
             EditToggle()
             Button("Today", systemImage: "calendar") { store.openToday() }
                 .help("Today's Note (⌘T)")
@@ -71,20 +90,17 @@ private struct RiverToolbar: ToolbarContent {
     }
 }
 
-/// ⌘↩: the selected card from reading to editing, and while it is edited,
-/// between its editor and a preview.
+/// ⌘↩: the selected card between Edit and Preview.
 private struct EditToggle: View {
     @Environment(WikiStore.self) private var store
 
     var body: some View {
         let title = store.focus.flatMap { store.river.contains($0) ? $0 : nil }
         let editing = title.map(store.isEditing) ?? false
-        let previewing = title.map(store.isPreviewing) ?? false
-        Button(editing && !previewing ? "Preview" : "Edit",
-               systemImage: editing && !previewing ? "eye" : "pencil") { store.toggleEditing() }
+        Button(editing ? "Preview" : "Edit", systemImage: editing ? "eye" : "pencil") { store.toggleEditing() }
             .keyboardShortcut(.return, modifiers: .command)
             .disabled(title == nil || (!editing && store.note(title!) != nil))
-            .help(editing && !previewing ? "Preview the Card Being Edited (⌘↩)" : "Edit the Selected Card (⌘↩)")
+            .help(editing ? "Preview the Selected Card (⌘↩)" : "Edit the Selected Card (⌘↩)")
     }
 }
 

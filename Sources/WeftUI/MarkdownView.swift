@@ -136,7 +136,7 @@ private struct ListBlock: View {
     @ViewBuilder private func marker(_ item: MarkdownBlock.ListItem, number: Int) -> some View {
         if let checked = item.checked {
             Image(systemName: checked ? "checkmark.square.fill" : "square")
-                .foregroundStyle(checked ? Color.accentColor : .secondary)
+                .foregroundStyle(checked ? Ink.accent.color : .secondary)
         } else if item.ordered {
             Text("\(number).").monospacedDigit().foregroundStyle(.secondary)
         } else {

@@ -46,8 +46,15 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   scrolled to. Cards fold to their titles (the chevron) and close (×). Which
   cards are open is remembered per graph, on this device only. On the
   iPhone, the sidebar and the river take turns.
-- **A card**: its title, tag pills (click one to open the tag's card), its
-  body, what is tagged with it, its other fields, and what links to it.
+- **A card** is in Edit or in Preview, and that is all: the switch in its
+  header, or ⌘↩ for the selected card. What is written in Edit saves itself
+  a moment after typing pauses; a new title takes effect back in Preview.
+  Beside the switch, in a glass capsule, its menu (Fold, Close Others, Copy
+  Link, Show in Finder, Delete) and its close button.
+- **In Preview**: its title, tag pills (click one to open the tag's card),
+  its body, what is tagged with it, its other fields — and at its foot what
+  links to it, as Manifold shows links: small faces bunched, dealt out
+  under the pointer, each showing who links and the words around the link.
   Links to tiddlers that don't exist yet are faded; their card offers to
   create them. `![[Title]]` shows the other tiddler inside, live.
 - **Queries**: a ```` ```query ```` block lists the tiddlers it finds —
@@ -59,13 +66,18 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   `<<toc>>`, `<$list>` and `{{{ }}}` into queries where their filters allow.
 - **Editing**: the pencil, or double-click the title. The body is Markdown,
   styled as it is typed: links are tokens (faint brackets, a missing tiddler
-  slanted), emphasis and headings show, markup is faded. Typing `[[` offers
-  titles (the completion list on the Mac, a bar above the keyboard on the
-  phone). The formatting bar does bold, italic, code, headings, lists,
-  links, embeds and callouts. Tags offer the ones already in use. ⌘↩ edits
-  the selected card (the one clicked, or opened last), and while editing
-  goes between the editor and a preview of the draft; ⌘S saves, Escape
-  cancels. A save writes only what changed in the file.
+  slanted), emphasis and headings show, markup is faded. Typing `[[` finishes
+  the title inline — the rest of the best one faint after the caret, Tab or →
+  taking it — and lists tiddlers, notes, days and a new tiddler under the
+  caret (↑↓, Return; Escape puts it away); on the phone, above the keyboard.
+  The formatting bar does bold, italic, code, headings, lists, links, embeds
+  and callouts. Tags offer the ones already in use. Escape goes back to
+  Preview. A save writes only what changed in the file.
+- **Quick Open** (⌘O): a tiddler, note or day by what is typed — today and
+  the tiddlers written last, with nothing typed — opened in the river; or a
+  new tiddler of that name.
+- **Colours**: Prism's — warm paper and ink, the cards lighter on a page a
+  shade under them, its blue.
 - **Sync**: Reflect's own — commit thirty seconds after writing stops, a
   full sync at launch, on coming to the front, and on ⌘R. The Mac syncs the
   graph's checkout with its own `git`; the phone its clone with libgit2 and
@@ -111,16 +123,23 @@ WikiText a click away.
   graph's notes, through reflect-mac's `NoteIndex`), `TiddlerMerge` and
   `WikiSync` (the sync, over reflect-mac's `Git`), `TiddlyWiki/` (the import).
 - `Sources/WeftUI` — the views, for the Mac and the phone: `WikiStore` (the
-  graph, the river, drafts, the sync), `ContentView` (sidebar and river),
-  `Card`, `CardEditor`, `MarkdownView`, `QueryView`, `ConflictView`, and
-  `Editor/` (the text view, its styling and completion).
+  graph, the river, editing and saving, the sync), `ContentView` (sidebar
+  and river), `Card`, `CardEditor`, `BacklinkFan`, `QuickOpen`,
+  `MarkdownView`, `QueryView`, `ConflictView`, and `Editor/` (the text view,
+  its styling and inline completion).
 - `Sources/WeftGitHub` — GitHub: a graph cloned into weft's own folder and
   synced with libgit2 (reflect-mac's `ReflectGit2`), signing in and
   choosing it (`GitHubConnect`), onboarding, and the sync relay, followed.
 - `Sources/WeftMac` — the Mac app around them. `Snapshot` draws the window
   to a PNG for checking the app without a person at it:
-  `WEFT_SNAPSHOT=out.png WEFT_OPEN="A|B" WEFT_EDIT=A WEFT_DELAY=3`, or an
-  onboarding page with `WEFT_ONBOARDING_STEP=place`. It never syncs.
+  `WEFT_SNAPSHOT=out.png WEFT_OPEN="A|B" WEFT_EDIT=A WEFT_TYPE="[[Ch"
+  WEFT_FAN=0 WEFT_QUICK_OPEN=1 WEFT_DELAY=3`, or an onboarding page with
+  `WEFT_ONBOARDING_STEP=place`; panels open over the window are saved beside
+  it. It never syncs, and never touches the GitHub account (the keychain).
+
+`scripts/build-app.sh` signs with an Apple Development identity when there
+is one, so the keychain knows each build as the same app and an Always
+Allow for the GitHub sign-in holds; otherwise ad hoc.
 - `iOS/Weft` — the iPhone and iPad app around them, and signing in to GitHub.
 - `Sources/weft` — the command line: `weft import`, `weft show`.
 

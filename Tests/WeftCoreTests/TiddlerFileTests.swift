@@ -144,3 +144,20 @@ import Testing
         #expect(try String(contentsOf: root.appendingPathComponent(".reflectignore"), encoding: .utf8) == "drafts/\n/wiki/\n")
     }
 }
+
+@Suite struct MovingFileTests {
+    @Test func aNewTiddlersFileFollowsItsTitle() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("moving-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let wiki = Wiki(root: root)
+        try wiki.save(Tiddler(title: "New Tiddler", text: "Hello"))
+        var renamed = try #require(wiki["New Tiddler"])
+        renamed.title = "Greetings"
+        #expect(try wiki.save(renamed, replacing: "New Tiddler", movingFile: true).path == "wiki/greetings.md")
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("wiki/new-tiddler.md").path))
+        // Without moving, a renamed tiddler keeps its file.
+        var again = try #require(wiki["Greetings"])
+        again.title = "Salutations"
+        #expect(try wiki.save(again, replacing: "Greetings").path == "wiki/greetings.md")
+    }
+}

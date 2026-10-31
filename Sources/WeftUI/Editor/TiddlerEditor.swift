@@ -10,14 +10,10 @@ import UIKit
 /// selection in markup, starts lines with it, puts blocks in, starts links.
 @MainActor @Observable
 final class EditorController {
-    #if os(macOS)
     weak var textView: TiddlerTextView?
-    #else
-    weak var textView: TiddlerTextView?
-    #endif
-    /// Titles completing the `[[` being typed, on the phone, where they are
+    /// What completes the `[[` being typed, on the phone, where it is
     /// offered above the keyboard.
-    var suggestions: [String] = []
+    var suggestions: [LinkTarget] = []
 
     private var text: NSString { (textView?.text ?? "") as NSString }
 
@@ -107,27 +103,100 @@ func completions(for partial: String, among titles: [String], limit: Int = 30) -
     return Array((starts + contains).prefix(limit))
 }
 
+/// What a link being typed would read with the best suggestion: the rest of
+/// its title, when it starts with what is typed.
+func ghostText(typed: String, best: LinkTarget?) -> String? {
+    guard let best, best.kind != .new, !typed.isEmpty,
+          best.title.range(of: typed, options: [.caseInsensitive, .diacriticInsensitive, .anchored]) != nil,
+          best.title.count > typed.count else { return nil }
+    return String(best.title.dropFirst(typed.count))
+}
+
 /// The body being edited, styled as it is typed, as tall as what it holds.
 struct TiddlerEditor: View {
     @Binding var text: String
     let controller: EditorController
-    let titles: () -> [String]
+    let suggest: (String) -> [LinkTarget]
     let exists: (String) -> Bool
+    var onEscape: () -> Void = {}
     var focusOnAppear = false
 
     var body: some View {
-        EditorRepresentable(text: $text, controller: controller, titles: titles,
-                            styler: MarkdownStyler(size: MarkdownStyler.defaultSize, exists: exists), focusOnAppear: focusOnAppear)
+        EditorRepresentable(text: $text, controller: controller, suggest: suggest,
+                            styler: MarkdownStyler(size: MarkdownStyler.defaultSize, exists: exists),
+                            onEscape: onEscape, focusOnAppear: focusOnAppear)
+    }
+}
+
+/// The titles offered for a link being typed: each with what it is, the
+/// chosen one marked.
+@MainActor @Observable
+final class SuggestionModel {
+    var items: [LinkTarget] = []
+    var selected = 0
+    var typed = ""
+    var pick: (LinkTarget) -> Void = { _ in }
+
+    var current: LinkTarget? { items.indices.contains(selected) ? items[selected] : nil }
+
+    func move(_ delta: Int) {
+        guard !items.isEmpty else { return }
+        selected = (selected + delta + items.count) % items.count
+    }
+}
+
+/// The list under the caret.
+struct SuggestionList: View {
+    let model: SuggestionModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(model.items.enumerated()), id: \.element) { index, item in
+                Button { model.pick(item) } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: item.kind.symbol)
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 18)
+                            .foregroundStyle(index == model.selected ? .white : Ink.accent.color)
+                        Text(item.kind == .new ? "New tiddler “\(item.title)”" : item.shown)
+                            .lineLimit(1)
+                            .foregroundStyle(index == model.selected ? .white : Ink.text.color)
+                        Spacer(minLength: 8)
+                        Text(item.kind == .new ? "" : item.kind.label)
+                            .font(.caption)
+                            .foregroundStyle(index == model.selected ? .white.opacity(0.8) : Ink.secondary.color)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(index == model.selected ? Ink.accent.color : .clear, in: RoundedRectangle(cornerRadius: 6))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .font(.system(size: 13))
+        .padding(5)
+        .frame(width: 340)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Ink.rule.color))
     }
 }
 
 #if os(macOS)
 
-/// The Mac's text view: completion of the `[[` being typed, through the
-/// system's own completion list.
+/// The Mac's text view: a link being typed is finished inline — the rest
+/// of the best title shown faint after the caret, Tab or → taking it — and
+/// the titles that fit are listed under the caret, ↑ and ↓ choosing,
+/// Return taking one, Escape putting them away.
 final class TiddlerTextView: NSTextView {
-    var titles: () -> [String] = { [] }
-    private var completing = false
+    var suggest: (String) -> [LinkTarget] = { _ in [] }
+    var onEscape: () -> Void = {}
+    private let model = SuggestionModel()
+    private lazy var panel = SuggestionPanel(model: model)
+    private let ghost = NSTextField(labelWithString: "")
+    /// The link put away with Escape, not offered again until it changes.
+    private var dismissed: String?
+    private var scrollObserver: Any?
 
     var text: String { string }
 
@@ -140,39 +209,134 @@ final class TiddlerTextView: NSTextView {
         insertText(text, replacementRange: range)
     }
 
-    override var rangeForUserCompletion: NSRange {
-        linkPartialRange(in: string as NSString, caret: selectedRange().location) ?? super.rangeForUserCompletion
+    override init(frame: NSRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        ghost.textColor = Palette.faint
+        ghost.isHidden = true
+        addSubview(ghost)
+        model.pick = { [weak self] target in self?.accept(target) }
     }
 
-    func offerCompletions() {
-        guard !completing, linkPartialRange(in: string as NSString, caret: selectedRange().location) != nil else { return }
-        completing = true
-        complete(nil)
-        completing = false
+    required init?(coder: NSCoder) { fatalError("unused") }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) }
+        scrollObserver = nil
+        // Scrolled, the list would be left behind: it goes.
+        if let clip = enclosingScrollView?.contentView {
+            clip.postsBoundsChangedNotifications = true
+            scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.hideCompletions() }
+            }
+        }
+        if window == nil { hideCompletions() }
+    }
+
+    override func resignFirstResponder() -> Bool {
+        hideCompletions()
+        return super.resignFirstResponder()
     }
 
     override func didChangeText() {
         super.didChangeText()
-        if !completing { offerCompletions() }
+        offerCompletions()
     }
 
-    override func insertCompletion(_ word: String, forPartialWordRange range: NSRange, movement: Int, isFinal: Bool) {
-        completing = true
-        defer { completing = false }
-        super.insertCompletion(word, forPartialWordRange: range, movement: movement, isFinal: isFinal)
-        if isFinal, movement == NSTextMovement.return.rawValue || movement == NSTextMovement.tab.rawValue {
-            closeLink()
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        if !stillSelecting, panel.isVisible || !ghost.isHidden { offerCompletions() }
+    }
+
+    /// The titles for the link being typed, under the caret, and the best
+    /// one's rest after it — or neither, out of a link.
+    func offerCompletions() {
+        guard let range = linkPartialRange(in: string as NSString, caret: selectedRange().location), selectedRange().length == 0 else {
+            dismissed = nil
+            return hideCompletions()
         }
+        let typed = (string as NSString).substring(with: range)
+        guard typed != dismissed else { return hideCompletions() }
+        dismissed = nil
+        let items = suggest(typed)
+        guard !items.isEmpty, let caret = caretRect() else { return hideCompletions() }
+        if model.typed != typed || model.items != items {
+            model.items = items
+            model.selected = 0
+            model.typed = typed
+        }
+        showGhost(ghostText(typed: typed, best: model.current), at: caret)
+        if let window {
+            let onScreen = window.convertToScreen(convert(caret, to: nil))
+            panel.show(below: onScreen, in: window)
+        }
+    }
+
+    func hideCompletions() {
+        ghost.isHidden = true
+        panel.hide()
+    }
+
+    /// Where the caret is, in this view.
+    private func caretRect() -> NSRect? {
+        guard let window else { return nil }
+        var actual = NSRange()
+        let onScreen = firstRect(forCharacterRange: NSRange(location: selectedRange().location, length: 0), actualRange: &actual)
+        guard onScreen.origin.x.isFinite else { return nil }
+        return convert(window.convertFromScreen(onScreen), from: nil)
+    }
+
+    private func showGhost(_ rest: String?, at caret: NSRect) {
+        guard let rest else {
+            ghost.isHidden = true
+            return
+        }
+        let location = max(0, selectedRange().location - 1)
+        let font = (textStorage?.length ?? 0) > location
+            ? (textStorage?.attribute(.font, at: location, effectiveRange: nil) as? NSFont) : nil
+        ghost.font = font ?? self.font
+        ghost.stringValue = rest
+        ghost.sizeToFit()
+        // A label draws its text two points in; the caret's line, its height.
+        ghost.frame.origin = NSPoint(x: caret.minX - 2, y: caret.minY + (caret.height - ghost.frame.height) / 2)
+        ghost.isHidden = false
+    }
+
+    override func doCommand(by selector: Selector) {
+        if panel.isVisible {
+            switch selector {
+            case #selector(moveUp(_:)): return moveSelection(-1)
+            case #selector(moveDown(_:)): return moveSelection(1)
+            case #selector(insertNewline(_:)), #selector(insertTab(_:)):
+                if let current = model.current { return accept(current) }
+            case #selector(moveRight(_:)):
+                if !ghost.isHidden, let current = model.current { return accept(current) }
+            case #selector(cancelOperation(_:)):
+                dismissed = linkPartialRange(in: string as NSString, caret: selectedRange().location)
+                    .map { (string as NSString).substring(with: $0) }
+                return hideCompletions()
+            default: break
+            }
+        } else if selector == #selector(cancelOperation(_:)) {
+            return onEscape()
+        }
+        super.doCommand(by: selector)
+    }
+
+    private func moveSelection(_ delta: Int) {
+        model.move(delta)
+        if let caret = caretRect() { showGhost(ghostText(typed: model.typed, best: model.current), at: caret) }
+    }
+
+    /// A title chosen: the link finished with it, and closed.
+    private func accept(_ target: LinkTarget) {
+        complete(with: target.title)
     }
 
     func complete(with title: String) {
         guard let range = linkPartialRange(in: string as NSString, caret: selectedRange().location) else { return }
+        hideCompletions()
         insertText(title, replacementRange: range)
-        closeLink()
-    }
-
-    /// Steps past the link's `]]`, writing it when it is not there.
-    private func closeLink() {
         let text = string as NSString
         let caret = selectedRange().location
         if caret + 2 <= text.length, text.substring(with: NSRange(location: caret, length: 2)) == "]]" {
@@ -180,14 +344,54 @@ final class TiddlerTextView: NSTextView {
         } else {
             insertText("]]", replacementRange: selectedRange())
         }
+        hideCompletions()
+    }
+}
+
+/// The list of titles, in a window of its own beside the editor's, so the
+/// card it is in does not cut it off.
+@MainActor
+final class SuggestionPanel {
+    private let panel: NSPanel
+    private let host: NSHostingView<SuggestionList>
+
+    init(model: SuggestionModel) {
+        host = NSHostingView(rootView: SuggestionList(model: model))
+        panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        panel.isFloatingPanel = true
+        panel.level = .popUpMenu
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = true
+        panel.contentView = host
+    }
+
+    var isVisible: Bool { panel.isVisible }
+
+    /// Under the caret's rect, on screen; above it when there is no room below.
+    func show(below caret: NSRect, in window: NSWindow) {
+        let size = host.fittingSize
+        var origin = NSPoint(x: caret.minX - 14, y: caret.minY - size.height - 6)
+        if let screen = window.screen?.visibleFrame, origin.y < screen.minY { origin.y = caret.maxY + 6 }
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        if panel.parent == nil { window.addChildWindow(panel, ordered: .above) }
+        panel.orderFront(nil)
+    }
+
+    func hide() {
+        guard panel.isVisible else { return }
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
     }
 }
 
 private struct EditorRepresentable: NSViewRepresentable {
     @Binding var text: String
     let controller: EditorController
-    let titles: () -> [String]
+    let suggest: (String) -> [LinkTarget]
     let styler: MarkdownStyler
+    let onEscape: () -> Void
     let focusOnAppear: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -208,7 +412,9 @@ private struct EditorRepresentable: NSViewRepresentable {
         view.isAutomaticTextReplacementEnabled = false
         view.textContainerInset = NSSize(width: 4, height: 6)
         view.font = PlatformFont.systemFont(ofSize: styler.size)
-        view.titles = titles
+        view.insertionPointColor = Palette.accent
+        view.suggest = suggest
+        view.onEscape = onEscape
         view.delegate = context.coordinator
         storage.delegate = context.coordinator
         view.string = text
@@ -221,7 +427,8 @@ private struct EditorRepresentable: NSViewRepresentable {
 
     func updateNSView(_ view: TiddlerTextView, context: Context) {
         context.coordinator.parent = self
-        view.titles = titles
+        view.suggest = suggest
+        view.onEscape = onEscape
         controller.textView = view
         if view.string != text { view.string = text }
     }
@@ -251,23 +458,15 @@ private struct EditorRepresentable: NSViewRepresentable {
             guard editedMask.contains(.editedCharacters) else { return }
             parent.styler.style(storage)
         }
-
-        func textView(_ textView: NSTextView, completions words: [String], forPartialWordRange range: NSRange,
-                      indexOfSelectedItem index: UnsafeMutablePointer<Int>?) -> [String] {
-            guard let view = textView as? TiddlerTextView,
-                  linkPartialRange(in: view.string as NSString, caret: view.selectedRange().location) != nil else { return words }
-            index?.pointee = -1
-            return completions(for: (view.string as NSString).substring(with: range), among: view.titles())
-        }
     }
 }
 
 #else
 
-/// The phone's text view: titles completing the `[[` being typed are
-/// offered in the bar above the keyboard.
+/// The phone's text view: what completes the `[[` being typed is offered
+/// in the bar above the keyboard.
 final class TiddlerTextView: UITextView {
-    var titles: () -> [String] = { [] }
+    var suggest: (String) -> [LinkTarget] = { _ in [] }
     weak var controller: EditorController?
 
     var selection: NSRange {
@@ -287,7 +486,7 @@ final class TiddlerTextView: UITextView {
             if controller?.suggestions.isEmpty == false { controller?.suggestions = [] }
             return
         }
-        controller?.suggestions = completions(for: (text as NSString).substring(with: range), among: titles(), limit: 20)
+        controller?.suggestions = suggest((text as NSString).substring(with: range))
     }
 
     func complete(with title: String) {
@@ -307,8 +506,9 @@ final class TiddlerTextView: UITextView {
 private struct EditorRepresentable: UIViewRepresentable {
     @Binding var text: String
     let controller: EditorController
-    let titles: () -> [String]
+    let suggest: (String) -> [LinkTarget]
     let styler: MarkdownStyler
+    let onEscape: () -> Void
     let focusOnAppear: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -322,7 +522,8 @@ private struct EditorRepresentable: UIViewRepresentable {
         view.smartQuotesType = .no
         view.smartDashesType = .no
         view.textContainerInset = UIEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
-        view.titles = titles
+        view.tintColor = Palette.accent
+        view.suggest = suggest
         view.controller = controller
         view.delegate = context.coordinator
         view.textStorage.delegate = context.coordinator
@@ -342,7 +543,7 @@ private struct EditorRepresentable: UIViewRepresentable {
 
     func updateUIView(_ view: TiddlerTextView, context: Context) {
         context.coordinator.parent = self
-        view.titles = titles
+        view.suggest = suggest
         controller.textView = view
         if view.text != text { view.text = text }
     }
@@ -377,8 +578,8 @@ private struct EditorRepresentable: UIViewRepresentable {
     }
 }
 
-/// Above the phone's keyboard: titles for the link being typed, or else
-/// the formatting buttons.
+/// Above the phone's keyboard: what completes the link being typed, or
+/// else the formatting buttons.
 struct KeyboardBar: View {
     let controller: EditorController
 
@@ -388,10 +589,12 @@ struct KeyboardBar: View {
                 if controller.suggestions.isEmpty {
                     FormattingButtons(controller: controller, compact: true)
                 } else {
-                    ForEach(controller.suggestions, id: \.self) { title in
-                        Button(title) { controller.complete(with: title) }
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
+                    ForEach(controller.suggestions, id: \.self) { target in
+                        Button { controller.complete(with: target.title) } label: {
+                            Label(target.kind == .new ? "New “\(target.title)”" : target.shown, systemImage: target.kind.symbol)
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
                     }
                 }
             }

@@ -61,13 +61,13 @@ struct TypedValue: View {
                 }
             case .flag:
                 Image(systemName: FieldSpec.flag(text) ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(FieldSpec.flag(text) ? Color.accentColor : .secondary)
+                    .foregroundStyle(FieldSpec.flag(text) ? Ink.accent.color : .secondary)
             case .choice:
                 Text(text)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 1)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
-                    .foregroundStyle(Color.accentColor)
+                    .background(Ink.accent.color.opacity(0.12), in: Capsule())
+                    .foregroundStyle(Ink.accent.color)
             case .number:
                 Text(text).monospacedDigit()
             case .text:
@@ -138,8 +138,8 @@ struct TypedFieldEditor: View {
                                 .font(.caption)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
-                                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.4)))
-                                .foregroundStyle(Color.accentColor)
+                                .overlay(Capsule().strokeBorder(Ink.accent.color.opacity(0.4)))
+                                .foregroundStyle(Ink.accent.color)
                         }
                     }
                 }

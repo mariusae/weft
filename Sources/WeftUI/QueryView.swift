@@ -34,7 +34,7 @@ struct QueryView: View {
                 if let index, store.exists(card), !store.isEditing(card) {
                     Button("Edit Query") { editing = true }
                         .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Ink.accent.color)
                         .popover(isPresented: $editing) {
                             QueryBuilder(query: query, card: card) { changed in
                                 store.updateQuery(in: card, at: index, to: changed)
@@ -51,8 +51,8 @@ struct QueryView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor.opacity(0.15)))
+        .background(Ink.accent.color.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Ink.accent.color.opacity(0.15)))
     }
 
     @ViewBuilder private func results(_ titles: [String]) -> some View {
@@ -116,7 +116,7 @@ struct TiddlerLink: View {
                 .multilineTextAlignment(.leading)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(store.exists(title) ? Color.accentColor : .secondary)
+        .foregroundStyle(store.exists(title) ? Ink.accent.color : .secondary)
     }
 }
 

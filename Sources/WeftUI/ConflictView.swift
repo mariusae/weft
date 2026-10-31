@@ -60,7 +60,7 @@ struct ConflictView: View {
     private func side(_ side: ConflictMarkers.Side, mine: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(mine ? "This device" : "Other device").font(.caption.weight(.semibold))
-                .foregroundStyle(mine ? Color.accentColor : .secondary)
+                .foregroundStyle(mine ? Ink.accent.color : .secondary)
             Text(side.text.isEmpty ? "(nothing)" : side.text)
                 .font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled)
@@ -69,6 +69,6 @@ struct ConflictView: View {
         .padding(10)
         .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
         .background(Color.card, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(mine ? Color.accentColor.opacity(0.4) : Color.secondary.opacity(0.3)))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(mine ? Ink.accent.color.opacity(0.4) : Color.secondary.opacity(0.3)))
     }
 }

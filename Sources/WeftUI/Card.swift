@@ -1,9 +1,9 @@
 import SwiftUI
 import WeftCore
 
-/// A tiddler's card in the river: its title and buttons, its tags, its
-/// body, and what is tagged with it and links to it — or, being edited,
-/// the editor.
+/// A tiddler's card in the river: its title and controls, then its tags,
+/// body and what is tagged with it — or, in Edit, its editor — and at its
+/// foot, what links to it.
 struct Card: View {
     @Environment(WikiStore.self) private var store
     let title: String
@@ -13,30 +13,33 @@ struct Card: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            header
             if store.isEditing(title) {
                 CardEditor(title: title)
-            } else {
-                header
-                if !store.folded.contains(title) {
-                    if store.needsReview(title) {
-                        ConflictView(title: title)
-                    } else if let tiddler = store.tiddler(title) {
-                        content(tiddler)
-                    } else if let note = store.note(title) {
-                        noteContent(note)
-                    } else {
-                        missing
-                    }
+            } else if !store.folded.contains(title) {
+                if store.needsReview(title) {
+                    ConflictView(title: title)
+                } else if let tiddler = store.tiddler(title) {
+                    content(tiddler)
+                } else if let note = store.note(title) {
+                    noteContent(note)
+                } else {
+                    missing
+                }
+                let links = store.backlinks(of: title)
+                if !links.isEmpty {
+                    BacklinkFan(card: title, links: links)
+                        .padding(.top, 4)
                 }
             }
         }
         .padding(.horizontal, sizeClass == .compact ? 14 : 22)
         .padding(.vertical, sizeClass == .compact ? 14 : 18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.card, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator.opacity(store.focus == title ? 0 : 0.6)))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor.opacity(store.focus == title ? 0.45 : 0)))
-        .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+        .background(Color.card, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.rule.color.opacity(store.focus == title ? 0 : 1)))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.accent.color.opacity(store.focus == title ? 0.45 : 0)))
+        .shadow(color: .black.opacity(0.07), radius: 10, y: 3)
         .onHover { hovering = $0 }
         // A click makes it the card ⌘↩ goes to.
         .simultaneousGesture(TapGesture().onEnded { store.select(title) })
@@ -56,31 +59,61 @@ struct Card: View {
         })
     }
 
+    /// The title — typed in, while editing — and the card's controls.
     private var header: some View {
         let note = store.note(title)
-        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+        let editing = store.isEditing(title)
+        return HStack(alignment: .center, spacing: 10) {
             if let note {
                 Image(systemName: note.day != nil ? "calendar" : "doc.text")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Ink.secondary.color)
                     .help(note.day != nil ? "A day in Reflect" : "A note in Reflect")
             }
-            Text(note?.displayTitle ?? title)
+            if editing {
+                TextField("Title", text: Binding {
+                    store.draft(title)?.title ?? title
+                } set: { value in
+                    guard var draft = store.draft(title) else { return }
+                    draft.title = value
+                    store.updateDraft(title, draft)
+                })
+                .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
-                .italic(!store.exists(title))
-                .foregroundStyle(store.exists(title) ? .primary : .secondary)
-                .textSelection(.enabled)
-                .onTapGesture(count: 2) { if note == nil { store.edit(title) } }
+            } else {
+                Text(note?.displayTitle ?? title)
+                    .font(.system(size: 22, weight: .semibold))
+                    .italic(!store.exists(title))
+                    .foregroundStyle(store.exists(title) ? Ink.text.color : Ink.secondary.color)
+                    .textSelection(.enabled)
+                    .onTapGesture(count: 2) { if note == nil { store.edit(title) } }
+            }
             Spacer(minLength: 8)
-            HStack(spacing: 2) {
-                if note == nil {
-                    CardButton(symbol: "pencil", help: "Edit") { store.edit(title) }
+            controls(note: note, editing: editing)
+        }
+    }
+
+    /// Edit or Preview, for a tiddler; and, in a glass capsule, the card's
+    /// menu and its close button.
+    private func controls(note: ReflectNotes.Note?, editing: Bool) -> some View {
+        HStack(spacing: 8) {
+            if note == nil {
+                Picker("", selection: Binding(get: { editing }, set: { $0 ? store.edit(title) : store.finishEditing(title) })) {
+                    Text("Edit").tag(true)
+                    Text("Preview").tag(false)
                 }
-                CardButton(symbol: store.folded.contains(title) ? "chevron.down" : "chevron.up",
-                           help: store.folded.contains(title) ? "Unfold" : "Fold") {
-                    withAnimation(.snappy(duration: 0.2)) { store.toggleFold(title) }
-                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .controlSize(.small)
+                .help("Edit or Preview (⌘↩)")
+            }
+            HStack(spacing: 0) {
                 Menu {
+                    Button(store.folded.contains(title) ? "Unfold" : "Fold") {
+                        withAnimation(.snappy(duration: 0.2)) { store.toggleFold(title) }
+                    }
                     Button("Close Other Cards") { withAnimation { store.closeOthers(title) } }
+                    Divider()
                     Button("Copy Link") { Platform.copy("[[\(title)]]") }
                     if Platform.canReveal, let path = store.path(of: title) ?? note.flatMap({ store.file($0.path) }) {
                         Button("Show in Finder") { Platform.reveal(path) }
@@ -90,7 +123,10 @@ struct Card: View {
                         Button("Delete Tiddler…", role: .destructive) { confirmingDelete = true }
                     }
                 } label: {
-                    Image(systemName: "ellipsis").frame(width: 26, height: 24)
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 30, height: 26)
+                        .contentShape(Rectangle())
                 }
                 #if os(macOS)
                 .menuStyle(.button)
@@ -98,13 +134,24 @@ struct Card: View {
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .foregroundStyle(.secondary)
-                CardButton(symbol: "xmark", help: "Close") { withAnimation { store.close(title) } }
+                .help("More")
+                Button { withAnimation { store.close(title) } } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 30, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Close")
             }
-            #if os(macOS)
-            .opacity(hovering ? 1 : 0.35)
-            #endif
+            .foregroundStyle(Ink.secondary.color)
+            .padding(.horizontal, 2)
+            .glassEffect(.regular.interactive(), in: .capsule)
         }
+        #if os(macOS)
+        .opacity(hovering || editing || store.focus == title ? 1 : 0.55)
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        #endif
     }
 
     @ViewBuilder private func content(_ tiddler: Tiddler) -> some View {
@@ -167,14 +214,6 @@ struct Card: View {
                 Text("Fields").font(.callout).foregroundStyle(.secondary)
             }
         }
-        let backlinks = store.backlinks(title)
-        if !backlinks.isEmpty {
-            Section(label: "Linked from", titles: backlinks)
-        }
-        let notes = store.notesLinking(to: [title])
-        if !notes.isEmpty {
-            Section(label: "In Reflect", titles: notes.map(\.title))
-        }
     }
 
     /// A Reflect note or day: its tags, its body, and what links to it.
@@ -196,14 +235,6 @@ struct Card: View {
         } else {
             Text(note.day != nil ? "Nothing written on this day." : "This note is empty.")
                 .foregroundStyle(.secondary)
-        }
-        let tiddlers = store.tiddlersLinking(to: note.names)
-        if !tiddlers.isEmpty {
-            Section(label: "Linked from", titles: tiddlers)
-        }
-        let notes = store.notesLinking(to: note.names).filter { $0.path != note.path }
-        if !notes.isEmpty {
-            Section(label: "In Reflect", titles: notes.map(\.title))
         }
     }
 
@@ -245,7 +276,7 @@ struct Card: View {
                                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Ink.accent.color)
                     }
                     if titles.count > limit {
                         Button(showingAll ? "Show Fewer" : "Show All \(titles.count)") {
@@ -263,21 +294,6 @@ struct Card: View {
     }
 }
 
-struct CardButton: View {
-    let symbol: String
-    let help: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol).frame(width: 26, height: 24).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help(help)
-    }
-}
-
 struct TagPill: View {
     let tag: String
 
@@ -286,8 +302,8 @@ struct TagPill: View {
             .font(.callout.weight(.medium))
             .padding(.horizontal, 9)
             .padding(.vertical, 3)
-            .foregroundStyle(Color.accentColor)
-            .background(Color.accentColor.opacity(0.12), in: Capsule())
+            .foregroundStyle(Ink.accent.color)
+            .background(Ink.accent.color.opacity(0.12), in: Capsule())
     }
 }
 

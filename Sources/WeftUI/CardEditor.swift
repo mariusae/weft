@@ -1,8 +1,8 @@
 import SwiftUI
 import WeftCore
 
-/// A card being edited: its title, tags, body and fields, kept as a draft
-/// in the store until Done, so scrolling it away loses nothing.
+/// A card in Edit, under its header: its tags, body and fields. What is
+/// written is kept in the store, and saved a moment after typing pauses.
 struct CardEditor: View {
     @Environment(WikiStore.self) private var store
     let title: String
@@ -13,88 +13,58 @@ struct CardEditor: View {
     @State private var definingFields = false
     @FocusState private var focus: Field?
 
-    enum Field: Hashable { case title, tag }
+    enum Field: Hashable { case tag }
 
     var body: some View {
         if let draft = store.draft(title) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline) {
-                    if store.isPreviewing(title) {
-                        Text(draft.title).font(.system(size: 22, weight: .semibold))
-                    } else {
-                        TextField("Title", text: binding(\.title))
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 22, weight: .semibold))
-                            .focused($focus, equals: .title)
+                renaming(draft)
+                tags(draft)
+                VStack(alignment: .leading, spacing: 0) {
+                    #if os(macOS)
+                    HStack(spacing: 2) {
+                        FormattingButtons(controller: controller)
+                        Divider().frame(height: 16).padding(.horizontal, 4)
+                        insertQueryButton
+                        Spacer()
                     }
-                    Spacer()
-                    Picker("", selection: Binding(get: { store.isPreviewing(title) },
-                                                  set: { if $0 != store.isPreviewing(title) { store.togglePreview(title) } })) {
-                        Text("Edit").tag(false)
-                        Text("Preview").tag(true)
+                    .foregroundStyle(Ink.secondary.color)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    Divider()
+                    #else
+                    HStack {
+                        Spacer()
+                        insertQueryButton
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .help("Edit or Preview (⌘↩)")
-                    Button("Cancel") { withAnimation { store.cancel(title) } }
-                        .keyboardShortcut(.cancelAction)
-                    Button("Done") { withAnimation { store.save(title) } }
-                        .keyboardShortcut("s")
-                        .buttonStyle(.borderedProminent)
-                        .help("Save (⌘S)")
-                }
-                if store.isPreviewing(title) {
-                    preview(draft)
-                } else {
-                    renaming(draft)
-                    tags(draft)
-                    VStack(alignment: .leading, spacing: 0) {
-                        #if os(macOS)
-                        HStack(spacing: 2) {
-                            FormattingButtons(controller: controller)
-                            Divider().frame(height: 16).padding(.horizontal, 4)
-                            insertQueryButton
-                            Spacer()
-                        }
-                        .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 6)
+                    #endif
+                    TiddlerEditor(text: binding(\.text), controller: controller,
+                                  suggest: { store.linkSuggestions($0) }, exists: { store.exists($0) },
+                                  onEscape: { withAnimation { store.finishEditing(title) } },
+                                  focusOnAppear: store.exists(title))
                         .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        Divider()
-                        #else
-                        HStack {
-                            Spacer()
-                            insertQueryButton
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.top, 6)
-                        #endif
-                        TiddlerEditor(text: binding(\.text), controller: controller,
-                                      titles: { store.titles }, exists: { store.exists($0) },
-                                      focusOnAppear: store.exists(title))
-                            .padding(.horizontal, 6)
-                    }
-                    .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
-                    let specs = store.schema(for: draft)
-                    if !specs.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(specs, id: \.name) { spec in
-                                TypedFieldEditor(spec: spec, value: Binding {
-                                    store.draft(title)?[field: spec.name]?.text ?? ""
-                                } set: { value in
-                                    guard var updated = store.draft(title) else { return }
-                                    updated[field: spec.name] = .text(value)
-                                    store.updateDraft(title, updated)
-                                })
-                            }
-                        }
-                        .font(.callout)
-                    }
-                    schema(draft)
-                    fields(draft, excluding: Set(specs.map(\.name)))
                 }
+                .background(Ink.rule.color.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                let specs = store.schema(for: draft)
+                if !specs.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(specs, id: \.name) { spec in
+                            TypedFieldEditor(spec: spec, value: Binding {
+                                store.draft(title)?[field: spec.name]?.text ?? ""
+                            } set: { value in
+                                guard var updated = store.draft(title) else { return }
+                                updated[field: spec.name] = .text(value)
+                                store.updateDraft(title, updated)
+                            })
+                        }
+                    }
+                    .font(.callout)
+                }
+                schema(draft)
+                fields(draft, excluding: Set(specs.map(\.name)))
             }
-            .onAppear { if !store.exists(title) { focus = .title } }
         }
     }
 
@@ -110,24 +80,6 @@ struct CardEditor: View {
                 }
                 .font(.callout)
             }
-        }
-    }
-
-    /// The draft as its card will show it, saved or not.
-    @ViewBuilder private func preview(_ draft: Tiddler) -> some View {
-        if !draft.tags.isEmpty {
-            FlowLayout(spacing: 6) {
-                ForEach(draft.tags, id: \.self) { TagPill(tag: $0) }
-            }
-        }
-        let specs = store.schema(for: draft)
-        if !specs.isEmpty {
-            PropertiesView(tiddler: draft, specs: specs)
-        }
-        if draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Text("Nothing written yet.").foregroundStyle(.secondary)
-        } else {
-            MarkdownView(blocks: MarkdownBlock.parse(draft.text), card: title, editable: false)
         }
     }
 
@@ -186,8 +138,8 @@ struct CardEditor: View {
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 9)
                     .padding(.vertical, 3)
-                    .foregroundStyle(Color.accentColor)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                    .foregroundStyle(Ink.accent.color)
+                    .background(Ink.accent.color.opacity(0.12), in: Capsule())
                 }
                 TextField("Add tag", text: $newTag)
                     .textFieldStyle(.plain)
@@ -207,10 +159,10 @@ struct CardEditor: View {
                                 .font(.caption)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
-                                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.4)))
+                                .overlay(Capsule().strokeBorder(Ink.accent.color.opacity(0.4)))
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Ink.accent.color)
                     }
                 }
             }

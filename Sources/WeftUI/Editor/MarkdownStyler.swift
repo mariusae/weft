@@ -133,19 +133,11 @@ extension NSAttributedString.Key {
 #endif
 
 enum Palette {
-    #if os(macOS)
-    static var text: NSColor { .labelColor }
-    static var dim: NSColor { .secondaryLabelColor }
-    static var faint: NSColor { .tertiaryLabelColor }
-    static var accent: NSColor { .controlAccentColor }
-    static var codeBackground: NSColor { NSColor.secondaryLabelColor.withAlphaComponent(0.1) }
-    #else
-    static var text: UIColor { .label }
-    static var dim: UIColor { .secondaryLabel }
-    static var faint: UIColor { .tertiaryLabel }
-    static var accent: UIColor { .tintColor }
-    static var codeBackground: UIColor { UIColor.secondaryLabel.withAlphaComponent(0.1) }
-    #endif
+    static var text: PlatformColor { Ink.text.platform }
+    static var dim: PlatformColor { Ink.secondary.platform }
+    static var faint: PlatformColor { Ink.faint.platform }
+    static var accent: PlatformColor { Ink.accent.platform }
+    static var codeBackground: PlatformColor { Ink(light: 0x2b2724, dark: 0xece6dc, alpha: 0.06).platform }
 }
 
 enum Fonts {

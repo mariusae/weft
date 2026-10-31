@@ -38,7 +38,14 @@ fi
 touch "$app"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" >/dev/null 2>&1 || true
 
-codesign --force --sign - "$app" >/dev/null 2>&1
+# Signed with an Apple Development identity when there is one, so the
+# keychain knows each build for the same app and an Always Allow given to
+# one — for the GitHub sign-in — holds for the next; else ad hoc. Given at
+# most a minute, should signing wait on a question about the key.
+identity=$(security find-identity -v -p codesigning 2>/dev/null | awk '/Apple Development/ { print $2; exit }')
+if [ -z "$identity" ] || ! perl -e 'alarm 60; exec @ARGV' codesign --force --sign "$identity" "$app" >/dev/null 2>&1; then
+  codesign --force --sign - "$app" >/dev/null 2>&1
+fi
 echo "built $app"
 
 if [ "$1" = run ]; then

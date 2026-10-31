@@ -28,11 +28,13 @@ public enum WikiFolder {
 
     /// The path a new tiddler of this title would take: `wiki/<slug>.md`, or
     /// the first of `-2`, `-3`, … that no file has and `taken` does not hold.
-    public static func path(for title: String, in root: URL, taken: Set<String> = []) -> String {
+    public static func path(for title: String, in root: URL, taken: Set<String> = [], ignoring own: String? = nil) -> String {
         let slug = Assets.slug(title)
         let manager = FileManager.default
         for attempt in 1... {
             let path = "\(directory)/\(attempt == 1 ? slug : "\(slug)-\(attempt)").md"
+            // `own`: the file being moved, free to be taken again.
+            if path == own { return path }
             if !taken.contains(path), !manager.fileExists(atPath: root.appendingPathComponent(path).path) { return path }
         }
         fatalError("unreachable")

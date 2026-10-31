@@ -30,13 +30,19 @@ public final class WikiStore {
     /// Whether renaming a card's tiddler updates what refers to it; yes
     /// unless turned off in the editor.
     public var relinkOnRename: [String: Bool] = [:]
-    /// Cards being edited that show their draft as it will read, for now.
-    public private(set) var previewing: Set<String> = []
+    /// Saves waiting for typing to pause, by card.
+    @ObservationIgnored private var autosaves: [String: Task<Void, Never>] = [:]
+    /// Tiddlers whose file was made while they were edited.
+    @ObservationIgnored private var createdWhileEditing: Set<String> = []
+    /// The tags a new tiddler was made with, which alone do not make it worth a file.
+    @ObservationIgnored private var schemaTags: [String: [String]] = [:]
     /// Cards showing only their titles.
     public var folded: Set<String> = []
 
     public var search = ""
     public var searchFocusRequest = 0
+    /// Whether ⌘O's Quick Open is showing.
+    public var quickOpenShown = false
     public var error: String?
     /// How a graph is chosen here: a folder on the Mac, a GitHub repository
     /// on the phone. Set by the app.
@@ -211,6 +217,12 @@ public final class WikiStore {
         return Array(Set(names.flatMap { wiki?.backlinks(to: $0) ?? [] })).sorted()
     }
 
+    /// Reflect notes by a name, as Reflect's chooser finds them.
+    func noteSearch(_ query: String, limit: Int) -> [ReflectNotes.Note] {
+        _ = revision
+        return notes?.search(query, limit: limit) ?? []
+    }
+
     /// Reflect notes matching what is typed in search.
     public func noteResults() -> [ReflectNotes.Note] {
         _ = revision
@@ -335,40 +347,32 @@ public final class WikiStore {
         if focus != title { focus = title }
     }
 
-    /// ⌘↩: the selected card from reading to editing, and while it is
-    /// edited, between its editor and a preview of what it will say.
+    /// ⌘↩: the selected card between editing and reading.
     public func toggleEditing() {
         guard let title = focus, river.contains(title) else { return }
         if isEditing(title) {
-            togglePreview(title)
+            finishEditing(title)
         } else if note(title) == nil {
             edit(title)
         }
     }
 
-    public func isPreviewing(_ title: String) -> Bool { previewing.contains(title) }
-
-    public func togglePreview(_ title: String) {
-        guard isEditing(title) else { return }
-        if previewing.remove(title) == nil { previewing.insert(title) }
-    }
-
     public func close(_ title: String) {
+        if isEditing(title) { finishEditing(title, closing: true) }
         river.removeAll { $0 == title }
         drafts[title] = nil
         editing.remove(title)
-        previewing.remove(title)
         draftBases[title] = nil
         folded.remove(title)
         saveRiver()
     }
 
     public func closeOthers(_ title: String) {
-        for other in river where other != title && drafts[other] == nil { close(other) }
+        for other in river where other != title { close(other) }
     }
 
     public func closeAll() {
-        for title in river where drafts[title] == nil { close(title) }
+        for title in river { close(title) }
     }
 
     public func toggleFold(_ title: String) {
@@ -377,59 +381,77 @@ public final class WikiStore {
 
     // MARK: Editing
 
+    /// A card is in Edit or in Preview, and that is all: what is written in
+    /// Edit is saved a moment after typing pauses, and when the card goes
+    /// back to Preview — where a new title, too, takes effect.
     public func isEditing(_ title: String) -> Bool { editing.contains(title) }
 
     public func draft(_ title: String) -> Tiddler? { drafts[title] }
 
     public func edit(_ title: String) {
+        guard !isEditing(title) else { return open(title) }
         drafts[title] = tiddler(title) ?? Tiddler(title: title)
         editing.insert(title)
-        draftBases[title] = tiddler(title)
+        draftBases[title] = wiki?[title]
         open(title)
     }
 
     public func updateDraft(_ title: String, _ tiddler: Tiddler) {
         drafts[title] = tiddler
+        autosaves[title]?.cancel()
+        autosaves[title] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.8))
+            guard !Task.isCancelled else { return }
+            self?.autosave(title)
+        }
     }
 
-    public func cancel(_ title: String) {
-        drafts[title] = nil
-        editing.remove(title)
-        previewing.remove(title)
-        draftBases[title] = nil
-        // A new tiddler never saved goes with its draft.
-        if !exists(title) { close(title) }
+    /// Writes what every card being edited says, now: before the app goes
+    /// to the background, or quits.
+    public func saveEditing() {
+        for title in editing { autosave(title) }
     }
 
-    /// Saves a card's draft: a new tiddler gets an id and its creation time,
-    /// every save the time it was modified. Renaming keeps the tiddler's
-    /// file, and its card where it was.
-    public func save(_ title: String) {
+    /// A new tiddler with nothing in it yet, which is not worth a file.
+    private func isUntouched(_ title: String, _ draft: Tiddler) -> Bool {
+        wiki?[title] == nil && draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && draft.fields.allSatisfy { $0.value.text?.isEmpty ?? ($0.value.list?.isEmpty ?? true) }
+            && (draft.tags.isEmpty || draft.tags == schemaTags[title])
+    }
+
+    /// Writes a card's draft under the title it is open under: a title
+    /// being typed takes effect only when the card goes to Preview.
+    private func autosave(_ title: String) {
+        autosaves[title]?.cancel()
+        autosaves[title] = nil
+        guard var tiddler = drafts[title], !isUntouched(title, tiddler) else { return }
+        tiddler.title = title
+        guard tiddler != wiki?[title] || wiki?[title] == nil else { return }
+        if write(tiddler, from: title) { draftBases[title] = wiki?[title] }
+    }
+
+    /// Back to Preview: the draft written, a new title taken — with what
+    /// referred to it updated, unless asked not to — and the card read again.
+    public func finishEditing(_ title: String, closing: Bool = false) {
+        autosaves[title]?.cancel()
+        autosaves[title] = nil
         guard let wiki, var tiddler = drafts[title] else { return }
-        // Changed by a sync while it was being written: the two put together.
-        if let base = draftBases[title], let current = wiki[title], current != base, ShadowTiddlers.all[title] != base {
-            tiddler = TiddlerMerge.merge(draft: tiddler, base: base, current: current)
+        defer { revision += 1 }
+        if isUntouched(title, tiddler) {
+            // Made and left empty: it goes, card and all.
+            drafts[title] = nil
+            editing.remove(title)
+            draftBases[title] = nil
+            if !closing, !exists(title) { close(title) }
+            return
         }
         tiddler.title = tiddler.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !tiddler.title.isEmpty else {
-            error = "A tiddler needs a title."
-            return
-        }
+        if tiddler.title.isEmpty { tiddler.title = title }
         if tiddler.title != title, wiki[tiddler.title] != nil || ShadowTiddlers.all[tiddler.title] != nil {
-            error = "There is already a tiddler called “\(tiddler.title)”."
-            return
+            error = "There is already a tiddler called “\(tiddler.title)”; this one keeps its title."
+            tiddler.title = title
         }
-        let now = Date()
-        if tiddler.id == nil { tiddler.id = Tiddler.newID() }
-        if tiddler.created == nil { tiddler.created = now }
-        tiddler.modified = now
-        do {
-            try wiki.save(tiddler, replacing: wiki[title] != nil ? title : nil)
-        } catch {
-            self.error = "Couldn't save “\(tiddler.title)”: \(error.localizedDescription)"
-            return
-        }
-        // Renamed: what named it names it still, unless asked not to.
+        guard write(tiddler, from: title) else { return }
         if tiddler.title != title, wiki[title] == nil, relinkOnRename[title] ?? true {
             do {
                 try wiki.relink(from: title, to: tiddler.title)
@@ -438,17 +460,45 @@ public final class WikiStore {
             }
         }
         relinkOnRename[title] = nil
-        previewing.remove(title)
         drafts[title] = nil
         editing.remove(title)
         draftBases[title] = nil
-        sync?.noteChanged()
+        createdWhileEditing.remove(title)
         if tiddler.title != title, let index = river.firstIndex(of: title) {
             river[index] = tiddler.title
             if folded.remove(title) != nil { folded.insert(tiddler.title) }
+            if focus == title { focus = tiddler.title }
             saveRiver()
         }
+    }
+
+    /// Saves a tiddler open under `title`: a new one gets an id and its
+    /// creation time, every save the time it was modified; one a sync changed
+    /// meanwhile is put together with it. Renamed, it keeps its file —
+    /// unless the file was made while it was edited, and named for the title
+    /// it had then. True when it was written.
+    @discardableResult
+    private func write(_ draft: Tiddler, from title: String) -> Bool {
+        guard let wiki else { return false }
+        var tiddler = draft
+        if let base = draftBases[title], let current = wiki[title], current != base, ShadowTiddlers.all[title] != base {
+            tiddler = TiddlerMerge.merge(draft: tiddler, base: base, current: current)
+        }
+        let now = Date()
+        if tiddler.id == nil { tiddler.id = Tiddler.newID() }
+        if tiddler.created == nil { tiddler.created = now }
+        tiddler.modified = now
+        let existed = wiki[title] != nil
+        do {
+            try wiki.save(tiddler, replacing: existed ? title : nil, movingFile: createdWhileEditing.contains(title))
+        } catch {
+            self.error = "Couldn't save “\(tiddler.title)”: \(error.localizedDescription)"
+            return false
+        }
+        if !existed { createdWhileEditing.insert(title) }
         revision += 1
+        sync?.noteChanged()
+        return true
     }
 
     /// Changes one of a tiddler's query blocks, from its card, and saves it.
@@ -497,8 +547,140 @@ public final class WikiStore {
         }
         var tiddler = Tiddler(title: title, tags: tag.map { [$0] } ?? [])
         for spec in schema(for: tiddler) { tiddler[field: spec.name] = .text("") }
+        schemaTags[title] = tiddler.tags
         drafts[title] = tiddler
         editing.insert(title)
         open(title)
+    }
+}
+
+/// Somewhere a link, a backlink or Quick Open leads: a tiddler, a Reflect
+/// note or day, or a tiddler not written yet.
+public struct LinkTarget: Hashable, Sendable {
+    /// What a link to it says, and what its card is open under.
+    public var title: String
+    /// What it is shown as: a day's date in words, a note's title.
+    public var shown: String
+    public var kind: Kind
+
+    public enum Kind: Sendable {
+        case tiddler, note, day, new
+
+        public var symbol: String {
+            switch self {
+            case .tiddler: "doc.plaintext"
+            case .note: "doc.text"
+            case .day: "calendar"
+            case .new: "plus.circle"
+            }
+        }
+
+        public var label: String {
+            switch self {
+            case .tiddler: "Tiddler"
+            case .note: "Reflect note"
+            case .day: "Day"
+            case .new: "New tiddler"
+            }
+        }
+    }
+}
+
+extension WikiStore {
+    /// What a title leads to, as a link to it would.
+    public func target(_ title: String) -> LinkTarget {
+        if tiddler(title) != nil { return LinkTarget(title: title, shown: title, kind: .tiddler) }
+        if let note = note(title) { return LinkTarget(title: note.title, shown: note.displayTitle, kind: note.day != nil ? .day : .note) }
+        return LinkTarget(title: title, shown: title, kind: .new)
+    }
+
+    /// What links to a card: tiddlers, then Reflect notes and days, newest first.
+    public func backlinks(of card: String) -> [LinkTarget] {
+        let names = note(card)?.names ?? [card]
+        let tiddlers = tiddlersLinking(to: names).filter { $0 != card }.map { LinkTarget(title: $0, shown: $0, kind: .tiddler) }
+        let notes = notesLinking(to: names).filter { $0.title != card }
+            .map { LinkTarget(title: $0.title, shown: $0.displayTitle, kind: $0.day != nil ? .day : .note) }
+        return tiddlers + notes
+    }
+
+    /// The words around a source's link to a card, for its summary.
+    public func context(of source: LinkTarget, linkingTo card: String) -> String? {
+        let text: String?
+        switch source.kind {
+        case .tiddler: text = tiddler(source.title)?.text
+        case .note, .day: text = note(source.title).flatMap { body(of: $0) }
+        case .new: text = nil
+        }
+        guard let text else { return nil }
+        let names = (note(card)?.names ?? [card]).map { "[[" + $0.lowercased() }
+        guard let line = text.components(separatedBy: "\n").first(where: { line in
+            let lower = line.lowercased()
+            return names.contains { lower.contains($0 + "]]") || lower.contains($0 + "|") }
+        }) else { return nil }
+        return Self.plain(line)
+    }
+
+    /// A line of Markdown as words: links as what they show, markup gone.
+    static func plain(_ line: String) -> String {
+        var text = line.trimmingCharacters(in: .whitespaces)
+        for prefix in ["- [ ] ", "- [x] ", "+ [ ] ", "+ [x] ", "- ", "+ ", "* ", "> "] where text.hasPrefix(prefix) {
+            text = String(text.dropFirst(prefix.count))
+        }
+        text = text.replacingOccurrences(of: #"!?\[\[([^\]|]+)\|([^\]]+)\]\]"#, with: "$2", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"!?\[\[([^\]]+)\]\]"#, with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\[([^\]]+)\]\([^)]+\)"#, with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\*\*|__|`|~~|^#+ "#, with: "", options: .regularExpression)
+        return text.count > 180 ? String(text.prefix(177)) + "…" : text
+    }
+
+    /// Titles for a `[[` being typed: tiddlers, then Reflect notes, a day
+    /// when it is one — and, when nothing is called that, a new tiddler.
+    public func linkSuggestions(_ partial: String, limit: Int = 8) -> [LinkTarget] {
+        let query = partial.trimmingCharacters(in: .whitespaces)
+        var found = completions(for: query, among: titles, limit: limit).map { LinkTarget(title: $0, shown: $0, kind: .tiddler) }
+        if !query.isEmpty {
+            for note in noteSearch(query, limit: limit) where !found.contains(where: { $0.title == note.title }) {
+                found.append(LinkTarget(title: note.title, shown: note.displayTitle, kind: note.day != nil ? .day : .note))
+            }
+        }
+        if let day = dayTarget(query), !found.contains(day) { found.insert(day, at: 0) }
+        found = Array(found.prefix(limit))
+        if !query.isEmpty, !found.contains(where: { $0.title.caseInsensitiveCompare(query) == .orderedSame }) {
+            found.append(LinkTarget(title: query, shown: query, kind: .new))
+        }
+        return found
+    }
+
+    /// Quick Open: what is typed, found among tiddlers by title then by
+    /// what they say, Reflect notes, and days — or, with nothing typed,
+    /// today and the tiddlers written last.
+    public func quickOpen(_ query: String, limit: Int = 14) -> [LinkTarget] {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            return [dayTarget("today")!] + recent().prefix(limit - 1).map { LinkTarget(title: $0, shown: $0, kind: .tiddler) }
+        }
+        let previous = search
+        search = query
+        var found = searchResults(limit: limit).map { LinkTarget(title: $0, shown: $0, kind: .tiddler) }
+        search = previous
+        for note in noteSearch(query, limit: limit) where !found.contains(where: { $0.title == note.title }) {
+            found.append(LinkTarget(title: note.title, shown: note.displayTitle, kind: note.day != nil ? .day : .note))
+        }
+        if let day = dayTarget(query), !found.contains(day) { found.insert(day, at: 0) }
+        return Array(found.prefix(limit))
+    }
+
+    /// A day, by its date or as today, yesterday or tomorrow.
+    func dayTarget(_ text: String) -> LinkTarget? {
+        let words = ["today": 0, "yesterday": -1, "tomorrow": 1]
+        let title: String
+        if let offset = words[text.lowercased()] {
+            title = Day.today.adding(offset).description
+        } else if Day(text) != nil {
+            title = text
+        } else {
+            return nil
+        }
+        return note(title).map { LinkTarget(title: $0.title, shown: $0.displayTitle, kind: .day) }
     }
 }

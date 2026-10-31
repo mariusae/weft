@@ -43,16 +43,20 @@ struct WeftApp: App {
                 }
             }
             .environment(store)
-            .environment(GitHubGraph.account)
+            .withGitHubAccount(Snapshot.usesAccount)
             .onAppear {
                 store.openInitialGraph()
                 Snapshot.takeIfAsked(store: store)
             }
             // Told by the relay of another device's push: sync at once.
             .onChange(of: store.root, initial: true) { followRelay() }
-            .onChange(of: GitHubGraph.account.isSignedIn) { followRelay() }
+            .onChange(of: Snapshot.usesAccount && GitHubGraph.account.isSignedIn) { followRelay() }
             .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
                 relay.reconnect()
+            }
+            // Quitting: what is being edited is written first.
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                store.saveEditing()
             }
         }
         .defaultSize(width: 1240, height: 860)
@@ -61,8 +65,11 @@ struct WeftApp: App {
                 Button("New Tiddler") { store.newTiddler() }
                     .keyboardShortcut("n")
                     .disabled(store.root == nil)
-                Button("Open Folder…") { store.chooseGraph() }
+                Button("Quick Open…") { store.quickOpenShown = true }
                     .keyboardShortcut("o")
+                    .disabled(store.root == nil)
+                Button("Open Folder…") { store.chooseGraph() }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
                 ConnectMenuItem()
             }
             CommandGroup(after: .textEditing) {
@@ -86,7 +93,7 @@ struct WeftApp: App {
         Window("GitHub", id: "github") {
             GitHubWindow()
                 .environment(store)
-                .environment(GitHubGraph.account)
+                .withGitHubAccount(Snapshot.usesAccount)
         }
         .defaultSize(width: 480, height: 560)
     }
@@ -110,6 +117,15 @@ private struct GitHubWindow: View {
                 .multilineTextAlignment(.center)
                 .padding(14)
         }
+    }
+}
+
+extension View {
+    /// The GitHub account, for the views that sign in — but not in a
+    /// snapshot that does not show them: the account reads the keychain,
+    /// which may ask the person at the keyboard.
+    @ViewBuilder func withGitHubAccount(_ used: Bool) -> some View {
+        if used { environment(GitHubGraph.account) } else { self }
     }
 }
 

@@ -49,13 +49,26 @@ public final class Wiki {
     /// Writes a tiddler to its file — a new one to a new file — changing only
     /// what changed in it.
     @discardableResult
-    public func save(_ tiddler: Tiddler, replacing oldTitle: String? = nil) throws -> Entry {
+    public func save(_ tiddler: Tiddler, replacing oldTitle: String? = nil, movingFile: Bool = false) throws -> Entry {
         let previous = entries[oldTitle ?? tiddler.title]
-        let path = previous?.path ?? WikiFolder.path(for: tiddler.title, in: root, taken: Set(entries.values.map(\.path)))
+        // Renamed, a tiddler keeps its file — unless asked to take a file
+        // named for its new title, as one just made, still named for the
+        // title it was made with, is.
+        let moving = movingFile && previous != nil && previous?.tiddler.title != tiddler.title
+        let path: String
+        if let previous, !moving {
+            path = previous.path
+        } else {
+            let taken = Set(entries.values.map(\.path)).subtracting(previous.map { [$0.path] } ?? [])
+            path = WikiFolder.path(for: tiddler.title, in: root, taken: taken, ignoring: previous?.path)
+        }
         let source = TiddlerFile.write(tiddler, over: previous?.source, fallbackTitle: WikiFolder.fallbackTitle(for: path))
-        if source != previous?.source {
+        if source != previous?.source || path != previous?.path {
             try WikiFolder.prepare(in: root)
             try Data(source.utf8).write(to: root.appendingPathComponent(path), options: .atomic)
+            if moving, let old = previous?.path, old != path {
+                try? FileManager.default.removeItem(at: root.appendingPathComponent(old))
+            }
         }
         if let previous {
             unindex(previous.tiddler)
