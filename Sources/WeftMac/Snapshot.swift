@@ -28,6 +28,10 @@ enum Snapshot {
     private static func take(store: WikiStore) {
         let environment = ProcessInfo.processInfo.environment
         guard let output = environment["WEFT_SNAPSHOT"] else { return }
+        // `WEFT_WIDTH`: the window this wide, as a narrow window or a phone is.
+        if let width = environment["WEFT_WIDTH"].flatMap(Double.init), let window = NSApp.windows.first(where: { $0.isVisible }) {
+            window.setContentSize(NSSize(width: width, height: window.contentLayoutRect.height))
+        }
         let titles = environment["WEFT_OPEN"]?.split(separator: "|").map(String.init) ?? []
         // Just the cards named, whatever was open last.
         if !titles.isEmpty { store.closeAll() }

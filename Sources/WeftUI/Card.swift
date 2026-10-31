@@ -12,6 +12,8 @@ struct Card: View {
     /// How many pages refer to it, counted when its deletion is asked for —
     /// not each time the card is drawn.
     @State private var referring = 0
+    /// How wide the controls over the title are.
+    @State private var controlsWidth: CGFloat = 0
     @Environment(\.horizontalSizeClass) private var sizeClass
     private var compact: Bool { sizeClass == .compact }
 
@@ -76,6 +78,8 @@ struct Card: View {
     }
 
     /// The title — typed in, while editing — and the card's controls.
+    /// The title on one line — running on under the controls, which float
+    /// over it on glass, and cut off at the card's edge — and the controls.
     private var header: some View {
         let kind = store.kind(title)
         let editing = store.isEditing(title)
@@ -95,11 +99,16 @@ struct Card: View {
                 })
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
+                .lineLimit(1)
+                // Typed in, clear of the controls.
+                .padding(.trailing, controlsWidth + 8)
             } else {
                 Text(store.shownTitle(title))
                     .font(.system(size: 22, weight: .semibold))
                     .italic(!store.exists(title))
                     .foregroundStyle(store.exists(title) ? Ink.text.color : Ink.secondary.color)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .textSelection(.enabled)
                     .onTapGesture(count: 2) { store.edit(title) }
             }
@@ -110,10 +119,17 @@ struct Card: View {
                     .padding(.vertical, 3)
                     .foregroundStyle(Ink.accent.color)
                     .background(Ink.accent.color.opacity(0.1), in: Capsule())
+                    .fixedSize()
                     .help("A wiki page: canonical, kept up")
             }
-            Spacer(minLength: 8)
+        }
+        // As wide as the card gives, however long the title: the rest of it
+        // runs on under the controls and is cut off at the card's edge.
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 30, alignment: .leading)
+        .clipped()
+        .overlay(alignment: .trailing) {
             controls(editing: editing)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { controlsWidth = $0 }
         }
     }
 
@@ -130,6 +146,8 @@ struct Card: View {
                 .labelsHidden()
                 .fixedSize()
                 .controlSize(.small)
+                .padding(3)
+                .glassEffect(.regular.interactive(), in: .capsule)
                 .help("Edit or Preview (⌘↩)")
             } else if editing {
                 // Editing on the phone: Done, back to what it says.

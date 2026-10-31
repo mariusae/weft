@@ -383,44 +383,63 @@ private struct RiverRail: View {
     @Environment(WikiStore.self) private var store
     let inView: String?
     let go: (String) -> Void
-    @State private var hovering = false
+    /// `WEFT_RAIL=<title>`, for a snapshot: shown open, the pointer on that row.
+    @State private var hovering = ProcessInfo.processInfo.environment["WEFT_RAIL"] != nil
+    /// The row under the pointer, while the titles show.
+    @State private var pointed: String? = ProcessInfo.processInfo.environment["WEFT_RAIL"]
+    /// How tall its rows are.
+    @State private var height: CGFloat = 0
 
     var body: some View {
+        // As tall as its rows, scrolling only when they would not fit.
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .trailing, spacing: hovering ? 1 : 6) {
-                ForEach(store.river, id: \.self) { title in
-                    let current = title == inView
-                    Button { go(title) } label: {
-                        HStack(spacing: 9) {
-                            if hovering {
-                                Text(store.shownTitle(title))
-                                    .font(.callout.weight(current ? .semibold : .regular))
-                                    .foregroundStyle(current ? Ink.text.color : Ink.secondary.color)
-                                    .lineLimit(1)
-                                    .frame(maxWidth: 260, alignment: .trailing)
-                            }
-                            Capsule()
-                                .fill(current ? Ink.accent.color : Ink.faint.color.opacity(0.7))
-                                .frame(width: current ? 18 : 11, height: 3)
-                        }
-                        .padding(.vertical, hovering ? 4 : 0)
-                        .padding(.horizontal, hovering ? 6 : 0)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(hovering ? "" : store.shownTitle(title))
-                }
-            }
-            .padding(hovering ? 10 : 8)
+            rows.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
+        .scrollBounceBehavior(.basedOnSize)
         .fixedSize(horizontal: true, vertical: false)
-        .frame(maxHeight: 520)
+        .frame(height: min(max(height, 1), 520))
         .background {
             if hovering { RoundedRectangle(cornerRadius: 14).fill(.regularMaterial).shadow(color: .black.opacity(0.12), radius: 12, y: 4) }
         }
         .onHover { hovering = $0 }
         .animation(.snappy(duration: 0.18), value: hovering)
         .padding(.trailing, 8)
+    }
+
+    private var rows: some View {
+        VStack(alignment: .trailing, spacing: hovering ? 1 : 6) {
+            ForEach(store.river, id: \.self) { title in
+                let current = title == inView
+                let lit = hovering && pointed == title
+                Button { go(title) } label: {
+                    HStack(spacing: 9) {
+                        if hovering {
+                            Text(store.shownTitle(title))
+                                .font(.callout.weight(current ? .semibold : .regular))
+                                .foregroundStyle(current || lit ? Ink.text.color : Ink.secondary.color)
+                                .lineLimit(1)
+                                .frame(maxWidth: 260, alignment: .trailing)
+                        }
+                        Capsule()
+                            .fill(current ? Ink.accent.color : lit ? Ink.secondary.color : Ink.faint.color.opacity(0.7))
+                            .frame(width: current || lit ? 18 : 11, height: 3)
+                    }
+                    .padding(.vertical, hovering ? 5 : 0)
+                    .padding(.horizontal, hovering ? 8 : 0)
+                    .background {
+                        if lit { RoundedRectangle(cornerRadius: 7).fill(Ink.accent.color.opacity(0.12)) }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { inside in
+                    if inside { pointed = title } else if pointed == title { pointed = nil }
+                }
+                .help(hovering ? "" : store.shownTitle(title))
+            }
+        }
+        .padding(hovering ? 8 : 8)
+        .animation(.easeOut(duration: 0.1), value: pointed)
     }
 }
 #endif
