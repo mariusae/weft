@@ -2,7 +2,8 @@ import CryptoKit
 import Foundation
 import ReflectCore
 
-/// A TiddlyWiki — the single HTML file — brought into a graph's `wiki/`.
+/// A TiddlyWiki — the single HTML file — brought into a graph's `notes/`,
+/// as wiki pages.
 ///
 /// Its tiddlers are read from the JSON it keeps them in; system tiddlers
 /// (`$:/…`) and drafts are left behind. WikiText becomes Markdown, pictures
@@ -65,7 +66,6 @@ public enum TiddlyWikiImport {
 
         let wiki = Wiki(root: root)
         try wiki.load()
-        try WikiFolder.prepare(in: root)
 
         // Pictures and other files first, so links to them can show them.
         var assets: [String: String] = [:]
@@ -90,6 +90,8 @@ public enum TiddlyWikiImport {
                                   id: wiki[title]?.id ?? ulid(at: created ?? modified ?? Date(timeIntervalSince1970: 0), seed: title),
                                   tags: stringArray(fields["tags"] ?? ""),
                                   created: created, modified: modified, text: text)
+            // What a TiddlyWiki holds is a wiki's: canonical, kept up.
+            tiddler.isWiki = true
             for name in fields.keys.sorted() where !leftBehind.contains(name) {
                 let value = fields[name]!
                 tiddler.fields.append(Tiddler.Field(name, listFields.contains(name) ? .list(stringArray(value)) : .text(value)))

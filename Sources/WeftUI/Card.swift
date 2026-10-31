@@ -21,8 +21,8 @@ struct Card: View {
                     ConflictView(title: title)
                 } else if let tiddler = store.tiddler(title) {
                     content(tiddler)
-                } else if let note = store.note(title) {
-                    noteContent(note)
+                } else if store.kind(title) == .day {
+                    Text("Nothing written on this day yet.").foregroundStyle(Ink.secondary.color)
                 } else {
                     missing
                 }
@@ -61,13 +61,13 @@ struct Card: View {
 
     /// The title — typed in, while editing — and the card's controls.
     private var header: some View {
-        let note = store.note(title)
+        let kind = store.kind(title)
         let editing = store.isEditing(title)
         return HStack(alignment: .center, spacing: 10) {
-            if let note {
-                Image(systemName: note.day != nil ? "calendar" : "doc.text")
+            if kind == .day {
+                Image(systemName: "calendar")
                     .foregroundStyle(Ink.secondary.color)
-                    .help(note.day != nil ? "A day in Reflect" : "A note in Reflect")
+                    .help("A day")
             }
             if editing {
                 TextField("Title", text: Binding {
@@ -80,42 +80,53 @@ struct Card: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
             } else {
-                Text(note?.displayTitle ?? title)
+                Text(store.shownTitle(title))
                     .font(.system(size: 22, weight: .semibold))
                     .italic(!store.exists(title))
                     .foregroundStyle(store.exists(title) ? Ink.text.color : Ink.secondary.color)
                     .textSelection(.enabled)
-                    .onTapGesture(count: 2) { if note == nil { store.edit(title) } }
+                    .onTapGesture(count: 2) { store.edit(title) }
+            }
+            if kind == .wiki || (editing && store.draft(title)?.isWiki == true) {
+                Label("Wiki", systemImage: "book.closed")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .foregroundStyle(Ink.accent.color)
+                    .background(Ink.accent.color.opacity(0.1), in: Capsule())
+                    .help("A wiki page: canonical, kept up")
             }
             Spacer(minLength: 8)
-            controls(note: note, editing: editing)
+            controls(editing: editing)
         }
     }
 
-    /// Edit or Preview, for a tiddler; and, in a glass capsule, the card's
-    /// menu and its close button.
-    private func controls(note: ReflectNotes.Note?, editing: Bool) -> some View {
+    /// Edit or Preview; and, in a glass capsule, the card's menu and its
+    /// close button.
+    private func controls(editing: Bool) -> some View {
         HStack(spacing: 8) {
-            if note == nil {
-                Picker("", selection: Binding(get: { editing }, set: { $0 ? store.edit(title) : store.finishEditing(title) })) {
-                    Text("Edit").tag(true)
-                    Text("Preview").tag(false)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .controlSize(.small)
-                .help("Edit or Preview (⌘↩)")
+            Picker("", selection: Binding(get: { editing }, set: { $0 ? store.edit(title) : store.finishEditing(title) })) {
+                Text("Edit").tag(true)
+                Text("Preview").tag(false)
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .controlSize(.small)
+            .help("Edit or Preview (⌘↩)")
             HStack(spacing: 0) {
                 Menu {
                     Button(store.folded.contains(title) ? "Unfold" : "Fold") {
                         withAnimation(.snappy(duration: 0.2)) { store.toggleFold(title) }
                     }
                     Button("Close Other Cards") { withAnimation { store.closeOthers(title) } }
+                    if store.tiddler(title) != nil || editing {
+                        let wiki = editing ? store.draft(title)?.isWiki == true : store.isWiki(title)
+                        Button(wiki ? "Remove from Wiki" : "Add to Wiki") { store.setWiki(title, !wiki) }
+                    }
                     Divider()
                     Button("Copy Link") { Platform.copy("[[\(title)]]") }
-                    if Platform.canReveal, let path = store.path(of: title) ?? note.flatMap({ store.file($0.path) }) {
+                    if Platform.canReveal, let path = store.path(of: title) {
                         Button("Show in Finder") { Platform.reveal(path) }
                     }
                     if store.tiddler(title) != nil, !store.isShadow(title) {
@@ -213,28 +224,6 @@ struct Card: View {
             } label: {
                 Text("Fields").font(.callout).foregroundStyle(.secondary)
             }
-        }
-    }
-
-    /// A Reflect note or day: its tags, its body, and what links to it.
-    @ViewBuilder private func noteContent(_ note: ReflectNotes.Note) -> some View {
-        if !note.tags.isEmpty {
-            FlowLayout(spacing: 6) {
-                ForEach(note.tags, id: \.self) { tag in
-                    Text("#" + tag)
-                        .font(.callout)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .foregroundStyle(.secondary)
-                        .background(.quaternary.opacity(0.5), in: Capsule())
-                }
-            }
-        }
-        if let body = store.body(of: note), !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            MarkdownView(blocks: MarkdownBlock.parse(body), card: title, editable: false)
-        } else {
-            Text(note.day != nil ? "Nothing written on this day." : "This note is empty.")
-                .foregroundStyle(.secondary)
         }
     }
 

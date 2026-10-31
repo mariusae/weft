@@ -47,7 +47,7 @@ case "show":
     guard let entry = wiki.entries[arguments[2]] else { fail("No tiddler called \(arguments[2])") }
     print("\(entry.path)\n")
     print(entry.source)
-    let backlinks = wiki.backlinks(to: entry.tiddler.title)
+    let backlinks = wiki.backlinks(to: entry.page.title)
     if !backlinks.isEmpty { print("Linked from: \(backlinks.joined(separator: ", "))") }
 default:
     fail(usage)

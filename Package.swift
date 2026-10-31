@@ -16,15 +16,18 @@ let package = Package(
         .package(path: "../reflect-mac"),
     ],
     targets: [
-        // Tiddlers, their files, the wiki they make, and TiddlyWiki's import.
-        // No AppKit or UIKit.
-        .target(name: "WeftCore", dependencies: [.product(name: "ReflectCore", package: "reflect-mac")]),
+        // What is Weft's own below the UI — TiddlyWiki's import — over
+        // GraphKit, the graph Prism and Weft share (pages, their files, the
+        // index, queries, sync). No AppKit or UIKit.
+        .target(name: "WeftCore", dependencies: [.product(name: "GraphKit", package: "reflect-mac"),
+                                                 .product(name: "ReflectCore", package: "reflect-mac")]),
         // The command line: importing a TiddlyWiki into a graph, and looking
         // at what is there.
         .executableTarget(name: "weft", dependencies: ["WeftCore"]),
         // The river of cards, its sidebar, cards and editor: the Mac's, the
         // iPad's and the iPhone's.
-        .target(name: "WeftUI", dependencies: ["WeftCore", .product(name: "ReflectCore", package: "reflect-mac")]),
+        .target(name: "WeftUI", dependencies: ["WeftCore", .product(name: "ReflectCore", package: "reflect-mac"),
+                                             .product(name: "ReflectUI", package: "reflect-mac", condition: .when(platforms: [.macOS]))]),
         // A graph kept in a GitHub repository, synced through libgit2 with
         // the account signed in with: the phone's.
         .target(name: "WeftGitHub", dependencies: ["WeftCore", .product(name: "ReflectGit2", package: "reflect-mac")]),

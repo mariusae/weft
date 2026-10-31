@@ -10,9 +10,9 @@ public final class WikiStore {
     public init() {}
 
     public private(set) var root: URL?
+    /// Every page of the graph — its days, weeks and notes — as GraphKit
+    /// reads them, Prism's way.
     private var wiki: Wiki?
-    /// The graph's Reflect notes and days, read once the graph is open.
-    private var notes: ReflectNotes?
     /// Bumped whenever the wiki changes, so views reading it are redrawn.
     public private(set) var revision = 0
 
@@ -78,32 +78,66 @@ public final class WikiStore {
         open(graph: url)
     }
 
+    /// Opens a graph: the window shows it at once, and its pages once they
+    /// are read — off the main thread, so nothing waits on them.
     public func open(graph url: URL) {
         let wiki = Wiki(root: url)
-        do {
-            try wiki.load()
-        } catch {
-            self.error = "Couldn't read \(url.path): \(error.localizedDescription)"
-            return
-        }
+        loads += 1
+        let load = loads
         root = url.standardizedFileURL
-        self.wiki = wiki
+        self.wiki = nil
+        isLoading = true
         drafts = [:]
         editing = []
         folded = []
+        outlined = []
+        linkNotes = nil
+        river = []
+        sync = nil
+        revision += 1
+        Task {
+            let failure: String? = await Task.detached(priority: .userInitiated) {
+                do {
+                    try wiki.load()
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
+            }.value
+            // Another graph opened meanwhile: this one is not wanted.
+            guard load == loads else { return }
+            isLoading = false
+            if let failure {
+                root = nil
+                self.error = "Couldn't read \(url.path): \(failure)"
+                return
+            }
+            loaded(wiki, at: url)
+        }
+    }
+
+    private func loaded(_ wiki: Wiki, at url: URL) {
+        self.wiki = wiki
         UserDefaults.standard.set(url.path, forKey: "GraphPath")
         river = UserDefaults.standard.stringArray(forKey: riverKey) ?? []
         if river.isEmpty { river = defaultRiver(wiki) }
         revision += 1
-        let notes = ReflectNotes(root: url)
-        self.notes = notes
-        Task {
-            await Task.detached(priority: .userInitiated) { notes.scan() }.value
-            revision += 1
-        }
         sync = makeSync(url)
         sync?.onPulled = { [weak self] paths in self?.pulled(paths) }
         sync?.sync()
+        let waiting = whenLoaded
+        whenLoaded = []
+        for body in waiting { body() }
+    }
+
+    /// Whether the graph's pages are being read.
+    public private(set) var isLoading = false
+    @ObservationIgnored private var loads = 0
+    @ObservationIgnored private var whenLoaded: [() -> Void] = []
+
+    /// Runs once the graph's pages are read — now, if they are.
+    public func whenLoaded(_ body: @escaping () -> Void) {
+        if wiki != nil, !isLoading { body() } else { whenLoaded.append(body) }
     }
 
     /// The app came to the front: take in what other devices wrote.
@@ -113,17 +147,11 @@ public final class WikiStore {
         sync?.sync()
     }
 
-    /// A sync wrote files: the tiddlers among them are read again. Drafts
+    /// A sync wrote files: the pages among them are read again. Drafts
     /// stay as they are, to be put together with them when saved.
     private func pulled(_ paths: [String]) {
         guard let wiki else { return }
-        for path in paths {
-            if WikiFolder.isTiddler(path) {
-                wiki.reload(path: path)
-            } else if path.hasSuffix(".md") {
-                notes?.refresh(path)
-            }
-        }
+        for path in paths where PageFolder.isPage(path) { wiki.reload(path: path) }
         revision += 1
     }
 
@@ -188,47 +216,55 @@ public final class WikiStore {
         return wiki?[title] == nil && ShadowTiddlers.all[title] != nil
     }
 
-    /// Whether a title leads anywhere: to a tiddler, or a Reflect note or day.
-    public func exists(_ title: String) -> Bool { tiddler(title) != nil || note(title) != nil }
+    /// Whether a title leads anywhere: to a page, or to a day or week,
+    /// written yet or not.
+    public func exists(_ title: String) -> Bool { tiddler(title) != nil || Day(title) != nil || Week(title) != nil }
 
-    // MARK: Reflect notes
-
-    /// The Reflect note or day a title leads to, when no tiddler has it.
-    public func note(_ title: String) -> ReflectNotes.Note? {
+    /// What a page is, by where it is — a day's, a week's, or a note's —
+    /// and whether it is in the wiki.
+    public func kind(_ title: String) -> LinkTarget.Kind {
         _ = revision
-        guard wiki?[title] == nil else { return nil }
-        return notes?.resolve(title)
+        if Day(title) != nil || Week(title) != nil { return .day }
+        if let entry = wiki?.entries[title] {
+            if case .note = entry.kind { return entry.page.isWiki ? .wiki : .note }
+            return .day
+        }
+        if let shadow = ShadowTiddlers.all[title] { return shadow.isWiki ? .wiki : .note }
+        return .new
     }
 
-    public func body(of note: ReflectNotes.Note) -> String? {
-        _ = revision
-        return notes?.body(of: note)
+    /// How a title is shown: a day's date in words, else the title.
+    public func shownTitle(_ title: String) -> String {
+        guard let date = Day(title)?.date else { return title }
+        return date.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
     }
 
-    /// The Reflect notes linking to any of these names.
-    public func notesLinking(to names: [String]) -> [ReflectNotes.Note] {
+    /// The pages linking to a page, by any name it answers to.
+    public func linking(to title: String) -> [String] {
         _ = revision
-        return notes?.linking(to: names) ?? []
+        return wiki?.backlinks(to: title) ?? []
     }
 
-    /// The tiddlers linking to any of these names.
-    public func tiddlersLinking(to names: [String]) -> [String] {
+    /// The wiki's pages, by title.
+    public func wikiPages() -> [String] {
         _ = revision
-        return Array(Set(names.flatMap { wiki?.backlinks(to: $0) ?? [] })).sorted()
+        guard let wiki else { return [] }
+        return wiki.titles.filter { wiki[$0]?.isWiki == true }
     }
 
-    /// Reflect notes by a name, as Reflect's chooser finds them.
-    func noteSearch(_ query: String, limit: Int) -> [ReflectNotes.Note] {
-        _ = revision
-        return notes?.search(query, limit: limit) ?? []
-    }
+    /// Whether a page is part of the wiki.
+    public func isWiki(_ title: String) -> Bool { tiddler(title)?.isWiki ?? false }
 
-    /// Reflect notes matching what is typed in search.
-    public func noteResults() -> [ReflectNotes.Note] {
-        _ = revision
-        let query = search.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return [] }
-        return notes?.search(query) ?? []
+    /// Puts a page in the wiki, or takes it out: its `wiki` flag, saved.
+    public func setWiki(_ title: String, _ wiki: Bool) {
+        if var draft = drafts[title] {
+            draft.isWiki = wiki
+            updateDraft(title, draft)
+            return
+        }
+        guard var page = tiddler(title) else { return }
+        page.isWiki = wiki
+        write(page, from: title)
     }
 
     public func openToday() {
@@ -288,19 +324,7 @@ public final class WikiStore {
     /// starting with it before containing it — then those with it in the text.
     public func searchResults(limit: Int = 200) -> [String] {
         _ = revision
-        let query = search.trimmingCharacters(in: .whitespaces)
-        guard let wiki, !query.isEmpty else { return [] }
-        var starts: [String] = [], contains: [String] = [], inText: [String] = []
-        for title in wiki.titles {
-            if title.range(of: query, options: [.caseInsensitive, .diacriticInsensitive, .anchored]) != nil {
-                starts.append(title)
-            } else if title.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
-                contains.append(title)
-            } else if wiki[title]?.text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
-                inText.append(title)
-            }
-        }
-        return Array((starts + contains + inText).prefix(limit))
+        return wiki?.search(search, limit: limit) ?? []
     }
 
     /// A tiddler's file.
@@ -323,8 +347,8 @@ public final class WikiStore {
     /// opened from another goes just after it, as in TiddlyWiki; otherwise
     /// at the top.
     public func open(_ title: String, from source: String? = nil) {
-        // A note opened by an alias, or in other case, is opened by its title.
-        let title = note(title)?.title ?? title
+        // A page opened by an alias, or in other case, is opened by its title.
+        let title = wiki?.title(for: title) ?? title
         if !river.contains(title) {
             if let source, let index = river.firstIndex(of: source) {
                 river.insert(title, at: index + 1)
@@ -352,7 +376,7 @@ public final class WikiStore {
         guard let title = focus, river.contains(title) else { return }
         if isEditing(title) {
             finishEditing(title)
-        } else if note(title) == nil {
+        } else {
             edit(title)
         }
     }
@@ -385,6 +409,45 @@ public final class WikiStore {
     /// Edit is saved a moment after typing pauses, and when the card goes
     /// back to Preview — where a new title, too, takes effect.
     public func isEditing(_ title: String) -> Bool { editing.contains(title) }
+
+    // MARK: Text or Outline
+
+    /// How a card's body is edited: as text, unless an outline is asked
+    /// for — in Prism's outline editor.
+    public enum EditorMode: String, CaseIterable, Sendable {
+        case text = "Text", outline = "Outline"
+    }
+
+    /// Cards edited as outlines, by title; every other is edited as text.
+    public private(set) var outlined: Set<String> = []
+
+    public func editorMode(_ title: String) -> EditorMode { outlined.contains(title) ? .outline : .text }
+
+    public func setEditorMode(_ mode: EditorMode, for title: String) {
+        if mode == .outline { outlined.insert(title) } else { outlined.remove(title) }
+    }
+
+    /// The graph's pages, for an outline's queries and embeds to ask.
+    public var pages: PageIndex? {
+        _ = revision
+        return wiki
+    }
+
+    /// Every note by name, as Prism's index has them — for an outline's
+    /// `[[` to complete from — read off the main thread once asked for.
+    @ObservationIgnored public private(set) var linkNotes: NoteIndex?
+
+    public func prepareLinkNotes(_ ready: @escaping @MainActor (NoteIndex) -> Void) {
+        if let linkNotes { return ready(linkNotes) }
+        guard let root else { return }
+        let notes = NoteIndex(root: root)
+        Task {
+            await Task.detached(priority: .utility) { notes.scan() }.value
+            guard self.root == root else { return }
+            linkNotes = notes
+            ready(notes)
+        }
+    }
 
     public func draft(_ title: String) -> Tiddler? { drafts[title] }
 
@@ -484,13 +547,22 @@ public final class WikiStore {
         if let base = draftBases[title], let current = wiki[title], current != base, ShadowTiddlers.all[title] != base {
             tiddler = TiddlerMerge.merge(draft: tiddler, base: base, current: current)
         }
+        // A new page gets an id and its times; a page that keeps its
+        // modified time gets a new one. A day or a week, named by its file,
+        // and a note of Prism's that keeps no times, are written as they are.
         let now = Date()
-        if tiddler.id == nil { tiddler.id = Tiddler.newID() }
-        if tiddler.created == nil { tiddler.created = now }
-        tiddler.modified = now
         let existed = wiki[title] != nil
+        let named = Day(title) == nil && Week(title) == nil
+        if !existed, named {
+            if tiddler.id == nil { tiddler.id = Tiddler.newID() }
+            if tiddler.created == nil { tiddler.created = now }
+            tiddler.modified = now
+        } else if tiddler.modified != nil {
+            tiddler.modified = now
+        }
         do {
-            try wiki.save(tiddler, replacing: existed ? title : nil, movingFile: createdWhileEditing.contains(title))
+            let entry = try wiki.save(tiddler, replacing: existed ? title : nil, movingFile: createdWhileEditing.contains(title))
+            linkNotes?.refresh(entry.path)
         } catch {
             self.error = "Couldn't save “\(tiddler.title)”: \(error.localizedDescription)"
             return false
@@ -546,6 +618,8 @@ public final class WikiStore {
             number += 1
         }
         var tiddler = Tiddler(title: title, tags: tag.map { [$0] } ?? [])
+        // What Weft makes is the wiki's.
+        tiddler.isWiki = true
         for spec in schema(for: tiddler) { tiddler[field: spec.name] = .text("") }
         schemaTags[title] = tiddler.tags
         drafts[title] = tiddler
@@ -554,21 +628,21 @@ public final class WikiStore {
     }
 }
 
-/// Somewhere a link, a backlink or Quick Open leads: a tiddler, a Reflect
-/// note or day, or a tiddler not written yet.
+/// Somewhere a link, a backlink or Quick Open leads: a wiki page, a
+/// note, a day or week, or a page not written yet.
 public struct LinkTarget: Hashable, Sendable {
     /// What a link to it says, and what its card is open under.
     public var title: String
-    /// What it is shown as: a day's date in words, a note's title.
+    /// What it is shown as: a day's date in words, else its title.
     public var shown: String
     public var kind: Kind
 
     public enum Kind: Sendable {
-        case tiddler, note, day, new
+        case wiki, note, day, new
 
         public var symbol: String {
             switch self {
-            case .tiddler: "doc.plaintext"
+            case .wiki: "book.closed"
             case .note: "doc.text"
             case .day: "calendar"
             case .new: "plus.circle"
@@ -577,10 +651,10 @@ public struct LinkTarget: Hashable, Sendable {
 
         public var label: String {
             switch self {
-            case .tiddler: "Tiddler"
-            case .note: "Reflect note"
+            case .wiki: "Wiki"
+            case .note: "Note"
             case .day: "Day"
-            case .new: "New tiddler"
+            case .new: "New page"
             }
         }
     }
@@ -589,35 +663,31 @@ public struct LinkTarget: Hashable, Sendable {
 extension WikiStore {
     /// What a title leads to, as a link to it would.
     public func target(_ title: String) -> LinkTarget {
-        if tiddler(title) != nil { return LinkTarget(title: title, shown: title, kind: .tiddler) }
-        if let note = note(title) { return LinkTarget(title: note.title, shown: note.displayTitle, kind: note.day != nil ? .day : .note) }
-        return LinkTarget(title: title, shown: title, kind: .new)
+        let title = wiki?.title(for: title) ?? title
+        return LinkTarget(title: title, shown: shownTitle(title), kind: kind(title))
     }
 
-    /// What links to a card: tiddlers, then Reflect notes and days, newest first.
+    /// What links to a card: wiki pages first, then notes and days, by title.
     public func backlinks(of card: String) -> [LinkTarget] {
-        let names = note(card)?.names ?? [card]
-        let tiddlers = tiddlersLinking(to: names).filter { $0 != card }.map { LinkTarget(title: $0, shown: $0, kind: .tiddler) }
-        let notes = notesLinking(to: names).filter { $0.title != card }
-            .map { LinkTarget(title: $0.title, shown: $0.displayTitle, kind: $0.day != nil ? .day : .note) }
-        return tiddlers + notes
+        let order: [LinkTarget.Kind: Int] = [.wiki: 0, .note: 1, .day: 2, .new: 3]
+        return linking(to: card).map(target).sorted { (order[$0.kind] ?? 0, $0.title) < (order[$1.kind] ?? 0, $1.title) }
     }
 
     /// The words around a source's link to a card, for its summary.
     public func context(of source: LinkTarget, linkingTo card: String) -> String? {
-        let text: String?
-        switch source.kind {
-        case .tiddler: text = tiddler(source.title)?.text
-        case .note, .day: text = note(source.title).flatMap { body(of: $0) }
-        case .new: text = nil
-        }
-        guard let text else { return nil }
-        let names = (note(card)?.names ?? [card]).map { "[[" + $0.lowercased() }
+        guard let text = tiddler(source.title)?.text else { return nil }
+        let names = (pageNames(card)).map { "[[" + $0.lowercased() }
         guard let line = text.components(separatedBy: "\n").first(where: { line in
             let lower = line.lowercased()
             return names.contains { lower.contains($0 + "]]") || lower.contains($0 + "|") }
         }) else { return nil }
         return Self.plain(line)
+    }
+
+    /// Every name a page answers to: its title and aliases.
+    func pageNames(_ title: String) -> [String] {
+        _ = revision
+        return wiki?.entries[title]?.names ?? [title]
     }
 
     /// A line of Markdown as words: links as what they show, markup gone.
@@ -633,39 +703,29 @@ extension WikiStore {
         return text.count > 180 ? String(text.prefix(177)) + "…" : text
     }
 
-    /// Titles for a `[[` being typed: tiddlers, then Reflect notes, a day
-    /// when it is one — and, when nothing is called that, a new tiddler.
+    /// Titles for a `[[` being typed: pages by title or alias, a day when
+    /// it is one — and, when nothing is called that, a new page.
     public func linkSuggestions(_ partial: String, limit: Int = 8) -> [LinkTarget] {
         let query = partial.trimmingCharacters(in: .whitespaces)
-        var found = completions(for: query, among: titles, limit: limit).map { LinkTarget(title: $0, shown: $0, kind: .tiddler) }
-        if !query.isEmpty {
-            for note in noteSearch(query, limit: limit) where !found.contains(where: { $0.title == note.title }) {
-                found.append(LinkTarget(title: note.title, shown: note.displayTitle, kind: note.day != nil ? .day : .note))
-            }
-        }
+        let titles = query.isEmpty ? Array(recent().prefix(limit)) : (wiki?.search(query, limit: limit * 3) ?? [])
+        var found = titles.filter { pageNames($0).contains { name in name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil } || query.isEmpty }
+            .prefix(limit).map(target)
         if let day = dayTarget(query), !found.contains(day) { found.insert(day, at: 0) }
         found = Array(found.prefix(limit))
-        if !query.isEmpty, !found.contains(where: { $0.title.caseInsensitiveCompare(query) == .orderedSame }) {
+        if !query.isEmpty, !found.contains(where: { $0.title.caseInsensitiveCompare(query) == .orderedSame }), wiki?.title(for: query) == nil {
             found.append(LinkTarget(title: query, shown: query, kind: .new))
         }
         return found
     }
 
-    /// Quick Open: what is typed, found among tiddlers by title then by
-    /// what they say, Reflect notes, and days — or, with nothing typed,
-    /// today and the tiddlers written last.
+    /// Quick Open: pages by title or alias, then by what they say, and days
+    /// — or, with nothing typed, today and the pages written last.
     public func quickOpen(_ query: String, limit: Int = 14) -> [LinkTarget] {
         let query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else {
-            return [dayTarget("today")!] + recent().prefix(limit - 1).map { LinkTarget(title: $0, shown: $0, kind: .tiddler) }
+            return [dayTarget("today")!] + recent().prefix(limit - 1).map(target)
         }
-        let previous = search
-        search = query
-        var found = searchResults(limit: limit).map { LinkTarget(title: $0, shown: $0, kind: .tiddler) }
-        search = previous
-        for note in noteSearch(query, limit: limit) where !found.contains(where: { $0.title == note.title }) {
-            found.append(LinkTarget(title: note.title, shown: note.displayTitle, kind: note.day != nil ? .day : .note))
-        }
+        var found = (wiki?.search(query, limit: limit) ?? []).map(target)
         if let day = dayTarget(query), !found.contains(day) { found.insert(day, at: 0) }
         return Array(found.prefix(limit))
     }
@@ -681,6 +741,6 @@ extension WikiStore {
         } else {
             return nil
         }
-        return note(title).map { LinkTarget(title: $0.title, shown: $0.displayTitle, kind: .day) }
+        return LinkTarget(title: title, shown: shownTitle(title), kind: .day)
     }
 }

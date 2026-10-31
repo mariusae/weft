@@ -21,12 +21,19 @@ enum Snapshot {
     }
 
     static func takeIfAsked(store: WikiStore) {
+        guard ProcessInfo.processInfo.environment["WEFT_SNAPSHOT"] != nil else { return }
+        store.whenLoaded { take(store: store) }
+    }
+
+    private static func take(store: WikiStore) {
         let environment = ProcessInfo.processInfo.environment
         guard let output = environment["WEFT_SNAPSHOT"] else { return }
         let titles = environment["WEFT_OPEN"]?.split(separator: "|").map(String.init) ?? []
         // Just the cards named, whatever was open last.
         if !titles.isEmpty { store.closeAll() }
         for title in titles.reversed() { store.open(title) }
+        // `WEFT_OUTLINE`: a card edited as an outline.
+        if let outline = environment["WEFT_OUTLINE"] { store.setEditorMode(.outline, for: outline) }
         if let edit = environment["WEFT_EDIT"] { store.edit(edit) }
         if environment["WEFT_QUICK_OPEN"] != nil { store.quickOpenShown = true }
         if let search = environment["WEFT_SEARCH"] { store.search = search }

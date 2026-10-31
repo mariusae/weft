@@ -23,10 +23,13 @@ struct CardEditor: View {
                 VStack(alignment: .leading, spacing: 0) {
                     #if os(macOS)
                     HStack(spacing: 2) {
-                        FormattingButtons(controller: controller)
-                        Divider().frame(height: 16).padding(.horizontal, 4)
+                        if mode == .text {
+                            FormattingButtons(controller: controller)
+                            Divider().frame(height: 16).padding(.horizontal, 4)
+                        }
                         insertQueryButton
                         Spacer()
+                        modePicker(draft)
                     }
                     .foregroundStyle(Ink.secondary.color)
                     .padding(.horizontal, 6)
@@ -40,11 +43,17 @@ struct CardEditor: View {
                     .padding(.horizontal, 8)
                     .padding(.top, 6)
                     #endif
-                    TiddlerEditor(text: binding(\.text), controller: controller,
-                                  suggest: { store.linkSuggestions($0) }, exists: { store.exists($0) },
-                                  onEscape: { withAnimation { store.finishEditing(title) } },
-                                  focusOnAppear: store.exists(title))
-                        .padding(.horizontal, 6)
+                    #if os(macOS)
+                    if mode == .outline {
+                        OutlineCardEditor(text: binding(\.text), title: title)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 10)
+                    } else {
+                        textEditor
+                    }
+                    #else
+                    textEditor
+                    #endif
                 }
                 .background(Ink.rule.color.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
                 let specs = store.schema(for: draft)
@@ -71,7 +80,7 @@ struct CardEditor: View {
     /// Being renamed: whether what refers to it is updated too.
     @ViewBuilder private func renaming(_ draft: Tiddler) -> some View {
         let new = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if store.exists(title), store.note(title) == nil, new != title, !new.isEmpty {
+        if store.tiddler(title) != nil, store.kind(title) != .day, new != title, !new.isEmpty {
             let references = store.references(to: title)
             if !references.isEmpty {
                 Toggle(isOn: Binding(get: { store.relinkOnRename[title] ?? true }, set: { store.relinkOnRename[title] = $0 })) {
@@ -83,6 +92,33 @@ struct CardEditor: View {
         }
     }
 
+    private var mode: WikiStore.EditorMode { store.editorMode(title) }
+
+    private var textEditor: some View {
+        TiddlerEditor(text: binding(\.text), controller: controller,
+                      suggest: { store.linkSuggestions($0) }, exists: { store.exists($0) },
+                      onEscape: { withAnimation { store.finishEditing(title) } },
+                      focusOnAppear: store.exists(title))
+            .padding(.horizontal, 6)
+    }
+
+    #if os(macOS)
+    /// Text, or Prism's outline: an outline only of a body that would be
+    /// written back as it was.
+    private func modePicker(_ draft: Tiddler) -> some View {
+        let outlinable = mode == .outline || OutlineEditing.canEdit(draft.text)
+        return Picker("Editor", selection: Binding(get: { mode }, set: { store.setEditorMode($0, for: title) })) {
+            ForEach(WikiStore.EditorMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .controlSize(.small)
+        .disabled(!outlinable)
+        .help(outlinable ? "Edit as Text, or as an Outline of rows" : "This page can't be edited as an outline without changing how it's written")
+    }
+    #endif
+
     private var insertQueryButton: some View {
         Button {
             insertingQuery = true
@@ -93,7 +129,13 @@ struct CardEditor: View {
         .help("Insert a list of tiddlers found by a query")
         .popover(isPresented: $insertingQuery) {
             QueryBuilder(query: Self.starterQuery, card: title) { query in
-                controller.insertBlock(query.block)
+                if mode == .outline, var draft = store.draft(title) {
+                    // An outline's own rows: put at its foot.
+                    draft.text += (draft.text.isEmpty || draft.text.hasSuffix("\n\n") ? "" : draft.text.hasSuffix("\n") ? "\n" : "\n\n") + query.block + "\n"
+                    store.updateDraft(title, draft)
+                } else {
+                    controller.insertBlock(query.block)
+                }
                 insertingQuery = false
             } cancel: {
                 insertingQuery = false

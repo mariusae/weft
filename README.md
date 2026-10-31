@@ -1,9 +1,16 @@
 # Weft
 
-TiddlyWiki's ideas — small titled notes, a river of cards, tags as
-structure, transclusion, lists made by filters — as a native app on the
-Mac, the iPad and the iPhone, kept in a Reflect graph's `wiki/` folder and
-synced with it by Reflect's own sync. See [DESIGN.md](DESIGN.md).
+TiddlyWiki's ideas — small titled pages, a river of cards, tags as
+structure, transclusion, lists made by queries — as a native app on the
+Mac, the iPad and the iPhone, over the same graph as Prism: every page in
+it, days and notes alike, read and written by GraphKit, the core the two
+apps share (`../reflect-mac/Sources/GraphKit`), in the Markdown both speak
+(`../reflect-mac/docs/markdown.md`). See [DESIGN.md](DESIGN.md).
+
+A page marked `wiki: true` is part of the wiki — canonical, kept up, an
+evolving piece of knowledge — where other notes may be passing. That is
+metadata only: Weft makes its new pages wiki pages, badges them, gathers
+them in the sidebar's Wiki tab, and queries find them with `wiki: yes`.
 
 ## Building
 
@@ -117,11 +124,16 @@ WikiText a click away.
 
 ## Code
 
-- `Sources/WeftCore` — no UI. `Tiddler` and `TiddlerFile` (the file format),
-  `Wiki` (every tiddler, links, tags), `MarkdownBlock` (a body as blocks to
-  show), `Query`, `FieldSpec` (typed tags), `Relink`, `ReflectNotes` (the
-  graph's notes, through reflect-mac's `NoteIndex`), `TiddlerMerge` and
-  `WikiSync` (the sync, over reflect-mac's `Git`), `TiddlyWiki/` (the import).
+- GraphKit, in reflect-mac — no UI, shared with Prism: `Page` and `PageFile`
+  (pages and their files, titled by frontmatter or a `# Heading`),
+  `PageIndex` (every page, names and aliases as Prism resolves them, links,
+  backlinks, tags inline and in frontmatter), `MarkdownBlock`, `Query`,
+  `FieldSpec` (typed tags), `Relink`, `PageMerge` and `GraphSync` (the sync,
+  over `Git`). Its fixtures, `Tests/GraphKitTests/Fixtures`, are the
+  Markdown spec's examples.
+- `Sources/WeftCore` — what is Weft's own below the UI: TiddlyWiki's import
+  (`TiddlyWiki/`), and TiddlyWiki's names for GraphKit's types (`Tiddler`
+  for `Page`, `Wiki` for `PageIndex`, …).
 - `Sources/WeftUI` — the views, for the Mac and the phone: `WikiStore` (the
   graph, the river, editing and saving, the sync), `ContentView` (sidebar
   and river), `Card`, `CardEditor`, `BacklinkFan`, `QuickOpen`,

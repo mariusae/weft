@@ -7,7 +7,7 @@ enum ShadowTiddlers {
     static let gettingStarted = "Getting Started"
 
     static let all: [String: Tiddler] = [
-        gettingStarted: Tiddler(title: gettingStarted, tags: ["Weft"], text: """
+        gettingStarted: Tiddler(title: gettingStarted, tags: ["Weft"], fields: [Tiddler.Field("wiki", .text("true"))], text: """
         Weft keeps small notes — *tiddlers* — in your Reflect graph's `wiki/` folder, one Markdown file each, synced with the rest of the graph. This tiddler is built in: edit it, and it becomes one of yours.
 
         ## Making tiddlers

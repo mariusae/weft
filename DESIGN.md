@@ -152,6 +152,21 @@ converter.
 - From `../reflect-mac`: `ReflectCore` (graph, git, conflicts, commit
   messages) and `ReflectGit2` (libgit2, GitHub sign-in, relay).
 
+## One graph with Prism
+
+Reflect Mac is retired; Prism and Weft are the two apps on the graph. They
+share GraphKit (in reflect-mac): pages and their files, the Markdown both
+speak (reflect-mac's docs/markdown.md, with fixtures both test against),
+the index, queries, typed fields, merging and the sync. Every page lives
+where Prism keeps it — `daily/`, `weekly/`, `notes/` — and there is no
+`wiki/`: a page in the wiki is one whose frontmatter says `wiki: true`.
+Extensions are free to diverge from Reflect's, but each degrades to plain
+Markdown.
+
+Next: Prism on GraphKit — its notes read through `PageIndex`, its lenses as
+queries, and callouts, query blocks, embeds and typed fields drawn in its
+outline; Weft editing outline pages with Prism's outline editor.
+
 ## Where it stands
 
 Built: the file format and import; the river, cards and sidebar on the Mac,

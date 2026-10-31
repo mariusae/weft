@@ -22,7 +22,7 @@ public struct ContentView: View {
                     River()
                         .navigationTitle(store.graphName)
                         #if os(macOS)
-                        .navigationSubtitle("\(store.count) tiddlers")
+                        .navigationSubtitle("\(store.count) pages")
                         #else
                         .navigationBarTitleDisplayMode(.inline)
                         #endif
@@ -99,7 +99,7 @@ private struct EditToggle: View {
         let editing = title.map(store.isEditing) ?? false
         Button(editing ? "Preview" : "Edit", systemImage: editing ? "eye" : "pencil") { store.toggleEditing() }
             .keyboardShortcut(.return, modifiers: .command)
-            .disabled(title == nil || (!editing && store.note(title!) != nil))
+            .disabled(title == nil)
             .help(editing ? "Preview the Selected Card (⌘↩)" : "Edit the Selected Card (⌘↩)")
     }
 }
@@ -168,7 +168,7 @@ private struct Sidebar: View {
     @State private var tab: Tab = .open
 
     enum Tab: String, CaseIterable {
-        case open = "Open", recent = "Recent", tags = "Tags", missing = "Missing"
+        case open = "Open", recent = "Recent", wiki = "Wiki", tags = "Tags", missing = "Missing"
     }
 
     var body: some View {
@@ -209,44 +209,16 @@ private struct Sidebar: View {
         .onChange(of: store.searchFocusRequest) { searchFocused = true }
     }
 
-    /// Tiddlers matching what is typed, then Reflect notes.
+    /// Pages matching what is typed: by title or alias, then by what they say.
     private var searchResults: some View {
-        let tiddlers = store.searchResults()
-        let notes = store.noteResults().filter { !tiddlers.contains($0.title) }
-        return List {
-            if !tiddlers.isEmpty {
-                SwiftUI.Section("Tiddlers") {
-                    ForEach(tiddlers, id: \.self) { title in
-                        Button { store.open(title) } label: {
-                            Text(title).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            if !notes.isEmpty {
-                SwiftUI.Section("Reflect") {
-                    ForEach(notes, id: \.path) { note in
-                        Button { store.open(note.title) } label: {
-                            Label(note.displayTitle, systemImage: note.day != nil ? "calendar" : "doc.text")
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-        .overlay {
-            if tiddlers.isEmpty && notes.isEmpty { Text("Nothing matches").foregroundStyle(.secondary) }
-        }
+        titles(store.searchResults(), empty: "Nothing matches", kinds: true)
     }
 
     @ViewBuilder private var list: some View {
         switch tab {
         case .open: titles(store.river, empty: "No cards open", closable: true)
-        case .recent: titles(store.recent(), empty: "Nothing yet")
+        case .recent: titles(store.recent(), empty: "Nothing yet", kinds: true)
+        case .wiki: titles(store.wikiPages(), empty: "No wiki pages yet")
         case .missing: titles(store.missing(), empty: "No links to missing tiddlers", missing: true)
         case .tags:
             List(store.tags(), id: \.tag) { item in
@@ -262,15 +234,23 @@ private struct Sidebar: View {
         }
     }
 
-    private func titles(_ titles: [String], empty: String, closable: Bool = false, missing: Bool = false) -> some View {
+    private func titles(_ titles: [String], empty: String, closable: Bool = false, missing: Bool = false, kinds: Bool = false) -> some View {
         List(titles, id: \.self) { title in
             HStack {
                 Button { store.open(title) } label: {
-                    Text(missing ? title : store.note(title)?.displayTitle ?? title)
-                        .italic(missing)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                    HStack(spacing: 7) {
+                        if kinds {
+                            Image(systemName: store.kind(title).symbol)
+                                .font(.caption)
+                                .foregroundStyle(Ink.secondary.color)
+                                .frame(width: 16)
+                        }
+                        Text(missing ? title : store.shownTitle(title))
+                            .italic(missing)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 if closable {
@@ -312,7 +292,9 @@ private struct River: View {
             }
             .background(Color.river)
             .overlay {
-                if store.river.isEmpty {
+                if store.isLoading {
+                    ProgressView().controlSize(.large)
+                } else if store.river.isEmpty {
                     Text("Open a tiddler from the sidebar, or make one with ⌘N.")
                         .foregroundStyle(.secondary)
                 }
