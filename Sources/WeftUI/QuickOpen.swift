@@ -16,7 +16,7 @@ struct QuickOpen: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(Ink.secondary.color)
-                TextField("Open a tiddler, note or day", text: $query)
+                TextField("Open a page or a day", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 19))
                     .focused($focused)
@@ -45,10 +45,12 @@ struct QuickOpen: View {
                 }
             }
         }
-        .frame(width: 580)
+        // As wide as the Mac's window allows it; on the phone, its width.
+        .frame(maxWidth: 580)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Ink.rule.color))
         .shadow(color: .black.opacity(0.2), radius: 30, y: 12)
+        .padding(.horizontal, 12)
         .onKeyPress(.upArrow) {
             selected = max(0, selected - 1)
             return .handled
@@ -81,7 +83,7 @@ struct QuickOpen: View {
                 .font(.system(size: 14, weight: .medium))
                 .frame(width: 20)
                 .foregroundStyle(chosen ? .white : Ink.accent.color)
-            Text(target.kind == .new ? "New tiddler “\(target.title)”" : target.shown)
+            Text(target.kind == .new ? "New page “\(target.title)”" : target.shown)
                 .lineLimit(1)
                 .foregroundStyle(chosen ? .white : Ink.text.color)
             Spacer(minLength: 8)

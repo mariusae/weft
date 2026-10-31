@@ -10,6 +10,7 @@ struct Card: View {
     @State private var hovering = false
     @State private var confirmingDelete = false
     @Environment(\.horizontalSizeClass) private var sizeClass
+    private var compact: Bool { sizeClass == .compact }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -19,12 +20,25 @@ struct Card: View {
             } else if !store.folded.contains(title) {
                 if store.needsReview(title) {
                     ConflictView(title: title)
-                } else if let tiddler = store.tiddler(title) {
-                    content(tiddler)
-                } else if store.kind(title) == .day {
-                    Text("Nothing written on this day yet.").foregroundStyle(Ink.secondary.color)
                 } else {
-                    missing
+                    // On the phone, where there is no room for Edit and
+                    // Preview beside the title, a tap on what it says edits it.
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let tiddler = store.tiddler(title) {
+                            content(tiddler)
+                        } else if store.kind(title) == .day {
+                            Text(compact ? "Nothing written on this day yet. Tap to write." : "Nothing written on this day yet.")
+                                .foregroundStyle(Ink.secondary.color)
+                        } else {
+                            missing
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard compact else { return }
+                        withAnimation(.snappy(duration: 0.25)) { store.edit(title) }
+                    }
                 }
                 let links = store.backlinks(of: title)
                 if !links.isEmpty {
@@ -105,17 +119,34 @@ struct Card: View {
     /// close button.
     private func controls(editing: Bool) -> some View {
         HStack(spacing: 8) {
-            Picker("", selection: Binding(get: { editing }, set: { $0 ? store.edit(title) : store.finishEditing(title) })) {
-                Text("Edit").tag(true)
-                Text("Preview").tag(false)
+            if !compact {
+                Picker("", selection: Binding(get: { editing }, set: { $0 ? store.edit(title) : store.finishEditing(title) })) {
+                    Text("Edit").tag(true)
+                    Text("Preview").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .controlSize(.small)
+                .help("Edit or Preview (⌘↩)")
+            } else if editing {
+                // Editing on the phone: Done, back to what it says.
+                Button { withAnimation(.snappy(duration: 0.25)) { store.finishEditing(title) } } label: {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .frame(width: 34, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+                .glassEffect(.regular.tint(Ink.accent.color).interactive(), in: .circle)
+                .accessibilityLabel("Done")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .controlSize(.small)
-            .help("Edit or Preview (⌘↩)")
             HStack(spacing: 0) {
                 Menu {
+                    if compact && !editing {
+                        Button("Edit", systemImage: "pencil") { withAnimation(.snappy(duration: 0.25)) { store.edit(title) } }
+                    }
                     Button(store.folded.contains(title) ? "Unfold" : "Fold") {
                         withAnimation(.snappy(duration: 0.2)) { store.toggleFold(title) }
                     }

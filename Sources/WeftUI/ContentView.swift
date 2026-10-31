@@ -4,6 +4,7 @@ import WeftCore
 public struct ContentView: View {
     @Environment(WikiStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var sizeClass
     /// On the iPhone, where the sidebar and the river take turns: which shows.
     @State private var compactColumn = NavigationSplitViewColumn.detail
 
@@ -36,7 +37,7 @@ public struct ContentView: View {
                     Color.black.opacity(0.12)
                         .ignoresSafeArea()
                         .onTapGesture { store.quickOpenShown = false }
-                    QuickOpen().padding(.top, 70)
+                    QuickOpen().padding(.top, sizeClass == .compact ? 12 : 70)
                 }
                 .transition(.opacity)
             }
@@ -97,10 +98,62 @@ private struct EditToggle: View {
     var body: some View {
         let title = store.focus.flatMap { store.river.contains($0) ? $0 : nil }
         let editing = title.map(store.isEditing) ?? false
-        Button(editing ? "Preview" : "Edit", systemImage: editing ? "eye" : "pencil") { store.toggleEditing() }
+        Button(editing ? "Preview" : "Edit", systemImage: editing ? "eye" : "square.and.pencil") { store.toggleEditing() }
             .keyboardShortcut(.return, modifiers: .command)
             .disabled(title == nil)
             .help(editing ? "Preview the Selected Card (⌘↩)" : "Edit the Selected Card (⌘↩)")
+    }
+}
+
+/// At the foot of the river: syncing, then what it did — or, until
+/// tapped, why it failed.
+private struct SyncNoticeView: View {
+    @Environment(WikiStore.self) private var store
+    @State private var detailsShown = false
+
+    var body: some View {
+        Group {
+            switch store.syncNotice {
+            case .syncing:
+                capsule {
+                    ProgressView().controlSize(.small)
+                    Text("Syncing…")
+                }
+            case .done(let said):
+                capsule {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text(said)
+                }
+            case .failed(let message):
+                Button { detailsShown = true } label: {
+                    capsule {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text("Couldn't sync")
+                        Text("Details").foregroundStyle(Ink.accent.color)
+                    }
+                }
+                .buttonStyle(.plain)
+                .alert("Couldn't sync", isPresented: $detailsShown) {
+                    Button("Try Again") { store.syncNow() }
+                    Button("OK", role: .cancel) { store.dismissSyncNotice() }
+                } message: {
+                    Text(message)
+                }
+            case nil:
+                EmptyView()
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: store.syncNotice)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func capsule<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 8) { content() }
+            .font(.callout.weight(.medium))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .glassEffect(.regular, in: .capsule)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 
@@ -111,8 +164,7 @@ private struct SyncButton: View {
 
     var body: some View {
         Button {
-            if case .failed(let message) = sync.status { store.error = "The last sync failed: \(message)" }
-            sync.sync()
+            store.syncNow()
         } label: {
             Label("Sync", systemImage: symbol)
                 .symbolEffect(.rotate, isActive: sync.status == .syncing)
@@ -299,6 +351,7 @@ private struct River: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .overlay(alignment: .bottom) { SyncNoticeView().padding(.bottom, 14) }
             .onChange(of: store.focusRequest) {
                 guard let focus = store.focus else { return }
                 withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(focus, anchor: .top) }

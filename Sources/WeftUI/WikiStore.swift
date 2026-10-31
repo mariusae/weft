@@ -124,7 +124,8 @@ public final class WikiStore {
         revision += 1
         sync = makeSync(url)
         sync?.onPulled = { [weak self] paths in self?.pulled(paths) }
-        sync?.sync()
+        sync?.onFinished = { [weak self] result in self?.syncFinished(result) }
+        syncNow(announcing: false)
         let waiting = whenLoaded
         whenLoaded = []
         for body in waiting { body() }
@@ -144,7 +145,70 @@ public final class WikiStore {
     public func activated() {
         guard Date().timeIntervalSince(lastActivation) > 1.5 else { return }
         lastActivation = Date()
-        sync?.sync()
+        syncNow(announcing: false)
+    }
+
+    // MARK: Telling how syncing goes
+
+    /// What the foot of the river says about syncing, while it says anything.
+    public enum SyncNotice: Equatable {
+        case syncing
+        case done(String)
+        case failed(String)
+    }
+
+    public private(set) var syncNotice: SyncNotice?
+    /// Whether the cycle under way was asked for here, and is told whatever it does.
+    @ObservationIgnored private var announcing = false
+    @ObservationIgnored private var clearing: Task<Void, Never>?
+
+    /// Syncs now. Asked for — Sync Now, ⌘R — it says so, and then what it
+    /// did; else it speaks only when something came in, or went wrong.
+    public func syncNow(announcing: Bool = true) {
+        guard let sync else { return }
+        if announcing {
+            self.announcing = true
+            clearing?.cancel()
+            syncNotice = .syncing
+        }
+        sync.sync()
+    }
+
+    private func syncFinished(_ result: Result<SyncReport, Error>) {
+        let asked = announcing
+        announcing = false
+        clearing?.cancel()
+        switch result {
+        case .failure(let error):
+            syncNotice = .failed(error.localizedDescription)
+            return
+        case .success(let report):
+            let brought = report.changed.filter(PageFolder.isPage).count
+            let sent = report.parts.contains("pushed")
+            guard asked || brought > 0 else {
+                if case .failed = syncNotice { syncNotice = nil }
+                return
+            }
+            let pages = { (n: Int) in n == 1 ? "1 change" : "\(n) changes" }
+            let said = switch (brought, sent) {
+            case (0, false): "Up to date"
+            case (0, true): "Sent your changes"
+            case (let n, false): "Brought in \(pages(n))"
+            case (let n, true): "Brought in \(pages(n)), sent yours"
+            }
+            syncNotice = .done(said)
+        }
+        clearing = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            self?.syncNotice = nil
+        }
+    }
+
+    /// The failure said, set aside.
+    public func dismissSyncNotice() {
+        clearing?.cancel()
+        syncNotice = nil
     }
 
     /// A sync wrote files: the pages among them are read again. Drafts

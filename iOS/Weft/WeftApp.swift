@@ -44,7 +44,7 @@ struct WeftApp: App {
 
     private func follow() {
         Push.shared.register()
-        relay.follow(store.sync == nil ? nil : store.root) { store.sync?.sync() }
+        relay.follow(store.sync == nil ? nil : store.root) { store.syncNow(announcing: false) }
     }
 
     /// The graph given with `-GraphPath` (for trying the app out), else the clone.

@@ -26,7 +26,7 @@ struct WeftApp: App {
 
     private func followRelay() {
         guard store.sync != nil else { return relay.follow(nil) {} }
-        relay.follow(store.root) { [store] in store.sync?.sync() }
+        relay.follow(store.root) { [store] in store.syncNow(announcing: false) }
     }
 
     var body: some Scene {
@@ -77,7 +77,7 @@ struct WeftApp: App {
                     .keyboardShortcut("f")
             }
             CommandGroup(after: .saveItem) {
-                Button("Sync Now") { store.sync?.sync() }
+                Button("Sync Now") { store.syncNow() }
                     .keyboardShortcut("r")
                     .disabled(store.sync == nil)
             }
