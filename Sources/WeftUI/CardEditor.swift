@@ -158,7 +158,9 @@ struct CardEditor: View {
 
     private func binding<Value>(_ path: WritableKeyPath<Tiddler, Value>) -> Binding<Value> {
         Binding {
-            store.draft(title)![keyPath: path]
+            // Done or Cancel takes the draft away before SwiftUI has let go of
+            // the editor's bindings: they read the tiddler then.
+            (store.draft(title) ?? store.tiddler(title) ?? Tiddler(title: title))[keyPath: path]
         } set: { value in
             guard var draft = store.draft(title) else { return }
             draft[keyPath: path] = value

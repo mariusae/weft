@@ -1,0 +1,78 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "srgb:0.96863,0.96078,0.94118,1.00000",
+          "srgb:0.88627,0.86667,0.81961,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.16471,0.15686,0.14902,1.00000",
+          "srgb:0.07059,0.06667,0.06275,1.00000"
+        ]
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Thread",
+      "layers": [
+        {
+          "image-name": "2-thread.svg",
+          "name": "2-thread",
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "srgb:0.55294,0.63529,1.00000,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "image-name": "1-cards.svg",
+          "name": "1-cards",
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.60392,0.60392,0.60392,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "srgb:0.90980,0.90196,0.87843,1.00000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared",
+    "circles": [
+      "watchOS"
+    ]
+  }
+}

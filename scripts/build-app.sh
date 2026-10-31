@@ -24,6 +24,20 @@ for pair in GitHubClientID:GITHUB_CLIENT_ID GitHubClientSecret:GITHUB_CLIENT_SEC
   /usr/libexec/PlistBuddy -c "Add :${pair%%:*} string $(github_value "${pair#*:}")" "$app/Contents/Info.plist" >/dev/null
 done
 
+# The icon is Icon Composer's (Resources/Icons/Weft.icon, drawn by
+# scripts/make-icons.py): layers the system draws light, dark, clear or
+# tinted, compiled by Xcode's actool into Assets.car, which the bundle names.
+# (absolute paths: actool's helper may not run where we are)
+if xcrun actool "$PWD/Resources/Icons/Weft.icon" --compile "$(cd "$app/Contents/Resources" && pwd)" --app-icon Weft \
+     --platform macosx --minimum-deployment-target 26.0 --output-partial-info-plist "$PWD/build/icon-partial.plist" >/dev/null 2>&1 \
+   && [ -f "$app/Contents/Resources/Assets.car" ]; then
+  /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string Weft" "$app/Contents/Info.plist"
+fi
+# The Finder and the Dock cache a bundle's icon by its path: touched, and
+# registered again, so a new icon shows at the next launch.
+touch "$app"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" >/dev/null 2>&1 || true
+
 codesign --force --sign - "$app" >/dev/null 2>&1
 echo "built $app"
 
