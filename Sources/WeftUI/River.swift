@@ -287,7 +287,17 @@ public final class River: Identifiable {
         cardChanged(title)
     }
 
-    /// ⌘↩: the caret into the selected card, or out of the one it is in.
+    /// ⌘↩ on the Mac: the card being written in, or else the selected
+    /// one, edited as text if an outline, as an outline if text — the
+    /// caret, if it was in it, in the other editor.
+    public func toggleEditorMode() {
+        guard let title = writing ?? focus, cards.contains(title) else { return }
+        let wasWriting = writing == title
+        store.setEditorMode(store.editorMode(title) == .outline ? .text : .outline, for: title)
+        if wasWriting { DispatchQueue.main.async { self.edit(title) } }
+    }
+
+    /// The caret into the selected card, or out of the one it is in.
     public func toggleEditing() {
         guard let title = focus, cards.contains(title) else { return }
         if writing == title {

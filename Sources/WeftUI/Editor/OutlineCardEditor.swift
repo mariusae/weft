@@ -19,6 +19,9 @@ struct OutlineCardEditor: NSViewRepresentable {
     /// Told when the caret comes in, and when it leaves.
     var onFocusChange: (Bool) -> Void = { _ in }
 
+    /// Where a top-level row's words start.
+    static var textIndent: CGFloat { PageOutlineEditor.textIndent() }
+
     final class Coordinator {
         var revision = -1
         var onFocusChange: (Bool) -> Void = { _ in }

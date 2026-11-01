@@ -65,9 +65,10 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   and deletes them; deleting one leaves its cards open where they are.
 - **A card** is written in where it stands — there is no Edit and no
   Preview. Its body reads as what it says, and is edited as it reads: as
-  **Text** (Markdown, its markup showing only on the lines the caret is on)
-  or as an **Outline** (Prism's outline editor, the Mac's and the phone's)
-  — the switch in its header, or on the phone in its menu. In both, links and tags are pills, as Slack draws them: an
+  an **Outline** (Prism's outline editor, the Mac's and the phone's) where
+  the outline would write it back as it is, else as **Text** (Markdown,
+  its markup showing only on the lines the caret is on) — the switch in
+  its header, ⌘↩ on the Mac, or on the phone in its menu. In both, links and tags are pills, as Slack draws them: an
   icon for a page, a day or the web, an address shortened to its site and
   the ends of its path; a click (or tap) follows one, and on the Mac a
   right-click opens or copies it. What is written saves itself a moment
@@ -75,7 +76,8 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   effect. Beside the
   switch, in a glass capsule, its menu (Rename, Fold, Close Others, Add
   Tag, Add Field, Insert Query, Copy Link, Show in Finder, Delete) and its
-  close button. ⌘↩ puts the caret in the selected card, or takes it out.
+  close button. Story ▸ Write in Selected Card puts the caret in the
+  selected card, or takes it out.
 - **On a card**: its title (double-click to rename), tag pills (click one to
   open the tag's card; + adds one), its body, what is tagged with it, its
   other fields — and at its foot what links to it, as Manifold shows links:

@@ -140,7 +140,8 @@ public final class WikiStore {
         for river in rivers { river.reset() }
         drafts = [:]
         editing = []
-        outlined = []
+        chosenModes = [:]
+        defaultModes = [:]
         linkNotes = nil
         sync = nil
         listsVersion += 1
@@ -678,16 +679,27 @@ public final class WikiStore {
 
     // MARK: Text or Outline
 
-    /// How a card's body is edited: as text, unless an outline is asked
-    /// for — in Prism's outline editor.
+    /// How a card's body is edited: as an outline — in Prism's outline
+    /// editor — wherever one would write it back as it was, unless text is
+    /// asked for.
     public enum EditorMode: String, CaseIterable, Sendable {
         case text = "Text", outline = "Outline"
     }
 
-    /// Cards edited as outlines, by title; every other is edited as text.
-    public private(set) var outlined: Set<String> = []
+    /// Cards switched from how they would be edited, by title.
+    private var chosenModes: [String: EditorMode] = [:]
+    /// How each other card is edited, and the text that decided it: kept
+    /// while it is written in, so a card does not change editor under the caret.
+    @ObservationIgnored private var defaultModes: [String: (text: String, mode: EditorMode)] = [:]
 
-    public func editorMode(_ title: String) -> EditorMode { outlined.contains(title) ? .outline : .text }
+    public func editorMode(_ title: String) -> EditorMode {
+        if let chosen = chosenModes[title] { return chosen }
+        let text = (drafts[title] ?? tiddler(title))?.text ?? ""
+        if let known = defaultModes[title], known.text == text || editing.contains(title) { return known.mode }
+        let mode: EditorMode = canOutline(text) ? .outline : .text
+        defaultModes[title] = (text, mode)
+        return mode
+    }
 
     public func setEditorMode(_ mode: EditorMode, for title: String) {
         if mode == .outline {
@@ -697,14 +709,12 @@ public final class WikiStore {
                 error = "“\(shownTitle(title))” can't be edited as an outline without changing how it's written."
                 return
             }
-            outlined.insert(title)
-        } else {
-            outlined.remove(title)
         }
+        chosenModes[title] = mode
     }
 
-    /// Whether a body can be edited as an outline: on the Mac, where Prism's
-    /// outline editor is.
+    /// Whether a body can be edited as an outline: whether the outline
+    /// would write it back as it is.
     private func canOutline(_ text: String) -> Bool {
         !text.contains(OutlineText.lineSeparator) && OutlineMarkdown.serialize(OutlineMarkdown.parse(text)) == text
     }

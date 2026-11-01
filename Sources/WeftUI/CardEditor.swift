@@ -73,6 +73,8 @@ struct CardEditor: View {
                 Text(placeholder(page))
                     .foregroundStyle(Ink.faint.color)
                     .padding(.top, 2)
+                    // In line with an outline's words, clear of its bullet.
+                    .padding(.leading, mode == .outline ? OutlineCardEditor.textIndent : 0)
                     .allowsHitTesting(false)
             }
         }

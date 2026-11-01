@@ -172,7 +172,7 @@ public struct Onboarding: View {
                 .foregroundStyle(.green)
             Text("You’re Set").font(.largeTitle.weight(.semibold))
             VStack(alignment: .leading, spacing: 12) {
-                tip("plus", "Make a tiddler", "⌘N, or the + above the river. ⌘↩ goes between editing and a preview; ⌘S saves.")
+                tip("plus", "Make a tiddler", "⌘N, or the + above the river. A card is written as an outline; ⌘↩ switches it to text and back.")
                 tip("link", "Link as you write", "Type [[ and choose a title — a tiddler, a note, or a day.")
                 tip("tag", "Tag it", "Tags are tiddlers too: a tag’s card lists what it tags, and can give it fields.")
                 tip("line.3.horizontal.decrease.circle", "Ask a query", "Insert Query keeps a live list, table or tree in a tiddler.")

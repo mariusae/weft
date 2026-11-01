@@ -44,6 +44,23 @@ import Testing
         #expect(store.tiddler("Alpha")?.text == "Changed.")
     }
 
+    @Test func aCardIsAnOutlineWhereItCanBeAndCommandReturnSwitches() {
+        write("List", "- one\n- two\n")
+        write("Prose", "A line\u{2028}broken within.")
+        #expect(store.editorMode("List") == .outline)
+        #expect(store.editorMode("Prose") == .text)
+        let one = river(["List", "Prose"])
+        one.select("List")
+        one.toggleEditorMode()
+        #expect(store.editorMode("List") == .text)
+        one.toggleEditorMode()
+        #expect(store.editorMode("List") == .outline)
+        // What the outline would write differently stays text.
+        one.select("Prose")
+        one.toggleEditorMode()
+        #expect(store.editorMode("Prose") == .text)
+    }
+
     @Test func savingWritesTheRiverAndKeepsItAsItChanges() {
         let one = river(["Alpha", "Beta"])
         one.save(as: "Work")

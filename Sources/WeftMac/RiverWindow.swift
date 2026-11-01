@@ -148,6 +148,8 @@ struct RiverCommands: Commands {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(river == nil || store.root == nil)
             Button("Write in Selected Card") { river?.toggleEditing() }
+                .disabled(river?.cards.isEmpty ?? true)
+            Button("Switch Between Outline and Text") { river?.toggleEditorMode() }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(river?.cards.isEmpty ?? true)
             Button("Close All Cards") { river?.closeAll() }

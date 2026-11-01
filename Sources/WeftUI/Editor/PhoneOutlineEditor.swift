@@ -21,6 +21,9 @@ struct OutlineCardEditor: UIViewRepresentable {
     /// Told when the caret comes in, and when it leaves.
     var onFocusChange: (Bool) -> Void = { _ in }
 
+    /// Where a top-level row's words start.
+    static var textIndent: CGFloat { PhoneMetrics(face: .system, size: MarkdownStyler.defaultSize).textIndent(for: .blank) }
+
     final class Coordinator {
         /// What is around the rows — front matter, the title — written back with them.
         var shell = OutlineMarkdown.parse("")
