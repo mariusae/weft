@@ -57,14 +57,18 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   river take turns.
 - **Rivers**: more than one river can be open. On the Mac each is a tab —
   ⌘T opens one, with Quick Open showing; a page open in two tabs is one
-  draft in both. On the phone, the title's menu lists the rivers open and
-  makes a new one, and the bar at the foot of the river swipes between them.
+  draft in both. On the phone, the bar at the foot of the river says which
+  it is: its menu lists the rivers open and makes a new one, and a swipe on
+  it goes between them. There is no bar at the top: the river runs up under
+  glass controls — back to the sidebar, Quick Open, Today, and a menu —
+  which step aside as it is read down, the bar at the foot gathering to the
+  river's name, as Prism's do.
   A river is this device's alone, remembered per graph, until it is saved
   under a name (Story ▸ Save River…, or the stack button above the river):
   then it is a file in the graph's `rivers/` folder — a link to each card a
   line — synced with the rest and kept as its cards change. A saved river
   is not opened anywhere until it is brought back from **Saved Rivers**
-  (⇧⌘R, or the title's menu on the phone), which also duplicates, renames
+  (⇧⌘R, or the bar's menu on the phone), which also duplicates, renames
   and deletes them; deleting one leaves its cards open where they are.
 - **A card** is written in where it stands — there is no Edit and no
   Preview. Its body reads as what it says, and is edited as it reads: as

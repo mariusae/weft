@@ -39,7 +39,7 @@ public struct ContentView: View {
                         }
                         #endif
                 } detail: {
-                    RiverColumn()
+                    RiverColumn(showSidebar: sizeClass == .compact ? { compactColumn = .sidebar } : nil)
                         // Its scroll and the card in view, each river's own.
                         .id(river.id)
                         #if os(macOS)
@@ -50,11 +50,11 @@ public struct ContentView: View {
                         .navigationSubtitle(store.isLoading || store.sync != nil
                                             ? "\(store.graphName) · \(store.count) pages" : "\(store.graphName) · \(store.count) pages · not synced")
                         #else
-                        .navigationTitle(river.name ?? store.graphName)
+                        // Which river it is, the bar at its foot says; on the
+                        // phone, glass controls float over it in place of a bar.
+                        .navigationTitle("")
                         .navigationBarTitleDisplayMode(.inline)
-                        .toolbarTitleMenu {
-                            if let riverSet { RiverSetMenu(rivers: riverSet) }
-                        }
+                        .toolbar(sizeClass == .compact ? .hidden : .automatic, for: .navigationBar)
                         #endif
                         .toolbar { RiverToolbar() }
                 }
@@ -353,8 +353,16 @@ private struct RiverColumn: View {
     @Environment(River.self) private var river
     @Environment(RiverSet.self) private var riverSet: RiverSet?
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// On the iPhone: back to the sidebar, from the glass over the river.
+    var showSidebar: (() -> Void)?
     /// The card at the top of the river, as it is scrolled.
     @State private var inView: String?
+    /// Read down into the river: the controls over it out of the way, the
+    /// bar at its foot gathered to the river's name — as Prism does.
+    @State private var tucked = false
+    #if os(iOS)
+    @State private var scrolling = ScrollFollower()
+    #endif
     /// Where a card being dragged would be dropped.
     @State private var drop: CardDrop?
 
@@ -378,6 +386,15 @@ private struct RiverColumn: View {
             }
             .scrollPosition(id: $inView, anchor: .top)
             .onChange(of: inView) { river.cardInView = inView }
+            #if os(iOS)
+            .onScrollPhaseChange { _, phase in scrolling.byHand = phase == .interacting || phase == .decelerating }
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, y in
+                if let now = scrolling.follow(y), now != tucked { tucked = now }
+            }
+            .safeAreaBar(edge: .top) {
+                if let showSidebar { RiverControls(showSidebar: showSidebar, tucked: tucked) }
+            }
+            #endif
             .background(Color.river)
             #if os(macOS)
             .overlay(alignment: .trailing) {
@@ -401,7 +418,7 @@ private struct RiverColumn: View {
             // The cards scroll on under it, and their last lines up past it.
             .safeAreaInset(edge: .bottom) {
                 // Not over the keys' bar while writing.
-                if let riverSet, riverSet.rivers.count > 1, !river.isWritingAny { RiverSwitcher(rivers: riverSet).padding(.bottom, 4) }
+                if let riverSet, !river.isWritingAny { RiverSwitcher(rivers: riverSet, small: tucked).padding(.bottom, 4) }
             }
             #endif
             .overlay(alignment: .bottom) { SyncNoticeView().padding(.bottom, 14) }
@@ -412,6 +429,102 @@ private struct RiverColumn: View {
         }
     }
 }
+
+#if os(iOS)
+/// How far the river has been scrolled, and which way: kept out of what
+/// views watch, as it changes with every frame of a scroll.
+private final class ScrollFollower {
+    var byHand = false
+    private var last: CGFloat = 0
+    private var travel: CGFloat = 0
+
+    /// Scrolled down by hand some way, tucked; up a little, or near the
+    /// top, not. Nil: as it was.
+    func follow(_ y: CGFloat) -> Bool? {
+        defer { last = y }
+        if y < 40 {
+            travel = 0
+            return false
+        }
+        guard byHand else { return nil }
+        let delta = y - last
+        travel = (delta > 0) == (travel > 0) ? travel + delta : delta
+        if travel > 24 { return true }
+        if travel < -12 { return false }
+        return nil
+    }
+}
+
+/// Over the top of the river, on the phone, on glass: back to the sidebar,
+/// and at the right what is done with the river — tucked away while it is
+/// read down.
+private struct RiverControls: View {
+    @Environment(WikiStore.self) private var store
+    @Environment(River.self) private var river
+    let showSidebar: () -> Void
+    let tucked: Bool
+
+    var body: some View {
+        HStack {
+            Button(action: showSidebar) {
+                Image(systemName: "chevron.backward")
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Sidebar")
+            .glassEffect(.regular.interactive(), in: .circle)
+            Spacer()
+            HStack(spacing: 2) {
+                let conflicts = store.conflicted()
+                if !conflicts.isEmpty {
+                    control("\(conflicts.count) to Review", "exclamationmark.triangle") { river.openConflicts() }
+                        .foregroundStyle(.orange)
+                }
+                if let sync = store.sync, sync.status != .idle, !isSynced(sync) { SyncButton(sync: sync).labelStyle(.iconOnly).frame(width: 44, height: 44) }
+                control("Quick Open", "magnifyingglass") { river.quickOpenShown = true }
+                control("Today", "calendar") { river.openToday() }
+                Menu {
+                    Button("New Tiddler", systemImage: "plus") { river.newTiddler() }
+                    Button("Close All", systemImage: "rectangle.stack.badge.minus") { river.closeAll() }
+                    if store.sync != nil {
+                        Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { store.syncNow() }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("More")
+            }
+            .padding(.horizontal, 6)
+            .glassEffect(.regular.interactive(), in: .capsule)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Ink.accent.color)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+        .opacity(tucked ? 0 : 1)
+        .scaleEffect(tucked ? 0.92 : 1)
+        .offset(y: tucked ? -12 : 0)
+        .allowsHitTesting(!tucked)
+        .animation(.spring(duration: 0.32, bounce: 0.14), value: tucked)
+    }
+
+    private func control(_ name: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel(name)
+    }
+
+    private func isSynced(_ sync: WikiSync) -> Bool {
+        if case .synced = sync.status { return true }
+        return false
+    }
+}
+#endif
 
 #if os(macOS)
 /// The river at a glance, at its right edge, with the sidebar shut: a tick

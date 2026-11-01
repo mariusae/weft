@@ -104,7 +104,7 @@ public final class RiverSet {
 // MARK: The phone's rivers
 
 #if os(iOS)
-/// Under the title: the rivers open, a new one, saving this one, the saved ones.
+/// The bar's menu: the rivers open, a new one, saving this one, the saved ones.
 struct RiverSetMenu: View {
     let rivers: RiverSet
 
@@ -134,45 +134,69 @@ struct RiverSetMenu: View {
     }
 }
 
-/// At the foot of the river, with more than one open: which it is, and a
-/// swipe to the one beside it.
+/// At the foot of the river: which it is — its menu the rivers open, a
+/// new one, the saved ones — and, with more than one, a swipe to the one
+/// beside it. Read down into the river, gathered to its name.
 struct RiverSwitcher: View {
     let rivers: RiverSet
+    var small = false
 
     var body: some View {
         let index = rivers.rivers.firstIndex { $0 === rivers.current } ?? 0
+        let many = rivers.rivers.count > 1
         HStack(spacing: 6) {
-            Button { withAnimation(.snappy) { rivers.step(-1) } } label: {
-                Image(systemName: "chevron.left").frame(width: 30, height: 30)
+            if many, !small {
+                Button { withAnimation(.snappy) { rivers.step(-1) } } label: {
+                    Image(systemName: "chevron.left").frame(width: 30, height: 30)
+                }
+                .disabled(index == 0)
             }
-            .disabled(index == 0)
-            VStack(spacing: 4) {
-                Text(rivers.current.title)
-                    .font(.callout.weight(.medium))
-                    .lineLimit(1)
-                HStack(spacing: 5) {
-                    ForEach(rivers.rivers.indices, id: \.self) { at in
-                        Circle()
-                            .fill(at == index ? Ink.accent.color : Ink.faint.color)
-                            .frame(width: 5, height: 5)
+            Menu {
+                RiverSetMenu(rivers: rivers)
+            } label: {
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text(rivers.current.title)
+                            .font(small ? .footnote.weight(.medium) : .callout.weight(.medium))
+                            .lineLimit(1)
+                        if !small {
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Ink.secondary.color)
+                        }
+                    }
+                    if many, !small {
+                        HStack(spacing: 5) {
+                            ForEach(rivers.rivers.indices, id: \.self) { at in
+                                Circle()
+                                    .fill(at == index ? Ink.accent.color : Ink.faint.color)
+                                    .frame(width: 5, height: 5)
+                            }
+                        }
                     }
                 }
+                .frame(minWidth: small ? nil : 120, maxWidth: small ? nil : 220)
+                .fixedSize(horizontal: small, vertical: false)
+                .contentShape(.rect)
             }
-            .frame(minWidth: 120, maxWidth: 220)
-            Button { withAnimation(.snappy) { rivers.step(1) } } label: {
-                Image(systemName: "chevron.right").frame(width: 30, height: 30)
+            .accessibilityLabel("River: \(rivers.current.title)")
+            if many, !small {
+                Button { withAnimation(.snappy) { rivers.step(1) } } label: {
+                    Image(systemName: "chevron.right").frame(width: 30, height: 30)
+                }
+                .disabled(index == rivers.rivers.count - 1)
             }
-            .disabled(index == rivers.rivers.count - 1)
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, small ? 12 : 8)
+        .padding(.vertical, small ? 6 : 6)
         .contentShape(.capsule)
         // Over its buttons too: a tap is theirs, a swipe the bar's.
         .highPriorityGesture(DragGesture(minimumDistance: 16).onEnded { drag in
-            guard abs(drag.translation.width) > max(36, abs(drag.translation.height)) else { return }
+            guard many, abs(drag.translation.width) > max(36, abs(drag.translation.height)) else { return }
             withAnimation(.snappy) { rivers.step(drag.translation.width < 0 ? 1 : -1) }
         })
+        .animation(.spring(duration: 0.32, bounce: 0.14), value: small)
         .glassEffect(.regular, in: .capsule)
     }
 }
