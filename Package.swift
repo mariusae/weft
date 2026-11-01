@@ -27,7 +27,9 @@ let package = Package(
         // The river of cards, its sidebar, cards and editor: the Mac's, the
         // iPad's and the iPhone's.
         .target(name: "WeftUI", dependencies: ["WeftCore", .product(name: "ReflectCore", package: "reflect-mac"),
-                                             .product(name: "ReflectUI", package: "reflect-mac", condition: .when(platforms: [.macOS]))]),
+                                             .product(name: "ReflectUI", package: "reflect-mac", condition: .when(platforms: [.macOS])),
+                                             .product(name: "PhoneUI", package: "reflect-mac", condition: .when(platforms: [.iOS])),
+                                             .product(name: "PrismCore", package: "reflect-mac")]),
         // A graph kept in a GitHub repository, synced through libgit2 with
         // the account signed in with: the phone's.
         .target(name: "WeftGitHub", dependencies: ["WeftCore", .product(name: "ReflectGit2", package: "reflect-mac")]),

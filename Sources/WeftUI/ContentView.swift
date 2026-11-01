@@ -398,7 +398,8 @@ private struct RiverColumn: View {
             #if os(iOS)
             // The cards scroll on under it, and their last lines up past it.
             .safeAreaInset(edge: .bottom) {
-                if let riverSet, riverSet.rivers.count > 1 { RiverSwitcher(rivers: riverSet).padding(.bottom, 4) }
+                // Not over the keys' bar while writing.
+                if let riverSet, riverSet.rivers.count > 1, !river.isWritingAny { RiverSwitcher(rivers: riverSet).padding(.bottom, 4) }
             }
             #endif
             .overlay(alignment: .bottom) { SyncNoticeView().padding(.bottom, 14) }

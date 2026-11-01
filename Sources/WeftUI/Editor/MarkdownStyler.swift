@@ -217,6 +217,15 @@ struct MarkdownStyler {
             look.firstIndent = depth * 20
             look.indent = depth * 20 + ceil(width)
             content = nsLine.substring(from: match.range.upperBound)
+            // A list item that is a heading, as an outline's row can be: `- ## …`.
+            let inner = content.prefix { $0 == "#" }.count
+            if hashes == 0, (1...6).contains(inner), content.dropFirst(inner).first == " " {
+                let scale: CGFloat = [1.45, 1.25, 1.12, 1.05, 1, 1][inner - 1]
+                let start = match.range.upperBound
+                storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size * scale, weight: .semibold),
+                                     range: sub(NSRange(location: start, length: nsLine.length - start)))
+                markup(NSRange(location: start, length: inner + 1))
+            }
         }
         for match in Self.matches(#"\*\*(?=\S)(.+?)(?<=\S)\*\*"#, in: line) {
             storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size, weight: .semibold), range: sub(match.range(at: 1)))

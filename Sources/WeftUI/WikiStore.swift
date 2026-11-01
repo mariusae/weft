@@ -706,11 +706,7 @@ public final class WikiStore {
     /// Whether a body can be edited as an outline: on the Mac, where Prism's
     /// outline editor is.
     private func canOutline(_ text: String) -> Bool {
-        #if os(macOS)
-        OutlineEditing.canEdit(text)
-        #else
-        false
-        #endif
+        !text.contains(OutlineText.lineSeparator) && OutlineMarkdown.serialize(OutlineMarkdown.parse(text)) == text
     }
 
     /// The graph's pages, for an outline's queries and embeds to ask.

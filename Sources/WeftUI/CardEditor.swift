@@ -64,15 +64,11 @@ struct CardEditor: View {
         let taken = { river.caretTaken(title) }
         let focused: (Bool) -> Void = { $0 ? river.caretEntered(title) : river.caretLeft(title) }
         ZStack(alignment: .topLeading) {
-            #if os(macOS)
             if mode == .outline {
                 OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused)
             } else {
                 textEditor(wants: wants, taken: taken, focused: focused)
             }
-            #else
-            textEditor(wants: wants, taken: taken, focused: focused)
-            #endif
             if (page?.text ?? "").isEmpty, !river.isWriting(title) {
                 Text(placeholder(page))
                     .foregroundStyle(Ink.faint.color)

@@ -235,6 +235,12 @@ struct Card: View {
                 withAnimation(.snappy(duration: 0.2)) { river.toggleFold(title) }
             }
             Button("Close Other Cards") { withAnimation { river.closeOthers(title) } }
+            #if os(iOS)
+            // The Mac's switch in the header, on the phone in here: no room beside the title.
+            Picker("Write As", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
+                ForEach(WikiStore.EditorMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            #endif
             Divider()
             Button("Add Tag", systemImage: "tag") { addingTag = true }
             Button("Add Field", systemImage: "plus.rectangle") {

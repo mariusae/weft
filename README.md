@@ -66,8 +66,8 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
 - **A card** is written in where it stands — there is no Edit and no
   Preview. Its body reads as what it says, and is edited as it reads: as
   **Text** (Markdown, its markup showing only on the lines the caret is on)
-  or as an **Outline** (Prism's outline editor, on the Mac) — the switch in
-  its header. In both, links and tags are pills, as Slack draws them: an
+  or as an **Outline** (Prism's outline editor, the Mac's and the phone's)
+  — the switch in its header, or on the phone in its menu. In both, links and tags are pills, as Slack draws them: an
   icon for a page, a day or the web, an address shortened to its site and
   the ends of its path; a click (or tap) follows one, and on the Mac a
   right-click opens or copies it. What is written saves itself a moment
@@ -96,7 +96,11 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   finishes the title inline — the rest of the best one faint after the
   caret, Tab or → taking it — and lists tiddlers, notes, days and a new
   tiddler under the caret (↑↓, Return; Escape puts it away); on the phone,
-  above the keyboard, with the formatting buttons. ⌘B, ⌘I and ⌘K do bold,
+  in the capsule of the bar over the keys. That bar is Prism's, on glass,
+  in both modes: undo and redo, a line out and in, up and down, its tools
+  (Text: a list, a checklist, a link, an embed, a callout; Outline:
+  Prism's), Aa for bold, italic, struck, highlighted, code, a heading or a
+  quote, and Done. ⌘B, ⌘I and ⌘K do bold,
   italic and a link. Tags offer the ones already in use. Escape takes the
   caret out. A save writes only what changed in the file.
 - **Quick Open** (⌘O): a tiddler, note or day by what is typed — today and
@@ -158,7 +162,9 @@ WikiText a click away.
   cards, selection and caret), `Rivers` (the phone's rivers, Saved
   Rivers), `ContentView` (sidebar and river), `Card`, `CardEditor`, `BacklinkFan`, `QuickOpen`,
   `MarkdownView`, `QueryView`, `ConflictView`, and `Editor/` (the text view,
-  its styling and inline completion).
+  its styling, link pills and inline completion; the outline editor — on
+  the Mac reflect-mac's `ReflectUI`, on the phone its `PhoneUI`, Prism's
+  own, with its bar over the keys).
 - `Sources/WeftGitHub` — GitHub: a graph cloned into weft's own folder and
   synced with libgit2 (reflect-mac's `ReflectGit2`), signing in and
   choosing it (`GitHubConnect`), onboarding, and the sync relay, followed.

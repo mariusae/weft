@@ -209,7 +209,11 @@ public final class River: Identifiable {
     // MARK: The caret
 
     /// The card the caret is in.
-    @ObservationIgnored private(set) var writing: String?
+    @ObservationIgnored private(set) var writing: String? {
+        didSet { if (writing != nil) != isWritingAny { isWritingAny = writing != nil } }
+    }
+    /// Whether the caret is in any card: what is over the keys is the editor's.
+    public private(set) var isWritingAny = false
     @ObservationIgnored private var leaving: [String: Task<Void, Never>] = [:]
     /// The card asked to take the caret, and whether in its title — taken
     /// by the card's editor once it is there to take it.

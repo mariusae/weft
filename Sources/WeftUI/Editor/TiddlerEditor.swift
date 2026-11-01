@@ -3,6 +3,7 @@ import WeftCore
 #if os(macOS)
 import AppKit
 #else
+import PhoneUI
 import UIKit
 #endif
 
@@ -42,6 +43,105 @@ final class EditorController {
         let replaced = parts.joined(separator: "\n") + (trailing != nil ? "\n" : "")
         view.replace(lines, with: replaced)
         view.selection = NSRange(location: lines.location + (replaced as NSString).length - (trailing != nil ? 1 : 0), length: 0)
+    }
+
+    /// The lines the selection touches: where they are, and what they say,
+    /// without the newline after the last.
+    private func selectedLines() -> (range: NSRange, lines: [String])? {
+        guard let view = textView else { return nil }
+        var range = text.lineRange(for: view.selection)
+        if range.length > 0, text.character(at: NSMaxRange(range) - 1) == 10 { range.length -= 1 }
+        return (range, text.substring(with: range).components(separatedBy: "\n"))
+    }
+
+    /// Puts lines in place of those the selection touched, the caret
+    /// moved with them by `shift`.
+    private func replaceLines(_ range: NSRange, with lines: [String], shift: Int) {
+        guard let view = textView else { return }
+        let selection = view.selection
+        view.replace(range, with: lines.joined(separator: "\n"))
+        view.selection = NSRange(location: max(range.location, selection.location + shift), length: selection.length)
+    }
+
+    /// A heading, a step at a time: `#`, `##`, `###`, then none — after a
+    /// list item's marker, when the line is one.
+    func cycleHeading() {
+        guard let (range, lines) = selectedLines(), let first = lines.first else { return }
+        let marker = MarkdownStyler.matches(#"^[ \t]*(?:[-*+]|\d+[.)])\s(?:\[[ xX]\]\s)?"#, in: first).first
+            .map { (first as NSString).substring(with: $0.range) } ?? ""
+        let body = String(first.dropFirst(marker.count))
+        let hashes = body.prefix { $0 == "#" }.count
+        let level = body.dropFirst(hashes).hasPrefix(" ") ? hashes : 0
+        let next = level >= 3 ? 0 : level + 1
+        let rest = level > 0 ? String(body.dropFirst(level + 1)) : body
+        let line = marker + (next == 0 ? rest : String(repeating: "#", count: next) + " " + rest)
+        replaceLines(range, with: [line] + lines.dropFirst(), shift: (line as NSString).length - (first as NSString).length)
+    }
+
+    /// A line to check off: a list item becomes one, an open one done, a
+    /// done one a plain item again.
+    func cycleChecklist() {
+        guard let (range, lines) = selectedLines() else { return }
+        var shift = 0
+        let changed = lines.enumerated().map { index, line -> String in
+            let indent = line.prefix { $0 == " " || $0 == "\t" }
+            let body = line.dropFirst(indent.count)
+            let next: String
+            if body.hasPrefix("- [ ] ") {
+                next = indent + "- [x] " + body.dropFirst(6)
+            } else if body.hasPrefix("- [x] ") || body.hasPrefix("- [X] ") {
+                next = indent + "- " + body.dropFirst(6)
+            } else if body.hasPrefix("- ") {
+                next = indent + "- [ ] " + body.dropFirst(2)
+            } else {
+                next = indent + "- [ ] " + body
+            }
+            if index == 0 { shift = (next as NSString).length - (line as NSString).length }
+            return next
+        }
+        replaceLines(range, with: changed, shift: shift)
+    }
+
+    /// The lines moved a level in, or out: two spaces more at their start, or fewer.
+    func shiftLines(by levels: Int) {
+        guard let (range, lines) = selectedLines() else { return }
+        var shift = 0
+        let changed = lines.enumerated().map { index, line -> String in
+            let next: String
+            if levels > 0 {
+                next = line.isEmpty ? line : "  " + line
+            } else {
+                let spaces = min(line.prefix { $0 == " " }.count, 2)
+                next = spaces > 0 ? String(line.dropFirst(spaces)) : line.hasPrefix("\t") ? String(line.dropFirst()) : line
+            }
+            if index == 0 { shift = (next as NSString).length - (line as NSString).length }
+            return next
+        }
+        replaceLines(range, with: changed, shift: shift)
+    }
+
+    /// The lines the selection touches moved past the line above, or below.
+    func moveLines(by step: Int) {
+        guard let view = textView, let (range, lines) = selectedLines() else { return }
+        let whole = text as NSString
+        if step < 0 {
+            guard range.location > 0 else { return }
+            let above = whole.lineRange(for: NSRange(location: range.location - 1, length: 0))
+            let line = whole.substring(with: NSRange(location: above.location, length: above.length - 1))
+            let selection = view.selection
+            view.replace(NSRange(location: above.location, length: NSMaxRange(range) - above.location),
+                         with: (lines + [line]).joined(separator: "\n"))
+            view.selection = NSRange(location: selection.location - above.length, length: selection.length)
+        } else {
+            guard NSMaxRange(range) < whole.length else { return }
+            let below = whole.lineRange(for: NSRange(location: NSMaxRange(range) + 1, length: 0))
+            var line = whole.substring(with: below)
+            if line.hasSuffix("\n") { line.removeLast() }
+            let selection = view.selection
+            view.replace(NSRange(location: range.location, length: NSMaxRange(below) - range.location - (whole.substring(with: below).hasSuffix("\n") ? 1 : 0)),
+                         with: ([line] + lines).joined(separator: "\n"))
+            view.selection = NSRange(location: selection.location + (line as NSString).length + 1, length: selection.length)
+        }
     }
 
     /// Puts a block — a query, a callout — in a paragraph of its own at the caret.
@@ -615,8 +715,9 @@ private struct EditorRepresentable: NSViewRepresentable {
 
 #else
 
-/// The phone's text view: what completes the `[[` being typed is offered
-/// in the bar above the keyboard.
+/// The phone's text view: over the keys, Prism's bar of glass — undo, the
+/// line moved in, out, up and down, its tools, Aa's formatting, Done — and
+/// in its capsule what completes the `[[` being typed.
 final class TiddlerTextView: UITextView {
     var suggest: (String) -> [LinkTarget] = { _ in [] }
     weak var controller: EditorController?
@@ -655,11 +756,60 @@ final class TiddlerTextView: UITextView {
 
     func offerCompletions() {
         guard let range = linkPartialRange(in: text as NSString, caret: selectedRange.location) else {
-            if controller?.suggestions.isEmpty == false { controller?.suggestions = [] }
+            if controller?.suggestions.isEmpty == false {
+                controller?.suggestions = []
+                toolbar?.show(chips: []) { _ in }
+            }
             return
         }
-        controller?.suggestions = suggest((text as NSString).substring(with: range))
+        let found = suggest((text as NSString).substring(with: range))
+        controller?.suggestions = found
+        toolbar?.show(chips: found.map { ($0.kind == .new ? "New “\($0.title)”" : $0.shown, $0.kind.symbol) }) { [weak self] index in
+            guard found.indices.contains(index) else { return }
+            self?.complete(with: found[index].title)
+        }
     }
+
+    // MARK: The bar over the keys
+
+    private lazy var madeToolbar = OutlineToolbar(target: self, tools: [
+        .init("list.bullet", #selector(toggleList), "List"),
+        .init("checkmark.square", #selector(cycleChecklist), "Checklist"),
+        .init("link", #selector(insertLink), "Link"),
+        .init("square.on.square", #selector(insertEmbed), "Embed"),
+        .init("lightbulb", #selector(insertCallout), "Callout"),
+    ])
+
+    private var toolbar: OutlineToolbar? { inputAccessoryView as? OutlineToolbar }
+
+    override var inputAccessoryView: UIView? {
+        get { madeToolbar }
+        set {}
+    }
+
+    /// ↶ and ↷ dimmed when there is nothing to undo, or redo.
+    func showUndoState() {
+        toolbar?.showUndo(canUndo: undoManager?.canUndo ?? false, canRedo: undoManager?.canRedo ?? false)
+    }
+
+    @objc func undoChange() { undoManager?.undo(); showUndoState() }
+    @objc func redoChange() { undoManager?.redo(); showUndoState() }
+    @objc func indent() { controller?.shiftLines(by: 1) }
+    @objc func outdent() { controller?.shiftLines(by: -1) }
+    @objc func moveUp() { controller?.moveLines(by: -1) }
+    @objc func moveDown() { controller?.moveLines(by: 1) }
+    @objc func toggleList() { controller?.prefixLines("- ") }
+    @objc func cycleChecklist() { controller?.cycleChecklist() }
+    @objc func insertLink() { controller?.startLink() }
+    @objc func insertEmbed() { controller?.startLink(embed: true) }
+    @objc func insertCallout() { controller?.insertBlock("> [!NOTE]\n> ") }
+    @objc func makeBold() { controller?.wrap("**") }
+    @objc func makeItalic() { controller?.wrap("*") }
+    @objc func makeStruck() { controller?.wrap("~~") }
+    @objc func makeHighlighted() { controller?.wrap("==") }
+    @objc func makeCode() { controller?.wrap("`") }
+    @objc func cycleHeading() { controller?.cycleHeading() }
+    @objc func toggleQuote() { controller?.prefixLines("> ") }
 
     func complete(with title: String) {
         guard let range = linkPartialRange(in: text as NSString, caret: selectedRange.location) else { return }
@@ -750,12 +900,6 @@ private struct EditorRepresentable: UIViewRepresentable {
         view.textStorage.delegate = context.coordinator
         view.text = text
         live.restyleAll()
-        let bar = UIHostingController(rootView: KeyboardBar(controller: controller))
-        bar.view.frame = CGRect(x: 0, y: 0, width: 400, height: 46)
-        bar.view.backgroundColor = .clear
-        bar.sizingOptions = []
-        view.inputAccessoryView = bar.view
-        context.coordinator.bar = bar
         controller.textView = view
         return view
     }
@@ -788,7 +932,6 @@ private struct EditorRepresentable: UIViewRepresentable {
 
     final class Coordinator: NSObject, UITextViewDelegate, NSTextStorageDelegate {
         var parent: EditorRepresentable
-        var bar: UIHostingController<KeyboardBar>?
         var live: LiveMarkdown?
 
         init(_ parent: EditorRepresentable) {
@@ -799,6 +942,7 @@ private struct EditorRepresentable: UIViewRepresentable {
             parent.text = view.text
             live?.changed()
             (view as? TiddlerTextView)?.offerCompletions()
+            (view as? TiddlerTextView)?.showUndoState()
         }
 
         func textViewDidChangeSelection(_ view: UITextView) {
@@ -820,33 +964,6 @@ private struct EditorRepresentable: UIViewRepresentable {
             guard editedMask.contains(.editedCharacters) else { return }
             MainActor.assumeIsolated { live?.edited(range, in: storage) }
         }
-    }
-}
-
-/// Above the phone's keyboard: what completes the link being typed, or
-/// else the formatting buttons.
-struct KeyboardBar: View {
-    let controller: EditorController
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                if controller.suggestions.isEmpty {
-                    FormattingButtons(controller: controller, compact: true)
-                } else {
-                    ForEach(controller.suggestions, id: \.self) { target in
-                        Button { controller.complete(with: target.title) } label: {
-                            Label(target.kind == .new ? "New “\(target.title)”" : target.shown, systemImage: target.kind.symbol)
-                        }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                    }
-                }
-            }
-            .padding(.horizontal, 10)
-        }
-        .frame(height: 46)
-        .background(.bar)
     }
 }
 
