@@ -155,6 +155,19 @@ struct RiverCommands: Commands {
             Button("Close All Cards") { river?.closeAll() }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
             Divider()
+            Button("Back") { river?.goBack() }
+                .keyboardShortcut("[")
+                .disabled(!(river?.canGoBack ?? false))
+            Button("Forward") { river?.goForward() }
+                .keyboardShortcut("]")
+                .disabled(!(river?.canGoForward ?? false))
+            Button("Previous Day") { river?.stepDay(-1) }
+                .keyboardShortcut("[", modifiers: [.command, .option])
+                .disabled(river == nil || store.root == nil)
+            Button("Next Day") { river?.stepDay(1) }
+                .keyboardShortcut("]", modifiers: [.command, .option])
+                .disabled(river == nil || store.root == nil)
+            Divider()
             Button("Previous Card") { river?.step(-1) }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
                 .disabled(river?.cards.isEmpty ?? true)

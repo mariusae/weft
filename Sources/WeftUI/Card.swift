@@ -170,6 +170,18 @@ struct Card: View {
 
     /// Text or Outline; and, in a glass capsule, the card's menu and its
     /// close button.
+    private func dayButton(_ symbol: String, _ name: String, by: Int) -> some View {
+        Button { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: by) } } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .bold))
+                .frame(width: 28, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(name)
+        .accessibilityLabel(name)
+    }
+
     private var controls: some View {
         let writing = river.isWriting(title)
         return HStack(spacing: 8) {
@@ -200,6 +212,11 @@ struct Card: View {
             }
             #endif
             HStack(spacing: 0) {
+                if store.kind(title) == .day, !writing {
+                    // The day before and after, opened just after this one.
+                    dayButton("chevron.left", "Previous Day", by: -1)
+                    dayButton("chevron.right", "Next Day", by: 1)
+                }
                 menu
                 Button { withAnimation { river.close(title) } } label: {
                     Image(systemName: "xmark")
@@ -264,7 +281,7 @@ struct Card: View {
             }
             if store.tiddler(title) != nil, !store.isShadow(title) {
                 Divider()
-                Button("Delete Page…", role: .destructive) {
+                Button("Delete Tiddler…", role: .destructive) {
                     referring = store.references(to: title).count
                     confirmingDelete = true
                 }

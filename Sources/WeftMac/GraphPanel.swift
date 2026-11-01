@@ -11,7 +11,7 @@ enum GraphPanel {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.prompt = "Open Graph"
-        panel.message = "Choose a Reflect graph: the folder holding daily/, notes/ and, once weft has written, wiki/."
+        panel.message = "Choose a Reflect graph: the folder holding daily/ and notes/."
         guard panel.runModal() == .OK, let url = panel.url else { return false }
         store.open(graph: url)
         return true

@@ -63,9 +63,20 @@ struct OutlineCardEditor: UIViewRepresentable {
         editor.onOpenLink = { [river, title] in followOutline($0, in: river, from: title) }
         editor.onHeightChange = { [weak editor] in editor?.invalidateIntrinsicContentSize() }
         editor.onFocusChange = { coordinator.onFocusChange($0) }
-        // `[[` completes from the graph's notes, as Prism's does.
+        // `[[` completes from the graph's notes, as Prism's does; dictation
+        // listens for their names.
         store.prepareLinkNotes { notes in
             OutlineEditor.suggest = { LinkSuggestions.candidates($0, index: notes) }
+            OutlineEditor.dictationTerms = { Dictation.terms(notes) }
+        }
+        // A day's card: today's shows the time now among its blocks, and its
+        // tasks aren't offered to it.
+        editor.day = Day(title)
+        // A task's menu: Do Today, Later… — moved into that day's page.
+        OutlineEditor.moveTo = { [store] editor, index, path in
+            guard let day = GraphPaths.day(fromDailyPath: path) else { return }
+            let name = day == .today ? "Today" : day == Day.today.adding(1) ? "Tomorrow" : store.shownTitle(day.description)
+            editor.moveRows(at: index, named: name) { rows, undo in store.add(rows, toDay: day, undo: undo) }
         }
         coordinator.load(text, into: editor)
         return editor

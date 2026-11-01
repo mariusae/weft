@@ -197,6 +197,7 @@ struct RiverSwitcher: View {
             withAnimation(.snappy) { rivers.step(drag.translation.width < 0 ? 1 : -1) }
         })
         .animation(.spring(duration: 0.32, bounce: 0.14), value: small)
+        .sensoryFeedback(.selection, trigger: index)
         .glassEffect(.regular, in: .capsule)
     }
 }

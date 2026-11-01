@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ReflectCore
 @testable import WeftCore
 @testable import WeftUI
 
@@ -76,6 +77,49 @@ import Testing
         write("Delta", "About Delta.")
         one.move("Delta", to: "Beta", after: false)
         #expect(one.cards == ["Alpha", "Delta", "Beta", "Gamma"])
+    }
+
+    @Test func backAndForwardGoWhereTheRiverWas() {
+        let one = river(["Alpha", "Beta"])
+        one.select("Alpha")
+        one.open("Gamma", from: "Alpha")
+        one.open("Beta")
+        #expect(one.places == ["Gamma", "Alpha"])
+        one.goBack()
+        #expect(one.isSelected("Gamma"))
+        #expect(one.canGoForward)
+        one.goForward()
+        #expect(one.isSelected("Beta"))
+        // A place closed since is opened again to go back to it.
+        one.close("Alpha")
+        one.goBack(to: "Alpha")
+        #expect(one.cards.contains("Alpha"))
+        #expect(one.isSelected("Alpha"))
+        #expect(!one.canGoBack)
+    }
+
+    @Test func aDayCardOpensItsNeighboursAfterIt() {
+        let one = river(["Alpha"])
+        let day = Day.today.description
+        one.open(day, from: "Alpha")
+        one.stepDay(-1)
+        #expect(one.cards == ["Alpha", day, Day.today.adding(-1).description])
+        #expect(store.quickOpen("next week").contains { $0.title == Day.today.adding(7).description })
+    }
+
+    @Test func rowsMovedToADayGoAtItsTopAndComeBackWithUndo() {
+        let day = Day.today.adding(3)
+        write(day.description, "- already there\n")
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        store.add([Row(kind: .bullet, text: "moved", task: .open)], toDay: day, undo: undo)
+        undo.endUndoGrouping()
+        let text = store.tiddler(day.description)?.text ?? ""
+        #expect(text.hasPrefix("- [ ] moved"))
+        #expect(text.contains("already there"))
+        undo.undo()
+        #expect(store.tiddler(day.description)?.text == "- already there\n")
     }
 
     @Test func savingWritesTheRiverAndKeepsItAsItChanges() {

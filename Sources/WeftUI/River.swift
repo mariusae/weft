@@ -114,6 +114,9 @@ public final class River: Identifiable {
         focus = nil
         writing = nil
         caretWanted = nil
+        backward = []
+        forward = []
+        historyVersion += 1
     }
 
     /// The display name: its name when saved, else the card at its top.
@@ -142,12 +145,84 @@ public final class River: Identifiable {
     }
 
     public func bringIntoView(_ title: String) {
+        // Where the river was, kept to go back to — unless going there.
+        if !traveling, let from = focus ?? cardInView, from != title, cards.contains(from) {
+            if backward.last != from { backward.append(from) }
+            if backward.count > 50 { backward.removeFirst() }
+            forward = []
+            historyVersion += 1
+        }
         focus = title
         focusRequest += 1
     }
 
     public func openToday() {
         open(Day.today.description)
+    }
+
+    /// A day card's neighbour, opened just after it: the day before or after.
+    public func openDay(beside title: String, by: Int) {
+        guard let day = Day(title) else { return }
+        open(day.adding(by).description, from: title)
+    }
+
+    /// ⌥⌘[, ⌥⌘]: the day before or after the selected day's card — or
+    /// today's, when no day is selected.
+    public func stepDay(_ by: Int) {
+        if let focus, Day(focus) != nil, cards.contains(focus) {
+            openDay(beside: focus, by: by)
+        } else {
+            open(Day.today.adding(by).description)
+        }
+    }
+
+    // MARK: Back and forward
+
+    /// The cards the river was at before each jump to another — a link
+    /// followed, a card opened or stepped to — and those gone back from.
+    @ObservationIgnored private var backward: [String] = []
+    @ObservationIgnored private var forward: [String] = []
+    @ObservationIgnored private var traveling = false
+    /// Bumped when either changes: for what says whether there is a way back.
+    public private(set) var historyVersion = 0
+
+    public var canGoBack: Bool { _ = historyVersion; return !backward.isEmpty }
+    public var canGoForward: Bool { _ = historyVersion; return !forward.isEmpty }
+
+    /// Where going back would go, the nearest first, each once: for the
+    /// list the back button holds.
+    public var places: [String] {
+        _ = historyVersion
+        var seen = Set<String>()
+        return backward.reversed().filter { seen.insert($0).inserted }.prefix(12).map { $0 }
+    }
+
+    /// ⌘[: back to the card the river was at — opened again if it was closed.
+    public func goBack() {
+        guard let place = backward.popLast() else { return }
+        if let here = focus ?? cardInView, here != place { forward.append(here) }
+        travel(to: place)
+    }
+
+    /// ⌘]: forward again.
+    public func goForward() {
+        guard let place = forward.popLast() else { return }
+        if let here = focus ?? cardInView, here != place { backward.append(here) }
+        travel(to: place)
+    }
+
+    /// Back to one of the places, those after it left to go forward to.
+    public func goBack(to place: String) {
+        guard let index = backward.lastIndex(of: place) else { return }
+        while backward.count > index + 1 { forward.append(backward.removeLast()) }
+        goBack()
+    }
+
+    private func travel(to place: String) {
+        historyVersion += 1
+        traveling = true
+        open(place)
+        traveling = false
     }
 
     public func openConflicts() {
@@ -211,6 +286,8 @@ public final class River: Identifiable {
         if folded.remove(title) != nil { folded.insert(new) }
         if focus == title { focus = new }
         if writing == title { writing = new }
+        backward = backward.map { $0 == title ? new : $0 }
+        forward = forward.map { $0 == title ? new : $0 }
     }
 
     /// A page is gone: its card goes too.

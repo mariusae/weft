@@ -172,7 +172,7 @@ outline; Weft editing outline pages with Prism's outline editor.
 Built: the file format and import; the river, cards and sidebar on the Mac,
 iPad and iPhone; query blocks; the native editor; sync through Reflect's
 `Git`, with frontmatter merged field by field and conflicts reviewed on the
-card; Reflect notes and days as read-only cards; typed tags; renaming with
+card; Reflect notes and days as cards, written in as tiddlers are; typed tags; renaming with
 relinking, and deleting; instant sync through the relay.
 
 Next: Reflect notes edited in their card, with reflect-mac's outline

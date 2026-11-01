@@ -45,6 +45,7 @@ struct WeftApp: App {
                 if phase == .active { relay.reconnect() }
             }
         }
+        .commands { PadCommands(river: rivers.current, store: store) }
     }
 
     private func follow() {
@@ -57,5 +58,47 @@ struct WeftApp: App {
         guard store.root == nil else { return }
         store.openInitialGraph()
         if store.root == nil, store.onboarded, GitHubGraph.exists { store.open(graph: GitHubGraph.root) }
+    }
+}
+
+/// With a keyboard on the iPad, the Mac's keys: held ⌘ lists them.
+private struct PadCommands: Commands {
+    let river: River
+    let store: WikiStore
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Tiddler") { river.newTiddler() }
+                .keyboardShortcut("n")
+            Button("Quick Open…") { river.quickOpenShown = true }
+                .keyboardShortcut("o")
+            Button("Find Tiddler") { river.searchFocusRequest += 1 }
+                .keyboardShortcut("f")
+            Button("Sync Now") { store.syncNow() }
+                .keyboardShortcut("r")
+                .disabled(store.sync == nil)
+        }
+        CommandMenu("Story") {
+            Button("Today") { river.openToday() }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+            Button("Switch Between Outline and Text") { river.toggleEditorMode() }
+                .keyboardShortcut(.return, modifiers: .command)
+            Button("Close All Cards") { river.closeAll() }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
+            Divider()
+            Button("Back") { river.goBack() }
+                .keyboardShortcut("[")
+            Button("Forward") { river.goForward() }
+                .keyboardShortcut("]")
+            Button("Previous Day") { river.stepDay(-1) }
+                .keyboardShortcut("[", modifiers: [.command, .option])
+            Button("Next Day") { river.stepDay(1) }
+                .keyboardShortcut("]", modifiers: [.command, .option])
+            Divider()
+            Button("Previous Card") { river.step(-1) }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+            Button("Next Card") { river.step(1) }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+        }
     }
 }

@@ -27,7 +27,7 @@ brings the graph's repository down into weft's own folder
 libgit2 with the account — as the phone does, and as Prism does. On the
 Mac, **Use a Folder on This Mac** opens a checkout already there, such as
 Reflect Mac's, synced through the Mac's own `git`. Later, File ▸ Connect to
-GitHub… and File ▸ Open Folder… (⌘O) switch. `-GraphPath <folder>` skips
+GitHub… and File ▸ Open Folder… (⇧⌘O) switch. `-GraphPath <folder>` skips
 onboarding and opens that folder.
 
 The GitHub App's details come from reflect-mac's `iOS/GitHub.local.xcconfig`:
@@ -128,10 +128,14 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   A draft saved over a tiddler a sync changed meanwhile is merged with it.
 - **Reflect notes and days as cards**: a `[[link]]` no tiddler answers
   leads where Reflect would take it — a date to its day, then a note's
-  title, then an alias — and opens it as a card, read-only for now. A
+  title, then an alias — and opens it as a card, written in as any is. A
   note's card shows its #tags, its body, and what links to it; a tiddler's
   card lists the notes linking to it. Search finds notes too, as Reflect's
   chooser does. Today (⇧⌘T) opens today's note. Private notes never show.
+  A day's card has ‹ › for the day before and after, opened just after
+  it (⌥⌘[ and ⌥⌘]); Quick Open finds a day by a few words too — `friday`,
+  `next week`, `3 days ago`, `Jan 3`. On the phone, a task's menu moves it
+  into a day: Do Today, or Later…
 - **Typed tags**: a tag tiddler's `fields` list — `birthday (date)`,
   `company (link)`, `status (active | paused | done)`, `rating (number)`,
   `website (url)`, `met (yes/no)`, or a bare name for text — gives every
@@ -149,6 +153,12 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   silent pushes, to sync in the background.
 - **The sidebar**: search (⌘F) over titles, then text, then Reflect notes;
   Open, Recent, Tags, and Missing (links to tiddlers no one has written).
+- **Back and forward**: ⌘[ goes back to the card the river was at before
+  a link was followed or a card opened — opened again if it was closed —
+  and ⌘] forward again; on the phone, the ‹ at the top, held, lists them.
+- **On the phone**: the river pulled down syncs; a card moved or closed,
+  or the river changed, is felt as a tick. On the iPad, a keyboard has the
+  Mac's keys.
 - ⌘N makes a new tiddler; ⇧⌘W closes every card not being edited.
 
 WikiText the importer couldn't convert shows as a dashed placeholder, the

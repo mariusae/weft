@@ -243,6 +243,17 @@ public final class WikiStore {
         sync.sync()
     }
 
+    /// The river pulled down: a sync, told as Sync Now's is, and waited
+    /// for while the river shows it going.
+    public func syncPulled() async {
+        guard let sync else { return }
+        announcing = true
+        clearing?.cancel()
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            sync.sync { _ in done.resume() }
+        }
+    }
+
     private func syncFinished(_ result: Result<SyncReport, Error>) {
         let asked = announcing
         announcing = false
@@ -916,6 +927,28 @@ public final class WikiStore {
     }
 
     /// Changes one of a tiddler's query blocks, from its card, and saves it.
+    /// Rows moved from a card to a day — Do Today, Later… — put at the top
+    /// of that day's page, as Prism puts them; undone with the card's undo.
+    public func add(_ rows: [Row], toDay day: Day, undo: UndoManager) {
+        let title = day.description
+        let before = (drafts[title] ?? tiddler(title))?.text ?? ""
+        let after = RowMove.adding(rows, to: before, path: GraphPaths.dailyPath(for: day))
+        setText(title, after)
+        undo.registerUndo(withTarget: self) { store in
+            // Changed since: not undone over it.
+            guard (store.drafts[title] ?? store.tiddler(title))?.text == after else { return }
+            store.setText(title, before)
+        }
+    }
+
+    /// A page's words, set from outside its editor: written now, unless its
+    /// card is being written in, whose draft takes them.
+    private func setText(_ title: String, _ text: String) {
+        let wasEditing = editing.contains(title)
+        change(title) { $0.text = text }
+        if !wasEditing { finishEditing(title) }
+    }
+
     public func updateQuery(in title: String, at index: Int, to query: Query) {
         guard var tiddler = tiddler(title) else { return }
         tiddler.text = MarkdownBlock.replacingQuery(at: index, in: tiddler.text, with: query)
@@ -1069,7 +1102,12 @@ extension WikiStore {
             return [dayTarget("today")!] + recent().prefix(limit - 1).map(target)
         }
         var found = (wiki?.search(query, limit: limit) ?? []).map(target)
-        if let day = dayTarget(query), !found.contains(day) { found.insert(day, at: 0) }
+        if let day = dayTarget(query), !found.contains(day) {
+            found.insert(day, at: 0)
+        } else if let day = DayQuery.day(query).map({ dayTarget($0.description)! }), !found.contains(day) {
+            // `friday`, `next week`, `3 days ago`, `Jan 3`: the day, after what is called that.
+            found.insert(day, at: min(1, found.count))
+        }
         return Array(found.prefix(limit))
     }
 

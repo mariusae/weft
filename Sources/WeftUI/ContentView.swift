@@ -116,7 +116,6 @@ private struct RiverToolbar: ToolbarContent {
             if let sync = store.sync { SyncButton(sync: sync) }
             #if os(iOS)
             Button("Quick Open", systemImage: "magnifyingglass") { river.quickOpenShown = true }
-                .keyboardShortcut("o")
             #endif
             Button("Today", systemImage: "calendar") { river.openToday() }
                 .help("Today's Note (⇧⌘T)")
@@ -227,7 +226,7 @@ private struct Welcome: View {
                 .font(.system(size: 48, weight: .light))
                 .foregroundStyle(.secondary)
             Text("Weft").font(.largeTitle.weight(.semibold))
-            Text("Open a Reflect graph. Weft keeps its tiddlers in the graph's wiki/ folder.")
+            Text("Open a Reflect graph. Weft keeps its tiddlers in it, beside your notes and days.")
                 .foregroundStyle(.secondary)
             Button("Open Graph…") { store.chooseGraph() }
                 .controlSize(.large)
@@ -394,6 +393,13 @@ private struct RiverColumn: View {
             .safeAreaBar(edge: .top) {
                 if let showSidebar { RiverControls(showSidebar: showSidebar, tucked: tucked) }
             }
+            // Pulled down, a sync — as Prism's day is.
+            .refreshable { await store.syncPulled() }
+            // A tick for a card moved, a lighter one for one closed.
+            .sensoryFeedback(trigger: river.cards) { before, after in
+                if before.count == after.count, Set(before) == Set(after) { return .impact(weight: .medium) }
+                return after.count < before.count ? .impact(weight: .light) : nil
+            }
             #endif
             .background(Color.river)
             #if os(macOS)
@@ -410,8 +416,21 @@ private struct RiverColumn: View {
                 if store.isLoading {
                     ProgressView().controlSize(.large)
                 } else if river.cards.isEmpty {
+                    #if os(iOS)
+                    if showSidebar != nil {
+                        ContentUnavailableView {
+                            Label("Nothing Open", systemImage: "rectangle.stack")
+                        } description: {
+                            Text("Find a page with the search above, open today's with the calendar, or start one from ⋯.")
+                        }
+                    } else {
+                        Text("Open a tiddler from the sidebar, or make one with ⌘N.")
+                            .foregroundStyle(.secondary)
+                    }
+                    #else
                     Text("Open a tiddler from the sidebar, or make one with ⌘N.")
                         .foregroundStyle(.secondary)
+                    #endif
                 }
             }
             #if os(iOS)
@@ -466,12 +485,24 @@ private struct RiverControls: View {
 
     var body: some View {
         HStack {
-            Button(action: showSidebar) {
+            // Tapped, the sidebar; held, the cards the river was at before,
+            // to go back to — as Prism's ‹ holds the places it has been.
+            Menu {
+                Section("Back To") {
+                    ForEach(river.places, id: \.self) { place in
+                        Button(store.shownTitle(place)) { river.goBack(to: place) }
+                    }
+                }
+            } label: {
                 Image(systemName: "chevron.backward")
                     .font(.system(size: 18, weight: .semibold))
                     .frame(width: 44, height: 44)
+            } primaryAction: {
+                showSidebar()
             }
+            .menuIndicator(.hidden)
             .accessibilityLabel("Sidebar")
+            .accessibilityHint("Hold for the cards gone to before")
             .glassEffect(.regular.interactive(), in: .circle)
             Spacer()
             HStack(spacing: 2) {
@@ -486,8 +517,10 @@ private struct RiverControls: View {
                 Menu {
                     Button("New Tiddler", systemImage: "plus") { river.newTiddler() }
                     Button("Close All", systemImage: "rectangle.stack.badge.minus") { river.closeAll() }
-                    if store.sync != nil {
-                        Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { store.syncNow() }
+                    if let sync = store.sync {
+                        Section(syncState(sync)) {
+                            Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { store.syncNow() }
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -517,6 +550,16 @@ private struct RiverControls: View {
                 .frame(width: 44, height: 44)
         }
         .accessibilityLabel(name)
+    }
+
+    /// How syncing goes, said over Sync Now, as Prism's menu says it.
+    private func syncState(_ sync: WikiSync) -> String {
+        switch sync.status {
+        case .idle: "Not synced yet"
+        case .syncing: "Syncing…"
+        case .synced(let date): "Synced \(date.formatted(.relative(presentation: .named)))"
+        case .failed(let message): "Last sync failed: \(message)"
+        }
     }
 
     private func isSynced(_ sync: WikiSync) -> Bool {
