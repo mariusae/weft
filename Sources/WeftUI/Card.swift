@@ -29,7 +29,7 @@ struct Card: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             relinking
-            if !river.folded.contains(title) {
+            if !river.isFolded(title) {
                 if store.needsReview(title) {
                     ConflictView(title: title)
                 } else {
@@ -84,7 +84,7 @@ struct Card: View {
 
     /// Being renamed: whether what refers to it is updated too.
     @ViewBuilder private var relinking: some View {
-        if let draft = store.draft(title), store.tiddler(title) != nil, store.kind(title) != .day {
+        if let draft = store.draftHead(title), store.tiddler(title) != nil, store.kind(title) != .day {
             let new = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
             if new != title, !new.isEmpty {
                 let references = store.references(to: title)
@@ -112,7 +112,7 @@ struct Card: View {
     /// Double-clicked, it is typed in.
     private var header: some View {
         let kind = store.kind(title)
-        let shown = store.draft(title).map(\.title) ?? store.shownTitle(title)
+        let shown = store.draftHead(title).map(\.title) ?? store.shownTitle(title)
         return HStack(alignment: .center, spacing: 10) {
             if kind == .day {
                 Image(systemName: "calendar")
@@ -121,7 +121,7 @@ struct Card: View {
             }
             if renaming {
                 TextField("Title", text: Binding {
-                    store.draft(title)?.title ?? title
+                    store.draftHead(title)?.title ?? title
                 } set: { value in
                     store.change(title) { $0.title = value }
                 })
@@ -144,7 +144,7 @@ struct Card: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .onTapGesture(count: 2) { startRenaming() }
             }
-            let wiki = store.draft(title)?.isWiki ?? (kind == .wiki)
+            let wiki = store.draftHead(title)?.isWiki ?? (kind == .wiki)
             if wiki {
                 Label("Wiki", systemImage: "book.closed")
                     .font(.caption.weight(.semibold))
@@ -233,7 +233,7 @@ struct Card: View {
             if canRename {
                 Button("Rename", systemImage: "character.cursor.ibeam") { startRenaming() }
             }
-            Button(river.folded.contains(title) ? "Unfold" : "Fold") {
+            Button(river.isFolded(title) ? "Unfold" : "Fold") {
                 withAnimation(.snappy(duration: 0.2)) { river.toggleFold(title) }
             }
             Button("Close Other Cards") { withAnimation { river.closeOthers(title) } }
@@ -254,7 +254,7 @@ struct Card: View {
                 Button("Fields of Tiddlers Tagged “\(title)”…", systemImage: "list.bullet.rectangle") { definingFields = true }
             }
             if store.tiddler(title) != nil || store.isEditing(title) {
-                let wiki = store.draft(title)?.isWiki ?? store.isWiki(title)
+                let wiki = store.draftHead(title)?.isWiki ?? store.isWiki(title)
                 Button(wiki ? "Remove from Wiki" : "Add to Wiki") { store.setWiki(title, !wiki) }
             }
             Divider()

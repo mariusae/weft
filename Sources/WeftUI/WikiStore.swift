@@ -25,6 +25,9 @@ public final class WikiStore {
     /// A card's draft, apart from every other's: typing in one redraws its
     /// editor alone.
     @ObservationIgnored private var draftSignals: [String: PageSignal] = [:]
+    /// Told when a draft's words change, apart from the rest of it: what
+    /// shows its title, tags and fields is not drawn again for each key.
+    @ObservationIgnored private var draftTextSignals: [String: PageSignal] = [:]
     /// Bumped when a name comes or goes; when any list of pages may read
     /// otherwise — the recent, the tags, the missing; and when anything is
     /// written, for what queries find.
@@ -44,11 +47,20 @@ public final class WikiStore {
     private func watch(_ title: String) { _ = signal(title).version }
 
     private func watchDraft(_ title: String) {
+        watchDraftHead(title)
+        let signal = draftTextSignals[title] ?? { let made = PageSignal(); draftTextSignals[title] = made; return made }()
+        _ = signal.version
+    }
+
+    private func watchDraftHead(_ title: String) {
         let signal = draftSignals[title] ?? { let made = PageSignal(); draftSignals[title] = made; return made }()
         _ = signal.version
     }
 
-    private func draftChanged(_ title: String) { draftSignals[title]?.version += 1 }
+    private func draftChanged(_ title: String, wordsOnly: Bool = false) {
+        if !wordsOnly { draftSignals[title]?.version += 1 }
+        draftTextSignals[title]?.version += 1
+    }
 
     /// A page changed: those that showed it are told — itself, the pages it
     /// links to (their backlinks), its tags (what they list), and, when a
@@ -74,10 +86,11 @@ public final class WikiStore {
 
     /// Cards being edited, by the title they are open under, and what they say so far.
     @ObservationIgnored private var drafts: [String: Tiddler] = [:]
-    /// Which cards are being edited, apart from what their drafts say: a
-    /// card asks only this, so typing in one redraws that card's editor and
-    /// not the river.
-    public private(set) var editing: Set<String> = []
+    /// Which cards are being edited, apart from what their drafts say: each
+    /// card told of its own beginning and ending, not the river of every one.
+    @ObservationIgnored public private(set) var editing: Set<String> = [] {
+        didSet { for title in editing.symmetricDifference(oldValue) { draftChanged(title) } }
+    }
     /// Whether renaming a card's tiddler updates what refers to it; yes
     /// unless turned off in the editor.
     public var relinkOnRename: [String: Bool] = [:]
@@ -143,6 +156,7 @@ public final class WikiStore {
         chosenModes = [:]
         defaultModes = [:]
         linkNotes = nil
+        linkNotesWaiting = []
         sync = nil
         listsVersion += 1
         Task {
@@ -271,6 +285,7 @@ public final class WikiStore {
     private func pulled(_ paths: [String]) {
         guard let wiki else { return }
         for path in paths where PageFolder.isPage(path) { wiki.reload(path: path) }
+        refreshLinkNotes(paths.filter { $0.hasSuffix(".md") })
         let saved = paths.filter { $0.hasPrefix(Self.riversFolder + "/") }
         guard !saved.isEmpty else { return }
         savedVersion += 1
@@ -464,7 +479,10 @@ public final class WikiStore {
     /// what it says, its title, tags and fields, as typed — saved a moment
     /// after typing pauses. When the caret leaves the card the draft is
     /// written and let go, and a new title takes effect.
-    public func isEditing(_ title: String) -> Bool { editing.contains(title) }
+    public func isEditing(_ title: String) -> Bool {
+        watchDraftHead(title)
+        return editing.contains(title)
+    }
 
     /// Cards whose other fields are shown.
     public var fieldsShown: Set<String> = []
@@ -686,13 +704,15 @@ public final class WikiStore {
         case text = "Text", outline = "Outline"
     }
 
-    /// Cards switched from how they would be edited, by title.
-    private var chosenModes: [String: EditorMode] = [:]
+    /// Cards switched from how they would be edited, by title: each card
+    /// told of its own, through its signal.
+    @ObservationIgnored private var chosenModes: [String: EditorMode] = [:]
     /// How each other card is edited, and the text that decided it: kept
     /// while it is written in, so a card does not change editor under the caret.
     @ObservationIgnored private var defaultModes: [String: (text: String, mode: EditorMode)] = [:]
 
     public func editorMode(_ title: String) -> EditorMode {
+        watch(title)
         if let chosen = chosenModes[title] { return chosen }
         let text = (drafts[title] ?? tiddler(title))?.text ?? ""
         if let known = defaultModes[title], known.text == text || editing.contains(title) { return known.mode }
@@ -711,6 +731,7 @@ public final class WikiStore {
             }
         }
         chosenModes[title] = mode
+        signal(title).version += 1
     }
 
     /// Whether a body can be edited as an outline: whether the outline
@@ -729,16 +750,32 @@ public final class WikiStore {
     /// `[[` to complete from — read off the main thread once asked for.
     @ObservationIgnored public private(set) var linkNotes: NoteIndex?
 
+    /// Told when the notes are read: every outline card asks as it is
+    /// made, and the graph is read for them once.
+    @ObservationIgnored private var linkNotesWaiting: [@MainActor (NoteIndex) -> Void] = []
+
     public func prepareLinkNotes(_ ready: @escaping @MainActor (NoteIndex) -> Void) {
         if let linkNotes { return ready(linkNotes) }
         guard let root else { return }
+        linkNotesWaiting.append(ready)
+        guard linkNotesWaiting.count == 1 else { return }
         let notes = NoteIndex(root: root)
         Task {
+            // After the first cards are drawn, and out of their way.
+            try? await Task.sleep(for: .seconds(1.5))
             await Task.detached(priority: .utility) { notes.scan() }.value
             guard self.root == root else { return }
             linkNotes = notes
-            ready(notes)
+            let waiting = linkNotesWaiting
+            linkNotesWaiting = []
+            for ready in waiting { ready(notes) }
         }
+    }
+
+    /// Notes written or synced, read again for `[[` — off the main thread.
+    private func refreshLinkNotes(_ paths: [String]) {
+        guard let notes = linkNotes, !paths.isEmpty else { return }
+        Task.detached(priority: .utility) { for path in paths { notes.refresh(path) } }
     }
 
     public func draft(_ title: String) -> Tiddler? {
@@ -746,15 +783,34 @@ public final class WikiStore {
         return drafts[title]
     }
 
+    /// A card's draft, asked again only when what is not its words
+    /// changes — its title, tags, fields: for what shows those. Its text,
+    /// read from this, is as it was when last asked.
+    public func draftHead(_ title: String) -> Tiddler? {
+        watchDraftHead(title)
+        return drafts[title]
+    }
+
     public func updateDraft(_ title: String, _ tiddler: Tiddler) {
+        let before = drafts[title]
         drafts[title] = tiddler
-        draftChanged(title)
+        draftChanged(title, wordsOnly: before.map { Self.sameButWords($0, tiddler) } ?? false)
         autosaves[title]?.cancel()
+        // A big page takes a while to write and index: written after a
+        // longer pause, so typing in it is not stopped short as often.
+        let pause = tiddler.text.utf8.count > 30_000 ? 2.5 : 0.8
         autosaves[title] = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(0.8))
+            try? await Task.sleep(for: .seconds(pause))
             guard !Task.isCancelled else { return }
             self?.autosave(title)
         }
+    }
+
+    private static func sameButWords(_ a: Tiddler, _ b: Tiddler) -> Bool {
+        var a = a, b = b
+        a.text = ""
+        b.text = ""
+        return a == b
     }
 
     /// Writes what every card being edited says, now: before the app goes
@@ -849,7 +905,7 @@ public final class WikiStore {
         }
         do {
             let entry = try wiki.save(tiddler, replacing: existed ? title : nil, movingFile: createdWhileEditing.contains(title))
-            linkNotes?.refresh(entry.path)
+            refreshLinkNotes([entry.path])
         } catch {
             self.error = "Couldn't save “\(tiddler.title)”: \(error.localizedDescription)"
             return false

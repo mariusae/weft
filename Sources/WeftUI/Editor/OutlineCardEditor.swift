@@ -25,6 +25,9 @@ struct OutlineCardEditor: NSViewRepresentable {
     final class Coordinator {
         var revision = -1
         var onFocusChange: (Bool) -> Void = { _ in }
+        /// The text last looked at, and whether it asks the graph anything.
+        var checked: String?
+        var asks = false
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -51,12 +54,24 @@ struct OutlineCardEditor: NSViewRepresentable {
                 onCaretTaken()
             }
         }
-        // The graph again when it changed: what a query finds may have.
-        let revision = store.graphVersion
-        let asks = text.contains("```query") || text.contains("![[")
-        if context.coordinator.revision != revision {
-            context.coordinator.revision = revision
-            editor.setGraph(asks ? store.pages : nil, title: title, refreshing: asks)
+        // Looked at again only when it changed: this runs for each key.
+        let coordinator = context.coordinator
+        if text != coordinator.checked {
+            coordinator.checked = text
+            coordinator.asks = text.contains("```query") || text.contains("![[")
+        }
+        // The graph again when it changed, for a card that asks it — what a
+        // query finds, or an embed shows, may have. Other cards don't hear
+        // of every save.
+        if coordinator.asks {
+            let revision = store.graphVersion
+            if coordinator.revision != revision {
+                coordinator.revision = revision
+                editor.setGraph(store.pages, title: title, refreshing: true)
+            }
+        } else if coordinator.revision != -2 {
+            coordinator.revision = -2
+            editor.setGraph(nil, title: title, refreshing: false)
         }
     }
 

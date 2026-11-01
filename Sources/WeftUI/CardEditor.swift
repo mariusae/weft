@@ -22,7 +22,9 @@ struct CardEditor: View {
     enum Field: Hashable { case tag, field }
 
     var body: some View {
-        let page = store.draft(title) ?? store.tiddler(title)
+        // All but its words, which the editor reads for itself: typing
+        // redraws the editor, not the tags, fields and foot around it.
+        let page = store.draftHead(title) ?? store.tiddler(title)
         VStack(alignment: .leading, spacing: 12) {
             if store.isShadow(title), !store.isEditing(title) {
                 Label("Built into Weft. Write in it, and it becomes one of your tiddlers.", systemImage: "sparkles")
@@ -69,7 +71,7 @@ struct CardEditor: View {
             } else {
                 textEditor(wants: wants, taken: taken, focused: focused)
             }
-            if (page?.text ?? "").isEmpty, !river.isWriting(title) {
+            if !river.isWriting(title), (store.isEditing(title) ? store.draft(title) : store.tiddler(title))?.text.isEmpty ?? true {
                 Text(placeholder(page))
                     .foregroundStyle(Ink.faint.color)
                     .padding(.top, 2)

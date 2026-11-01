@@ -47,8 +47,15 @@ public final class River: Identifiable {
     public private(set) var focusRequest = 0
     /// The card at the top of the river as it is scrolled, as the river says.
     @ObservationIgnored public var cardInView: String?
-    /// Cards showing only their titles.
-    public var folded: Set<String> = []
+    /// Cards showing only their titles: each told of its own.
+    @ObservationIgnored public private(set) var folded: Set<String> = [] {
+        didSet { for title in folded.symmetricDifference(oldValue) { cardChanged(title) } }
+    }
+
+    public func isFolded(_ title: String) -> Bool {
+        watch(title)
+        return folded.contains(title)
+    }
 
     public var search = ""
     public var searchFocusRequest = 0
