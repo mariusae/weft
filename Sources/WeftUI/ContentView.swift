@@ -1,9 +1,12 @@
+import PrismCore
+import ReflectCore
 import SwiftUI
 import WeftCore
 
 public struct ContentView: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
+    @Environment(\.undoManager) private var undoManager
     /// The phone's rivers, one shown at a time; on the Mac each is a tab.
     @Environment(RiverSet.self) private var riverSet: RiverSet?
     @Environment(\.scenePhase) private var scenePhase
@@ -43,6 +46,25 @@ public struct ContentView: View {
                         // Its scroll and the card in view, each river's own.
                         .id(river.id)
                         #if os(macOS)
+                        // A card's pages read beside the river.
+                        .inspector(isPresented: Binding(get: { river.reading != nil }, set: { if !$0 { river.reading = nil } })) {
+                            if let reading = river.reading {
+                                ReaderPanel(title: reading)
+                                    .inspectorColumnWidth(min: 360, ideal: 520, max: 900)
+                            }
+                        }
+                        #else
+                        // Over it, on the phone and the iPad.
+                        .sheet(isPresented: Binding(get: { river.reading != nil }, set: { if !$0 { river.reading = nil } })) {
+                            if let reading = river.reading {
+                                ReaderPanel(title: reading)
+                                    .environment(store)
+                                    .environment(river)
+                                    .presentationDetents([.large])
+                            }
+                        }
+                        #endif
+                        #if os(macOS)
                         // Each tab called by its river.
                         .navigationTitle(river.title)
                         // A folder in no repository is not synced: said, as Sync Now
@@ -72,6 +94,9 @@ public struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: river.quickOpenShown)
+        .sheet(isPresented: Binding(get: { river.deletedShown }, set: { river.deletedShown = $0 })) {
+            DeletedPagesSheet().environment(store).environment(river)
+        }
         #if os(iOS)
         .riverNaming(river, asking: !river.riversShown)
         .sheet(isPresented: Binding(get: { river.riversShown }, set: { river.riversShown = $0 })) {
@@ -84,6 +109,9 @@ public struct ContentView: View {
         .foregroundStyle(Ink.text.color)
         .tint(Ink.accent.color)
         .onChange(of: river.focusRequest) { compactColumn = .detail }
+        // What is done to pages and cards undone with the window's undo.
+        .onAppear { store.undoManager = undoManager }
+        .onChange(of: undoManager) { store.undoManager = undoManager }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.activated() } else { store.saveEditing() }
         }
@@ -127,6 +155,134 @@ private struct RiverToolbar: ToolbarContent {
             RiversButton()
             #endif
         }
+    }
+}
+
+/// Every open task in the graph, as Prism's Tasks lens groups them: each
+/// ticked off where it stands, or its page opened.
+private struct TaskList: View {
+    @Environment(WikiStore.self) private var store
+    @Environment(River.self) private var river
+
+    var body: some View {
+        let groups = store.taskGroups()
+        List {
+            ForEach(groups, id: \.label) { group in
+                Section {
+                    ForEach(group.tasks, id: \.ordinalKey) { task in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Button { withAnimation { store.setTask(task, done: true) } } label: {
+                                Image(systemName: "circle")
+                                    .foregroundStyle(Ink.secondary.color)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Done")
+                            Button { if let title = store.title(atPath: task.notePath) { river.open(title) } } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(WikiStore.plain(task.text)).lineLimit(2)
+                                    if group.kind != .note {
+                                        Text(store.title(atPath: task.notePath).map(store.shownTitle) ?? task.noteTitle)
+                                            .font(.caption)
+                                            .foregroundStyle(Ink.secondary.color)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } header: {
+                    Text(group.notePath.flatMap(store.title(atPath:)).map(store.shownTitle) ?? group.label)
+                }
+            }
+        }
+        .overlay {
+            if groups.isEmpty { Text("No open tasks").foregroundStyle(.secondary) }
+        }
+    }
+}
+
+/// Prism's Reading Queue: the pages saved to read, oldest first — each
+/// opened with its page read beside it; done with, or put off.
+private struct ReadingList: View {
+    @Environment(WikiStore.self) private var store
+    @Environment(River.self) private var river
+
+    var body: some View {
+        let queue = store.readingQueue()
+        List(queue.titles, id: \.self) { title in
+            Button {
+                river.open(title)
+                river.reading = title
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "doc.richtext")
+                        .font(.caption)
+                        .foregroundStyle(Ink.secondary.color)
+                        .frame(width: 16)
+                    Text(store.shownTitle(title)).lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .swipeActions(edge: .trailing) {
+                Button("Done", systemImage: "checkmark") { store.finishReading(title) }.tint(.green)
+                Button("Later", systemImage: "clock") { store.finishReading(title, snooze: .tomorrow) }.tint(.orange)
+            }
+            .contextMenu {
+                Button("Done", systemImage: "checkmark") { store.finishReading(title) }
+                Menu("Later") {
+                    ForEach(ReadingQueue.Snooze.allCases, id: \.self) { snooze in
+                        Button(snooze.title, systemImage: snooze.symbol) { store.finishReading(title, snooze: snooze) }
+                    }
+                }
+            }
+        }
+        .overlay {
+            if queue.titles.isEmpty {
+                VStack(spacing: 4) {
+                    Text("All read").foregroundStyle(.secondary)
+                    if store.linkNotes == nil { Text("Reading the graph…").font(.caption).foregroundStyle(.tertiary) }
+                    else { Text(ReadingQueue.restDetail(next: queue.next)).font(.caption).foregroundStyle(.tertiary) }
+                }
+            }
+        }
+    }
+}
+
+extension NoteTask {
+    /// Which task it is: its page, and its place among the page's tasks.
+    var ordinalKey: String { "\(notePath)#\(ordinal)" }
+}
+
+/// At the foot of the river, a moment after something is done that typing
+/// can't undo — a page deleted, cards closed, a tag taken off: Undo.
+private struct UndoOfferView: View {
+    @Environment(WikiStore.self) private var store
+
+    var body: some View {
+        Group {
+            if let offer = store.undoOffer {
+                HStack(spacing: 12) {
+                    Text(offer)
+                        .lineLimit(1)
+                        .foregroundStyle(Ink.secondary.color)
+                    Button("Undo") { withAnimation(.snappy) { store.takeUndoOffer() } }
+                        .fontWeight(.semibold)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Ink.accent.color)
+                }
+                .font(.callout)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .glassEffect(.regular.interactive(), in: .capsule)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: store.undoOffer)
     }
 }
 
@@ -246,7 +402,8 @@ private struct Sidebar: View {
     @State private var tab: Tab = .open
 
     enum Tab: String, CaseIterable {
-        case open = "Open", recent = "Recent", wiki = "Wiki", tags = "Tags", missing = "Missing"
+        case open = "Open", recent = "Recent", inbox = "Inbox", reading = "Reading", tasks = "Tasks", pinned = "Pinned",
+             wiki = "Wiki", tags = "Tags", missing = "Missing"
     }
 
     var body: some View {
@@ -272,12 +429,24 @@ private struct Sidebar: View {
             .padding(.bottom, 6)
 
             if river.search.trimmingCharacters(in: .whitespaces).isEmpty {
-                Picker("", selection: $tab) {
-                    ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                // More than a segmented control holds: a row of them, scrolled.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(Tab.allCases, id: \.self) { item in
+                            Button { tab = item } label: {
+                                Text(item.rawValue)
+                                    .font(.callout.weight(tab == item ? .semibold : .regular))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .foregroundStyle(tab == item ? Ink.text.color : Ink.secondary.color)
+                                    .background(tab == item ? Ink.accent.color.opacity(0.14) : .clear, in: Capsule())
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 10)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .padding(.horizontal, 10)
                 .padding(.bottom, 6)
                 list
             } else {
@@ -287,15 +456,60 @@ private struct Sidebar: View {
         .onChange(of: river.searchFocusRequest) { searchFocused = true }
     }
 
-    /// Pages matching what is typed: by title or alias, then by what they say.
+    /// Pages matching what is typed: by title or alias, then by what they
+    /// say — the line it is in under each, what was typed marked.
     private var searchResults: some View {
-        titles(store.searchResults(river.search), empty: "Nothing matches", kinds: true)
+        let query = river.search.trimmingCharacters(in: .whitespaces)
+        let found = store.searchResults(query)
+        return List(found, id: \.self) { title in
+            Button { river.open(title) } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Image(systemName: store.kind(title).symbol)
+                        .font(.caption)
+                        .foregroundStyle(Ink.secondary.color)
+                        .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Self.marked(store.shownTitle(title), query))
+                            .lineLimit(1)
+                        if let snippet = store.searchSnippet(for: title, matching: query) {
+                            Text(Self.marked(snippet, query))
+                                .font(.caption)
+                                .foregroundStyle(Ink.secondary.color)
+                                .lineLimit(2)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .overlay {
+            if found.isEmpty { Text("Nothing matches").foregroundStyle(.secondary) }
+        }
+    }
+
+    /// Words with what was searched for marked in them.
+    private static func marked(_ words: String, _ query: String) -> AttributedString {
+        var marked = AttributedString(words)
+        guard !query.isEmpty else { return marked }
+        var rest = marked.startIndex..<marked.endIndex
+        while let found = marked[rest].range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) {
+            marked[found].backgroundColor = Ink.accent.color.opacity(0.18)
+            marked[found].foregroundColor = Ink.text.color
+            rest = found.upperBound..<marked.endIndex
+        }
+        return marked
     }
 
     @ViewBuilder private var list: some View {
         switch tab {
         case .open: titles(river.cards, empty: "No cards open", closable: true)
         case .recent: titles(store.recent(), empty: "Nothing yet", kinds: true)
+        case .inbox: titles(store.inbox(), empty: "Nothing in the inbox", kinds: true)
+        case .pinned: titles(store.pinned(), empty: "Pin a page from its card's menu", kinds: true)
+        case .tasks: TaskList()
+        case .reading: ReadingList()
         case .wiki: titles(store.wikiPages(), empty: "No wiki pages yet")
         case .missing: titles(store.missing(), empty: "No links to missing tiddlers", missing: true)
         case .tags:
@@ -361,6 +575,8 @@ private struct RiverColumn: View {
     @State private var tucked = false
     #if os(iOS)
     @State private var scrolling = ScrollFollower()
+    /// The keys up — for a card, or a find bar, or anything else.
+    @State private var keysUp = false
     #endif
     /// Where a card being dragged would be dropped.
     @State private var drop: CardDrop?
@@ -393,6 +609,9 @@ private struct RiverColumn: View {
             .safeAreaBar(edge: .top) {
                 if let showSidebar { RiverControls(showSidebar: showSidebar, tucked: tucked) }
             }
+            // Not over what is over the keys: a find bar, a card's own bar.
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keysUp = true }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keysUp = false }
             // Pulled down, a sync — as Prism's day is.
             .refreshable { await store.syncPulled() }
             // A tick for a card moved, a lighter one for one closed.
@@ -437,10 +656,23 @@ private struct RiverColumn: View {
             // The cards scroll on under it, and their last lines up past it.
             .safeAreaInset(edge: .bottom) {
                 // Not over the keys' bar while writing.
-                if let riverSet, !river.isWritingAny { RiverSwitcher(rivers: riverSet, small: tucked).padding(.bottom, 4) }
+                VStack(spacing: 8) {
+                    SyncNoticeView()
+                    UndoOfferView()
+                    if let riverSet, !river.isWritingAny, !keysUp { RiverSwitcher(rivers: riverSet, small: tucked) }
+                }
+                .padding(.bottom, 4)
             }
             #endif
-            .overlay(alignment: .bottom) { SyncNoticeView().padding(.bottom, 14) }
+            .overlay(alignment: .bottom) {
+                #if os(macOS)
+                VStack(spacing: 8) {
+                    UndoOfferView()
+                    SyncNoticeView()
+                }
+                .padding(.bottom, 14)
+                #endif
+            }
             .onChange(of: river.focusRequest) {
                 guard let focus = river.focus else { return }
                 withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(focus, anchor: .top) }
@@ -480,8 +712,10 @@ private final class ScrollFollower {
 private struct RiverControls: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
+    @Environment(\.accountSettings) private var accountSettings
     let showSidebar: () -> Void
     let tucked: Bool
+    @State private var settingsShown = false
 
     var body: some View {
         HStack {
@@ -522,6 +756,8 @@ private struct RiverControls: View {
                             Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { store.syncNow() }
                         }
                     }
+                    Button("Recently Deleted…", systemImage: "trash") { river.deletedShown = true }
+                    Button("Settings…", systemImage: "gearshape") { settingsShown = true }
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 18, weight: .semibold))
@@ -536,6 +772,16 @@ private struct RiverControls: View {
         .foregroundStyle(Ink.accent.color)
         .padding(.horizontal, 16)
         .padding(.bottom, 4)
+        .sheet(isPresented: $settingsShown) {
+            NavigationStack {
+                SettingsForm { accountSettings }
+                    .navigationTitle("Settings")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Done") { settingsShown = false } }
+                    }
+            }
+        }
         .opacity(tucked ? 0 : 1)
         .scaleEffect(tucked ? 0.92 : 1)
         .offset(y: tucked ? -12 : 0)
@@ -649,3 +895,9 @@ private struct RiverRail: View {
     }
 }
 #endif
+
+extension EnvironmentValues {
+    /// What Settings shows of the GitHub account: given by the app, which
+    /// knows the account.
+    @Entry public var accountSettings: AnyView? = nil
+}

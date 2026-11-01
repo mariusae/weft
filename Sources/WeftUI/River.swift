@@ -61,6 +61,10 @@ public final class River: Identifiable {
     public var searchFocusRequest = 0
     /// Whether ⌘O's Quick Open is showing.
     public var quickOpenShown = false
+    /// The card whose pages are being read, beside the river or over it.
+    public var reading: String?
+    /// Whether the pages deleted lately are showing, to bring back.
+    public var deletedShown = false
 
     /// Each card's own word of whether it is selected, written in, or asked
     /// for the caret: a change to one redraws it, not every card.
@@ -261,6 +265,12 @@ public final class River: Identifiable {
     }
 
     public func close(_ title: String) {
+        let was = (cards: cards, folded: folded)
+        shut(title)
+        offerReopening(was, "Close “\(store.shownTitle(title))”")
+    }
+
+    private func shut(_ title: String) {
         cards.removeAll { $0 == title }
         folded.remove(title)
         if writing == title { writing = nil }
@@ -268,11 +278,33 @@ public final class River: Identifiable {
     }
 
     public func closeOthers(_ title: String) {
-        for other in cards where other != title { close(other) }
+        let was = (cards: cards, folded: folded)
+        for other in cards where other != title { shut(other) }
+        offerReopening(was, "Close Other Cards")
     }
 
     public func closeAll() {
-        for title in cards { close(title) }
+        let was = (cards: cards, folded: folded)
+        for title in cards { shut(title) }
+        offerReopening(was, "Close All Cards")
+    }
+
+    /// Cards closed, to undo: back where they were, those opened since kept.
+    private func offerReopening(_ was: (cards: [String], folded: Set<String>), _ name: String) {
+        guard was.cards != cards else { return }
+        store.undoable(name) { [weak self] in
+            guard let self else { return }
+            let now = cards
+            let gone = Set(was.cards).subtracting(now)
+            cards = was.cards.filter { gone.contains($0) || now.contains($0) } + now.filter { !was.cards.contains($0) }
+            folded.formUnion(was.folded.intersection(gone))
+        }
+    }
+
+    /// A card brought back where it was: a page's deletion, undone.
+    func reopen(_ title: String, at index: Int) {
+        guard !cards.contains(title) else { return }
+        cards.insert(title, at: min(index, cards.count))
     }
 
     public func toggleFold(_ title: String) {
@@ -391,6 +423,18 @@ public final class River: Identifiable {
         let wasWriting = writing == title
         store.setEditorMode(store.editorMode(title) == .outline ? .text : .outline, for: title)
         if wasWriting { DispatchQueue.main.async { self.edit(title) } }
+    }
+
+    /// ⌘F: words found in the card being written in — or, with none,
+    /// pages, in the sidebar's search.
+    public func find() {
+        if writing != nil { Platform.findInCard() } else { searchFocusRequest += 1 }
+    }
+
+    /// A card's words searched: the caret put in it, then its find bar.
+    public func find(in title: String) {
+        if writing != title { edit(title) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { Platform.findInCard() }
     }
 
     /// The caret into the selected card, or out of the one it is in.

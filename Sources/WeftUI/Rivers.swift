@@ -14,6 +14,12 @@ public final class RiverSet {
     public private(set) var rivers: [River] = []
     public private(set) var current: River
 
+    /// The window these are the rivers of, on the iPad: each keeps its
+    /// own. Empty for the first, which keeps them as the phone does.
+    public var scene = "" {
+        didSet { if scene != oldValue { load() } }
+    }
+
     public init(store: WikiStore) {
         self.store = store
         current = River(store: store)
@@ -22,7 +28,7 @@ public final class RiverSet {
         store.adopt(current)
     }
 
-    private var key: String { "Rivers:\(store.root?.path ?? "")" }
+    private var key: String { "Rivers:\(store.root?.path ?? "")" + (scene.isEmpty ? "" : ":\(scene)") }
     /// While the rivers kept are put back: not kept again half put back.
     @ObservationIgnored private var loading = false
 

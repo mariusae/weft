@@ -22,7 +22,7 @@ struct OutlineCardEditor: UIViewRepresentable {
     var onFocusChange: (Bool) -> Void = { _ in }
 
     /// Where a top-level row's words start.
-    static var textIndent: CGFloat { PhoneMetrics(face: .system, size: MarkdownStyler.defaultSize).textIndent(for: .blank) }
+    static var textIndent: CGFloat { PhoneMetrics(face: TextSettings.face, size: TextSettings.size).textIndent(for: .blank) }
 
     final class Coordinator {
         /// What is around the rows — front matter, the title — written back with them.
@@ -52,7 +52,10 @@ struct OutlineCardEditor: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> OutlineEditor {
-        let editor = OutlineEditor(metrics: PhoneMetrics(face: .system, size: MarkdownStyler.defaultSize))
+        // Pictures shown from the graph's `assets/`, and pasted ones kept there.
+        PhoneImages.root = store.root
+        let editor = OutlineEditor(metrics: PhoneMetrics(face: TextSettings.face, size: TextSettings.size))
+        editor.isFindInteractionEnabled = true
         let coordinator = context.coordinator
         coordinator.write = { text = $0 }
         coordinator.onFocusChange = onFocusChange

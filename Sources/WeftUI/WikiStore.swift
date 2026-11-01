@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import PrismCore
 import ReflectCore
 import WeftCore
 
@@ -34,6 +35,10 @@ public final class WikiStore {
     public private(set) var namesVersion = 0
     public private(set) var listsVersion = 0
     public private(set) var graphVersion = 0
+    /// Bumped when any page's words change, and not only its names, tags,
+    /// fields and links: for what asks the words — a `text:` query, one
+    /// sorted by when pages changed, an embed.
+    public private(set) var textVersion = 0
 
     private func signal(_ name: String) -> PageSignal {
         let key = NoteIndex.foldKey(name)
@@ -69,9 +74,12 @@ public final class WikiStore {
         guard let wiki else { return }
         var told = Set<String>()
         func tell(_ name: String) { if told.insert(NoteIndex.foldKey(name)).inserted { signal(name).version += 1 } }
+        var links: [Set<String>] = []
         for entry in [before, after].compactMap({ $0 }) {
             entry.names.forEach(tell)
-            for target in WikiLinks.targets(in: entry.page.text) {
+            let targets = WikiLinks.targets(in: entry.page.text)
+            links.append(Set(targets))
+            for target in targets {
                 tell(target)
                 if let title = wiki.title(for: target) { tell(title) }
             }
@@ -81,7 +89,24 @@ public final class WikiStore {
         }
         if before?.names != after?.names { namesVersion += 1 }
         listsVersion += 1
-        graphVersion += 1
+        textVersion += 1
+        // What most queries ask — names, tags, fields, links — changed: they
+        // run again. Words alone, as typing writes them, leave them be.
+        let flags = { (entry: Wiki.Entry?) -> NoteEntry? in
+            guard var note = entry?.note else { return nil }
+            note.modified = .distantPast
+            return note
+        }
+        let shape = { (entry: Wiki.Entry?) -> Page? in
+            guard var page = entry?.page else { return nil }
+            page.text = ""
+            page.modified = nil
+            return page
+        }
+        if before == nil || after == nil || before?.names != after?.names || before?.tags != after?.tags
+            || shape(before) != shape(after) || links.first != links.last || flags(before) != flags(after) {
+            graphVersion += 1
+        }
     }
 
     /// Cards being edited, by the title they are open under, and what they say so far.
@@ -108,6 +133,9 @@ public final class WikiStore {
     /// line on the Mac, libgit2 and a GitHub account on the phone. Set by
     /// the app; nil for a graph in no repository.
     public var makeSync: (URL) -> WikiSync? = { _ in nil }
+    /// A git of the graph for reading its history — a page's past, pages
+    /// deleted — apart from the sync's.
+    public var makeHistory: (URL) -> (any GitBackend)? = { _ in nil }
     public private(set) var sync: WikiSync?
     /// What each draft started from, to put together with what a sync
     /// brought in while it was written.
@@ -147,6 +175,7 @@ public final class WikiStore {
         loads += 1
         let load = loads
         root = url.standardizedFileURL
+        PastedPictures.root = root
         self.wiki = nil
         isLoading = true
         loadedRoot = nil
@@ -401,6 +430,127 @@ public final class WikiStore {
     public func isWiki(_ title: String) -> Bool { tiddler(title)?.isWiki ?? false }
 
     /// Puts a page in the wiki, or takes it out: its `wiki` flag, saved.
+    // MARK: Reading
+
+    /// Whether a page has anything to read: a link note's address, a link, a PDF.
+    public func canRead(_ title: String) -> Bool {
+        watch(title)
+        guard let root, let text = tiddler(title)?.text, text.contains("http") || text.contains(".pdf") else { return false }
+        return !ReaderSource.all(in: text, root: root).isEmpty
+    }
+
+    /// A passage highlighted in a page a card links to, written into the
+    /// card as Prism writes it: under the link, or a link note's Highlights.
+    public func highlight(_ passage: String, of address: String, in title: String) {
+        guard let text = (drafts[title] ?? tiddler(title))?.text else { return }
+        let marked = WebCapture.highlighting(passage, in: text, of: address)
+        guard marked != text else { return }
+        setText(title, marked)
+    }
+
+    /// The pages saved to read — in the inbox, with a page, not put off —
+    /// oldest first, as Prism's Reading Queue has them; and when the next
+    /// put off comes back.
+    public func readingQueue() -> (titles: [String], next: Date?) {
+        _ = listsVersion
+        guard let root, let wiki else { return ([], nil) }
+        guard let notes = linkNotes else {
+            // Prism's index of notes, read once, then the queue again.
+            prepareLinkNotes { [weak self] _ in self?.listsVersion += 1 }
+            return ([], nil)
+        }
+        let found = ReadingQueue.items(index: notes, root: root)
+        return (found.items.compactMap { wiki.entry(atPath: $0.path)?.page.title }, found.next)
+    }
+
+    /// Read, or put off: out of the queue, or back in it later.
+    public func finishReading(_ title: String, snooze: ReadingQueue.Snooze? = nil) {
+        change(title) { page in
+            if let snooze {
+                page[field: ReadingQueue.snoozeKey] = .text(ReadingQueue.written(snooze.until(from: Date())))
+            } else {
+                page[field: "inbox"] = nil
+                page[field: ReadingQueue.snoozeKey] = nil
+            }
+        }
+        if !river(writing: title) { finishEditing(title) }
+    }
+
+    // MARK: Prism's lenses
+
+    /// The pages in the inbox, newest first, as Prism's Inbox lists them.
+    public func inbox() -> [String] { lens(.inbox) }
+
+    /// The pinned pages, in their order, as Prism's Pinned lists them.
+    public func pinned() -> [String] { lens(.pinned) }
+
+    private func lens(_ lens: Lens) -> [String] {
+        _ = listsVersion
+        guard let wiki, let query = lens.query else { return [] }
+        return query.run(in: wiki, this: "")
+    }
+
+    /// Every open task in the graph — Prism's `+ [ ]` — grouped as its
+    /// Tasks lens groups them: current, overdue, upcoming, then by page.
+    public func taskGroups() -> [TaskGroup] {
+        _ = listsVersion
+        if let cached = tasksCache, cached.version == listsVersion { return cached.groups }
+        guard let wiki else { return [] }
+        let tasks = wiki.entries.values.flatMap { entry -> [NoteTask] in
+            guard !entry.note.path.hasPrefix("templates/"), entry.page.text.contains("+ [") else { return [] }
+            return Tasks.tasks(in: entry.page.text, path: entry.note.path, entry: entry.note).filter { !$0.done }
+        }
+        let groups = Tasks.group(tasks, today: .today)
+        tasksCache = (listsVersion, groups)
+        return groups
+    }
+
+    @ObservationIgnored private var tasksCache: (version: Int, groups: [TaskGroup])?
+
+    /// The page a task is in, by its file.
+    public func title(atPath path: String) -> String? { wiki?.entry(atPath: path)?.page.title }
+
+    /// A task ticked off, or not: written into its page.
+    public func setTask(_ task: NoteTask, done: Bool) {
+        guard let title = title(atPath: task.notePath),
+              let text = (drafts[title] ?? tiddler(title))?.text,
+              let ticked = Tasks.setting(done: done, ordinal: task.ordinal, in: text) else { return }
+        setText(title, ticked)
+    }
+
+    /// A page in the inbox, or out of it: Prism's `inbox: true`.
+    public func isInInbox(_ title: String) -> Bool {
+        watch(title)
+        return wiki?.entries[title]?.note.isInInbox ?? false
+    }
+
+    public func setInbox(_ title: String, _ inbox: Bool) {
+        change(title) { $0[field: "inbox"] = inbox ? .text("true") : nil }
+        if !river(writing: title) { finishEditing(title) }
+    }
+
+    /// A page pinned — after those pinned already — or not: Prism's `pinned:`.
+    public func isPinned(_ title: String) -> Bool {
+        watch(title)
+        return wiki?.entries[title]?.note.pin != nil
+    }
+
+    public func setPinned(_ title: String, _ pinned: Bool) {
+        let next: Int = {
+            let highest = wiki?.entries.values.compactMap { entry -> Double? in
+                if case .order(let order) = entry.note.pin { return order }
+                return nil
+            }.max()
+            return highest.map { min(Int($0) + 1024, Int(Int32.max)) } ?? 1024
+        }()
+        change(title) { $0[field: "pinned"] = pinned ? .text(String(next)) : nil }
+        if !river(writing: title) { finishEditing(title) }
+    }
+
+    /// Whether a card is being written in, in any river: its draft is left
+    /// to be saved when it is let go.
+    private func river(writing title: String) -> Bool { rivers.contains { $0.isWriting(title) } }
+
     public func setWiki(_ title: String, _ wiki: Bool) {
         if var draft = drafts[title] {
             draft.isWiki = wiki
@@ -440,6 +590,8 @@ public final class WikiStore {
     /// What a query finds, asked from a tiddler.
     public func run(_ query: Query, this: String) -> [String] {
         _ = graphVersion
+        // Words, or when pages changed, asked: run again for every save.
+        if !query.textContains.isEmpty || query.sort == .modified { _ = textVersion }
         guard let wiki else { return [] }
         return query.run(in: wiki, this: this)
     }
@@ -706,6 +858,47 @@ public final class WikiStore {
         }
     }
 
+    // MARK: Undoing what is not typing
+
+    /// The window's undo: what is done to pages and cards — a page deleted,
+    /// a tag or field taken off, cards closed — undone there, as typing is.
+    /// Where the window gives none, the store's own, which the offer undoes.
+    @ObservationIgnored public weak var undoManager: UndoManager?
+    @ObservationIgnored private let ownUndo = UndoManager()
+    private var undo: UndoManager { undoManager ?? ownUndo }
+    /// What was just done that can be undone, offered a moment over the river.
+    public private(set) var undoOffer: String?
+    @ObservationIgnored private var offerClearing: Task<Void, Never>?
+
+    /// Something done, to undo: kept with the window's undo, and offered.
+    public func undoable(_ name: String, _ action: @escaping @MainActor () -> Void) {
+        undo.registerUndo(withTarget: self) { _ in MainActor.assumeIsolated { action() } }
+        undo.setActionName(name)
+        offer(name)
+    }
+
+    private func offer(_ name: String) {
+        offerClearing?.cancel()
+        undoOffer = name
+        offerClearing = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            self?.undoOffer = nil
+        }
+    }
+
+    /// The offer taken: what was just done, undone.
+    public func takeUndoOffer() {
+        offerClearing?.cancel()
+        undoOffer = nil
+        if undo.canUndo { undo.undo() }
+    }
+
+    public func dismissUndoOffer() {
+        offerClearing?.cancel()
+        undoOffer = nil
+    }
+
     // MARK: Text or Outline
 
     /// How a card's body is edited: as an outline — in Prism's outline
@@ -969,11 +1162,26 @@ public final class WikiStore {
 
     /// Takes a tiddler out, and its card. Its file goes; the history keeps it.
     public func delete(_ title: String) {
+        let page = tiddler(title)
+        let places = rivers.compactMap { river in river.cards.firstIndex(of: title).map { (river, $0) } }
         do {
             try wiki?.delete(title)
         } catch {
             self.error = "Couldn't delete “\(title)”: \(error.localizedDescription)"
             return
+        }
+        if let page {
+            undoable("Delete “\(shownTitle(title))”") { [weak self] in
+                guard let self, wiki?[title] == nil else { return }
+                do {
+                    try wiki?.save(page)
+                } catch {
+                    self.error = "Couldn't bring back “\(title)”: \(error.localizedDescription)"
+                    return
+                }
+                for (river, index) in places { river.reopen(title, at: index) }
+                sync?.noteChanged()
+            }
         }
         for river in rivers { river.removed(title) }
         dropDraft(title)
@@ -1058,6 +1266,25 @@ extension WikiStore {
             return names.contains { lower.contains($0 + "]]") || lower.contains($0 + "|") }
         }) else { return nil }
         return Self.plain(line)
+    }
+
+    /// The line of a page's text where what is searched for is, as words,
+    /// cut to show the words around it: under the page in what is found.
+    public func searchSnippet(for title: String, matching query: String) -> String? {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty, let text = tiddler(title)?.text else { return nil }
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) where line.range(of: query, options: options) != nil {
+            let words = Self.plain(String(line))
+            guard let found = words.range(of: query, options: options) else { continue }
+            // Some words before it, so it is not lost at the end of a long line.
+            let lead = words.distance(from: words.startIndex, to: found.lowerBound)
+            guard lead > 40 else { return words }
+            let start = words.index(found.lowerBound, offsetBy: -30)
+            let from = words[start...].firstIndex(of: " ").map { words.index(after: $0) } ?? start
+            return "…" + words[from...]
+        }
+        return nil
     }
 
     /// Every name a page answers to: its title and aliases.

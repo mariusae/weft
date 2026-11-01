@@ -122,6 +122,52 @@ import ReflectCore
         #expect(store.tiddler(day.description)?.text == "- already there\n")
     }
 
+    @Test func closingAndDeletingAreUndone() {
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        store.undoManager = undo
+        let one = river(["Alpha", "Beta", "Gamma"])
+        undo.beginUndoGrouping()
+        one.close("Beta")
+        undo.endUndoGrouping()
+        #expect(one.cards == ["Alpha", "Gamma"])
+        #expect(store.undoOffer?.hasPrefix("Close") == true)
+        undo.undo()
+        #expect(one.cards == ["Alpha", "Beta", "Gamma"])
+        undo.beginUndoGrouping()
+        store.delete("Gamma")
+        undo.endUndoGrouping()
+        #expect(store.tiddler("Gamma") == nil)
+        #expect(!one.cards.contains("Gamma"))
+        undo.undo()
+        #expect(store.tiddler("Gamma")?.text == "About Gamma.")
+        #expect(one.cards == ["Alpha", "Beta", "Gamma"])
+    }
+
+    @Test func theInboxPinsAndTasksArePrisms() {
+        store.setInbox("Alpha", true)
+        store.setPinned("Beta", true)
+        write("Chores", "+ [ ] sweep\n+ [x] mop\n")
+        #expect(store.inbox() == ["Alpha"])
+        #expect(store.pinned() == ["Beta"])
+        let open = store.taskGroups().flatMap(\.tasks)
+        #expect(open.map(\.text) == ["sweep"])
+        store.setTask(open[0], done: true)
+        #expect(store.tiddler("Chores")?.text == "+ [x] sweep\n+ [x] mop\n")
+        #expect(store.taskGroups().isEmpty)
+        store.setInbox("Alpha", false)
+        #expect(store.inbox().isEmpty)
+    }
+
+    @Test func typingLeavesMostQueriesAlone() {
+        let graph = store.graphVersion, text = store.textVersion
+        write("Alpha", "About Alpha, and more.")
+        #expect(store.graphVersion == graph)
+        #expect(store.textVersion > text)
+        write("Alpha", "About Alpha, and [[Beta]].")
+        #expect(store.graphVersion > graph)
+    }
+
     @Test func savingWritesTheRiverAndKeepsItAsItChanges() {
         let one = river(["Alpha", "Beta"])
         one.save(as: "Work")

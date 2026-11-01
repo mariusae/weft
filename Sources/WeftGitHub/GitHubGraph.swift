@@ -29,7 +29,7 @@ public enum GitHubGraph {
         if let identity = account.user?.identity { backend.identity = identity }
         let sync = WikiSync(git: Git(backend: backend))
         sync.prepare = {
-            guard account.isSignedIn else { throw GitHubError("Signed out of GitHub. Sign in again from the sidebar.") }
+            guard account.isSignedIn else { throw GitHubError("Signed out of GitHub. Sign in again in Settings, in the river’s ⋯ menu.") }
             _ = try await account.validAccessToken()
         }
         return sync

@@ -130,13 +130,17 @@ struct RiverCommands: Commands {
             Button("Quick Open…") { river?.quickOpenShown = true }
                 .keyboardShortcut("o")
                 .disabled(river == nil || store.root == nil)
+            Button("Recently Deleted…") { river?.deletedShown = true }
+                .disabled(river == nil || store.root == nil)
             Button("Open Folder…") { store.chooseGraph() }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             ConnectMenuItem()
         }
         CommandGroup(after: .textEditing) {
-            Button("Find Tiddler") { river?.searchFocusRequest += 1 }
+            Button("Find") { river?.find() }
                 .keyboardShortcut("f")
+            Button("Find Tiddler") { river?.searchFocusRequest += 1 }
+                .keyboardShortcut("f", modifiers: [.command, .option])
         }
         CommandGroup(after: .saveItem) {
             Button("Sync Now") { store.syncNow() }

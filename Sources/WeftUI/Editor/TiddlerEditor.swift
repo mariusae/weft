@@ -324,8 +324,31 @@ final class TiddlerTextView: NSTextView {
         insertText(text, replacementRange: range)
     }
 
+    /// Pictures pasted, with no words with them: kept in the graph, shown
+    /// where the caret is.
+    override func paste(_ sender: Any?) {
+        let board = NSPasteboard.general
+        if board.string(forType: .string) == nil, let shown = PastedPictures.keep(PastedPictures.pictures(on: board)) {
+            insertText(shown, replacementRange: selectedRange())
+        } else {
+            super.paste(sender)
+        }
+    }
+
+    /// Pictures dropped: kept in the graph, shown where they were let go.
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let shown = PastedPictures.keep(PastedPictures.pictures(on: sender.draggingPasteboard)) else {
+            return super.performDragOperation(sender)
+        }
+        let at = characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil))
+        insertText(shown, replacementRange: NSRange(location: at, length: 0))
+        return true
+    }
+
     override init(frame: NSRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
+        // Pictures taken when dropped, besides words and files.
+        registerForDraggedTypes([.fileURL, .png, .tiff])
         ghost.textColor = Palette.faint
         ghost.isHidden = true
         addSubview(ghost)
@@ -628,6 +651,9 @@ private struct EditorRepresentable: NSViewRepresentable {
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
+        // ⌘F in a card: its words found, as in Prism's outline.
+        view.usesFindBar = true
+        view.isIncrementalSearchingEnabled = true
         view.textContainerInset = NSSize(width: 0, height: 2)
         view.font = PlatformFont.systemFont(ofSize: styler.size)
         view.insertionPointColor = Palette.accent
@@ -743,6 +769,22 @@ final class TiddlerTextView: UITextView {
               let end = position(from: start, offset: range.length),
               let textRange = textRange(from: start, to: end) else { return }
         replace(textRange, withText: text)
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)), isEditable, UIPasteboard.general.hasImages { return true }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    /// Pictures pasted, with no words with them: kept in the graph, shown
+    /// where the caret is.
+    override func paste(_ sender: Any?) {
+        let board = UIPasteboard.general
+        if board.hasImages, !board.hasStrings, let shown = PastedPictures.keep(PastedPictures.pictures(on: board)) {
+            insertText(shown)
+        } else {
+            super.paste(sender)
+        }
     }
 
     /// A tap on a link follows it, instead of putting the caret there.
@@ -884,6 +926,7 @@ private struct EditorRepresentable: UIViewRepresentable {
         view.font = PlatformFont.systemFont(ofSize: styler.size)
         view.autocorrectionType = .default
         view.smartQuotesType = .no
+        view.isFindInteractionEnabled = true
         view.smartDashesType = .no
         view.textContainerInset = UIEdgeInsets(top: 2, left: 0, bottom: 2, right: 0)
         // In line with the card's title.

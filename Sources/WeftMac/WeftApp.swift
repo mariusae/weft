@@ -19,6 +19,8 @@ struct WeftApp: App {
                 if root.standardizedFileURL == GitHubGraph.root.standardizedFileURL { return GitHubGraph.sync(for: root) }
                 return CommandLineGit.open(root).map { WikiSync(git: Git(backend: $0)) }
             }
+            // History read through the Mac's own `git`: no account needed.
+            store.makeHistory = { root in CommandLineGit.open(root) }
         }
         return store
     }()
@@ -71,6 +73,11 @@ struct WeftApp: App {
                 .withGitHubAccount(Snapshot.usesAccount)
         }
         .defaultSize(width: 480, height: 560)
+
+        Settings {
+            SettingsForm()
+                .frame(width: 420)
+        }
     }
 }
 

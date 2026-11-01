@@ -47,6 +47,17 @@ enum Platform {
         #endif
     }
 
+    /// The find bar of the text the caret is in: words found in a card.
+    static func findInCard() {
+        #if os(macOS)
+        let item = NSMenuItem()
+        item.tag = NSTextFinder.Action.showFindInterface.rawValue
+        NSApp.sendAction(#selector(NSResponder.performTextFinderAction(_:)), to: nil, from: item)
+        #else
+        UIApplication.shared.sendAction(#selector(UIResponder.find(_:)), to: nil, from: nil, for: nil)
+        #endif
+    }
+
     static var canReveal: Bool {
         #if os(macOS)
         true

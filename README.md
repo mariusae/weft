@@ -159,6 +159,31 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
 - **On the phone**: the river pulled down syncs; a card moved or closed,
   or the river changed, is felt as a tick. On the iPad, a keyboard has the
   Mac's keys.
+- **Pictures**: pasted into a card, or dropped on one on the Mac, kept in
+  the graph's `assets/` as Prism keeps them, and shown where the caret is.
+- **Finding**: ⌘F finds words in the card being written in (Find in Card
+  in its menu, too), else goes to the sidebar's search, where each page
+  found shows the line it was found in, what was typed marked; ⌥⌘F always
+  goes there.
+- **Undo**: a page deleted, cards closed, a tag or field taken off — each
+  undone with ⌘Z, or the Undo offered for a moment at the foot of the river.
+- **Settings** (⌘, on the Mac; ⋯ ▸ Settings… on the phone): the size cards
+  are set in; on the phone, the outline's face, and the GitHub account.
+- On the iPad, each window has rivers of its own.
+- **Prism's lenses** in the sidebar: the **Inbox**, **Tasks** (every
+  open `+ [ ]`, grouped as Prism groups them, each ticked off where it
+  stands) and **Pinned**; a card's menu puts it in the inbox, or pins it.
+- **Reading**, as Prism reads: **Read** in a card's menu shows the pages it
+  links to — a link note's own first, ‹ › to the rest — its words alone,
+  set in Chronicle, or the site; where it was read to is kept. A passage
+  chosen and highlighted (⇧⌘H) is written into the card under the link, and
+  marked whenever the page is read again. The sidebar's **Reading** tab is
+  Prism's Reading Queue: the pages saved to read, oldest first, each read
+  with **Done** or **Later** at its foot. On the Mac the reader is beside
+  the river; on the phone, over it.
+- **History**: a card's menu has **History…** — each version of the page in
+  the graph's history, one put back with Restore — and **Recently
+  Deleted…** (the File menu, or ⋯ on the phone) brings back pages deleted.
 - ⌘N makes a new tiddler; ⇧⌘W closes every card not being edited.
 
 WikiText the importer couldn't convert shows as a dashed placeholder, the

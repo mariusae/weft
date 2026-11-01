@@ -20,11 +20,8 @@ struct MarkdownStyler {
     /// Whether a tiddler has a title, to draw links to it.
     var exists: (String) -> Bool
 
-    #if os(macOS)
-    static let defaultSize: CGFloat = 14
-    #else
-    static let defaultSize: CGFloat = 17
-    #endif
+    /// The size cards are set in, as Settings has it.
+    static var defaultSize: CGFloat { TextSettings.size }
 
     func style(_ storage: NSTextStorage) { style(storage, around: nil) }
 

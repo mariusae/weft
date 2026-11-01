@@ -22,6 +22,7 @@ struct Card: View {
     @State private var addingTag = false
     @State private var addingField = false
     @State private var definingFields = false
+    @State private var historyShown = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     private var compact: Bool { sizeClass == .compact }
 
@@ -53,6 +54,7 @@ struct Card: View {
         .onHover { hovering = $0 }
         // A click makes it the card ⌘↩ goes to.
         .simultaneousGesture(TapGesture().onEnded { river.select(title) })
+        .sheet(isPresented: $historyShown) { HistorySheet(title: title).environment(store) }
         .confirmationDialog("Delete “\(title)”?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) { withAnimation { store.delete(title) } }
         } message: {
@@ -274,7 +276,22 @@ struct Card: View {
                 let wiki = store.draftHead(title)?.isWiki ?? store.isWiki(title)
                 Button(wiki ? "Remove from Wiki" : "Add to Wiki") { store.setWiki(title, !wiki) }
             }
+            if store.tiddler(title) != nil, store.kind(title) != .day {
+                // Prism's flags: in its inbox, among its pinned.
+                let inbox = store.isInInbox(title), pinned = store.isPinned(title)
+                Button(inbox ? "Done with It" : "Add to Inbox", systemImage: inbox ? "tray.and.arrow.up" : "tray.and.arrow.down") {
+                    store.setInbox(title, !inbox)
+                }
+                Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") { store.setPinned(title, !pinned) }
+            }
+            if store.canRead(title) {
+                Button("Read", systemImage: "doc.richtext") { river.reading = title }
+            }
             Divider()
+            Button("Find in Card", systemImage: "text.magnifyingglass") { river.find(in: title) }
+            if store.tiddler(title) != nil {
+                Button("History…", systemImage: "clock.arrow.circlepath") { historyShown = true }
+            }
             Button("Copy Link") { Platform.copy("[[\(title)]]") }
             if Platform.canReveal, let path = store.path(of: title) {
                 Button("Show in Finder") { Platform.reveal(path) }

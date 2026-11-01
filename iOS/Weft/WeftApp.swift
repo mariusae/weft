@@ -1,3 +1,4 @@
+import ReflectGit2
 import SwiftUI
 import WeftCore
 import WeftGitHub
@@ -12,12 +13,12 @@ struct WeftApp: App {
     static let store: WikiStore = {
         let store = WikiStore()
         store.makeSync = { root in GitHubGraph.sync(for: root) }
+        // History read through libgit2: no account needed.
+        store.makeHistory = { root in LibGit2Backend(root: root) }
         return store
     }()
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var store = WeftApp.store
-    /// The rivers open, one shown at a time.
-    @State private var rivers = RiverSet(store: WeftApp.store)
     @State private var relay = Relay()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -25,9 +26,8 @@ struct WeftApp: App {
         WindowGroup {
             Group {
                 if store.onboarded && store.root != nil {
-                    ContentView()
-                        .environment(rivers)
-                        .environment(rivers.current)
+                    WindowRivers()
+                        .environment(\.accountSettings, AnyView(AccountSettings(open: { store.open(graph: GitHubGraph.root) })))
                 } else {
                     Onboarding(allowsFolder: false,
                                openClone: { store.open(graph: GitHubGraph.root) },
@@ -37,7 +37,6 @@ struct WeftApp: App {
             .environment(store)
             .environment(GitHubGraph.account)
             .onAppear(perform: openGraph)
-            .onChange(of: store.loadedRoot, initial: true) { rivers.load() }
             // While open, told by the relay of another device's push.
             .onChange(of: store.root, initial: true) { follow() }
             .onChange(of: GitHubGraph.account.isSignedIn) { follow() }
@@ -45,7 +44,7 @@ struct WeftApp: App {
                 if phase == .active { relay.reconnect() }
             }
         }
-        .commands { PadCommands(river: rivers.current, store: store) }
+        .commands { PadCommands(store: store) }
     }
 
     private func follow() {
@@ -61,19 +60,52 @@ struct WeftApp: App {
     }
 }
 
-/// With a keyboard on the iPad, the Mac's keys: held ⌘ lists them.
+/// A window's rivers, its own: on the iPad, a second window shows other
+/// cards than the first, each kept under the window's name.
+private struct WindowRivers: View {
+    @Environment(WikiStore.self) private var store
+    @State private var rivers = RiverSet(store: WeftApp.store)
+    /// The window's name, kept with it; empty for the first, as the phone's.
+    @SceneStorage("riverScene") private var scene = ""
+    /// The windows open: a new one, while the first is, takes a name of its own.
+    @MainActor private static var open: Set<String> = []
+
+    var body: some View {
+        ContentView()
+            .environment(rivers)
+            .environment(rivers.current)
+            .focusedSceneValue(\.river, rivers.current)
+            .onAppear {
+                if Self.open.contains(scene) { scene = UUID().uuidString }
+                Self.open.insert(scene)
+                rivers.scene = scene
+                rivers.load()
+            }
+            .onDisappear { Self.open.remove(scene) }
+            .onChange(of: store.loadedRoot) { rivers.load() }
+    }
+}
+
+/// With a keyboard on the iPad, the Mac's keys: held ⌘ lists them — acting
+/// on the window in front.
 private struct PadCommands: Commands {
-    let river: River
+    @FocusedValue(\.river) private var focused
     let store: WikiStore
 
     var body: some Commands {
+        if let river = focused { keys(river) }
+    }
+
+    @CommandsBuilder private func keys(_ river: River) -> some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Tiddler") { river.newTiddler() }
                 .keyboardShortcut("n")
             Button("Quick Open…") { river.quickOpenShown = true }
                 .keyboardShortcut("o")
-            Button("Find Tiddler") { river.searchFocusRequest += 1 }
+            Button("Find") { river.find() }
                 .keyboardShortcut("f")
+            Button("Find Tiddler") { river.searchFocusRequest += 1 }
+                .keyboardShortcut("f", modifiers: [.command, .option])
             Button("Sync Now") { store.syncNow() }
                 .keyboardShortcut("r")
                 .disabled(store.sync == nil)
@@ -99,6 +131,27 @@ private struct PadCommands: Commands {
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
             Button("Next Card") { river.step(1) }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+        }
+    }
+}
+
+/// Settings' GitHub section: who is signed in, the repositories Weft may
+/// see, and signing out — onboarding's own view, a tap away.
+private struct AccountSettings: View {
+    @Environment(GitHubAccount.self) private var account
+    let open: () -> Void
+
+    var body: some View {
+        Section {
+            NavigationLink {
+                GitHubConnect(open: open).navigationTitle("GitHub")
+            } label: {
+                LabeledContent("GitHub", value: account.user.map { "@" + $0.login } ?? (account.isSignedIn ? "Signed in" : "Signed out"))
+            }
+        } header: {
+            Text("Account")
+        } footer: {
+            Text("The graph is kept in a GitHub repository and synced with it.")
         }
     }
 }

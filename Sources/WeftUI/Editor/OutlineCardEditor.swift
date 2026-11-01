@@ -20,7 +20,7 @@ struct OutlineCardEditor: NSViewRepresentable {
     var onFocusChange: (Bool) -> Void = { _ in }
 
     /// Where a top-level row's words start.
-    static var textIndent: CGFloat { PageOutlineEditor.textIndent() }
+    static var textIndent: CGFloat { PageOutlineEditor.textIndent(fontSize: TextSettings.size + 1) }
 
     final class Coordinator {
         var revision = -1
@@ -33,7 +33,7 @@ struct OutlineCardEditor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> PageOutlineEditor {
-        let editor = PageOutlineEditor(text: text, root: store.root)
+        let editor = PageOutlineEditor(text: text, fontSize: TextSettings.size + 1, root: store.root)
         editor.onChange = { text = $0 }
         editor.onOpenTitle = { [river] title in
             withAnimation(.snappy(duration: 0.28)) { river.open(title) }
@@ -64,7 +64,9 @@ struct OutlineCardEditor: NSViewRepresentable {
         // query finds, or an embed shows, may have. Other cards don't hear
         // of every save.
         if coordinator.asks {
-            let revision = store.graphVersion
+            // An embed shows another page's words: every save, not only
+            // what changes queries.
+            let revision = store.graphVersion &+ store.textVersion &* 7919
             if coordinator.revision != revision {
                 coordinator.revision = revision
                 editor.setGraph(store.pages, title: title, refreshing: true)

@@ -61,6 +61,9 @@ struct CardEditor: View {
 
     private var mode: WikiStore.EditorMode { store.editorMode(title) }
 
+    @AppStorage(TextSettings.sizeKey) private var textSize = TextSettings.standardSize
+    @AppStorage("Typeface") private var face = ""
+
     @ViewBuilder private func editor(_ page: Tiddler?) -> some View {
         let wants = river.wantsCaret(title) == .body
         let taken = { river.caretTaken(title) }
@@ -80,6 +83,8 @@ struct CardEditor: View {
                     .allowsHitTesting(false)
             }
         }
+        // Set again when Settings change how.
+        .id("\(textSize) \(face)")
     }
 
     private func textEditor(wants: Bool, taken: @escaping () -> Void, focused: @escaping (Bool) -> Void) -> some View {
@@ -116,7 +121,11 @@ struct CardEditor: View {
                             .buttonStyle(.plain)
                             .contextMenu {
                                 Button("Remove Tag", systemImage: "minus.circle") {
+                                    let at = tags.firstIndex(of: tag) ?? tags.count
                                     river.change(title, settling: true) { $0.tags.removeAll { $0 == tag } }
+                                    store.undoable("Remove Tag “\(tag)”") { [river, title] in
+                                        river.change(title, settling: true) { $0.tags.insert(tag, at: min(at, $0.tags.count)) }
+                                    }
                                 }
                             }
                     }
@@ -246,7 +255,11 @@ struct CardEditor: View {
                                 })
                                 .textFieldStyle(.plain)
                                 Button {
+                                    let value = field.value
                                     river.change(title, settling: true) { $0[field: field.name] = nil }
+                                    store.undoable("Remove Field “\(field.name)”") { [river, title] in
+                                        river.change(title, settling: true) { $0[field: field.name] = value }
+                                    }
                                 } label: {
                                     Image(systemName: "minus.circle")
                                 }
