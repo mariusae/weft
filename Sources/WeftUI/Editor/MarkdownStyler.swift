@@ -1,5 +1,6 @@
 import Foundation
 import ReflectCore
+import WeftCore
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -245,31 +246,92 @@ struct MarkdownStyler {
             storage.addAttributes([.font: mono, .backgroundColor: Palette.codeBackground], range: sub(match.range(at: 1)))
             markers(match.range, inner: match.range(at: 1), markup)
         }
-        for match in Self.matches(#"(?<!!)\[([^\[\]]+)\]\(([^)\s]+)\)"#, in: line) {
-            storage.addAttribute(.foregroundColor, value: Palette.accent, range: sub(match.range(at: 1)))
-            markers(match.range, inner: match.range(at: 1), markup)
+        // Links and tags: pills, as the outline editor draws them — off the
+        // caret's lines, an icon of what each is to in the room of its
+        // hidden markup, a web address shortened. In a heading, only coloured.
+        func link(_ span: InlineSpan, pills: Bool) {
+            let content = span.content
+            var opening = span.markup.first { $0.location < content.location } ?? NSRange(location: content.location, length: 0)
+            var bang = false
+            let closing = span.markup.first { $0.location >= NSMaxRange(content) }
+            var kind = LinkPill.Kind.web
+            var missing = false
+            let target = LinkPill.target(of: span)
+            let page = target.flatMap(InlineMarkdown.title(from:))
+            switch span.kind {
+            case .tag:
+                kind = .tag
+            case .wikiLink:
+                // An embed's `!` is markup too.
+                if opening.location > 0, nsLine.character(at: opening.location - 1) == 33 {
+                    opening = NSRange(location: opening.location - 1, length: opening.length + 1)
+                    bang = true
+                }
+                if let page, page != nsLine.substring(with: content) { storage.addAttribute(.toolTip, value: page, range: sub(content)) }
+            default:
+                break
+            }
+            if let page, kind != .tag {
+                kind = Day(page) != nil || Week(page) != nil ? .day : .page
+                missing = !exists(page)
+            }
+            let tint = missing ? Palette.dim : Palette.accent
+            storage.addAttribute(.foregroundColor, value: tint, range: sub(content))
+            if missing { storage.addAttribute(.font, value: Fonts.italic(size: size), range: sub(content)) }
+            // A tag is to its tiddler.
+            let to = kind == .tag ? InlineMarkdown.url(for: String(nsLine.substring(with: content).dropFirst())) : target
+            for run in span.markup { markup(run) }
+            if bang { markup(NSRange(location: opening.location, length: 1)) }
+            guard pills else {
+                if let to { storage.addAttribute(.weftLink, value: to, range: sub(content)) }
+                return
+            }
+            // Off the caret's lines: the room before its words is its icon's.
+            var lead = !shown && opening.length > 0 ? NSMaxRange(opening) - 1 : nil
+            var tail = !shown ? closing.map { NSMaxRange($0) - 1 } : nil
+            // A web address written out — bare, or `<…>` — is shortened to
+            // where it goes, but for on the caret's lines.
+            if !shown, kind == .web, case let address = nsLine.substring(with: content), address.lowercased().hasPrefix("http"),
+               span.kind == .url(address) || span.kind == .link(address) {
+                let parts = AddressShortening.shortened(address)
+                if parts.prefix > 0 {
+                    func hide(_ local: NSRange) {
+                        guard local.length > 0 else { return }
+                        storage.addAttributes(Self.hidden, range: sub(NSRange(location: content.location + local.location, length: local.length)))
+                    }
+                    hide(NSRange(location: 0, length: parts.prefix))
+                    lead = content.location + parts.prefix - 1
+                    if let middle = parts.middle {
+                        hide(middle)
+                        let first = sub(NSRange(location: content.location + middle.location, length: 1))
+                        storage.addAttributes([.weftEllipsis: true, .kern: LinkPill.ellipsisWidth(for: PlatformFont.systemFont(ofSize: size))], range: first)
+                    }
+                    if let rest = parts.rest {
+                        hide(rest)
+                        if tail == nil { tail = content.location + NSMaxRange(rest) - 1 }
+                    }
+                }
+            }
+            let pill = LinkPill(kind, hasLead: lead != nil, missing: missing)
+            storage.addAttribute(.weftPill, value: pill, range: sub(span.range))
+            if let lead, pill.hasLead {
+                storage.addAttribute(.kern, value: pill.leadWidth(for: PlatformFont.systemFont(ofSize: size)), range: sub(NSRange(location: lead, length: 1)))
+            }
+            if let tail, pill.hasLead {
+                // What the hidden markup after its words takes — a long
+                // address, however small — counts toward the room after them.
+                let after = NSRange(location: NSMaxRange(content), length: tail + 1 - NSMaxRange(content))
+                let taken = (nsLine.substring(with: after) as NSString).size(withAttributes: [.font: Self.hidden[.font]!]).width
+                storage.addAttribute(.kern, value: max(0.5, LinkPill.tailWidth - taken), range: sub(NSRange(location: tail, length: 1)))
+            }
+            // Followed when clicked: its words, and off the caret's lines its room too.
+            if let to { storage.addAttribute(.weftLink, value: to, range: sub(shown ? content : span.range)) }
         }
-        // `[[Title]]`, `[[Title|shown]]`, `![[Embed]]`: tokens.
-        for match in Self.matches(#"(!?)\[\[([^\[\]|]+)(?:\|([^\[\]]+))?\]\]"#, in: line) {
-            let title = nsLine.substring(with: match.range(at: 2)).trimmingCharacters(in: .whitespaces)
-            let found = exists(title)
-            let shownRange = match.range(at: 3).location != NSNotFound ? match.range(at: 3) : match.range(at: 2)
-            storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size * 0.8), range: sub(match.range))
-            var token: [NSAttributedString.Key: Any] = [
-                .foregroundColor: found ? Palette.accent : Palette.dim,
-                .backgroundColor: (found ? Palette.accent : Palette.dim).withAlphaComponent(match.range(at: 1).length > 0 ? 0.16 : 0.10),
-                .font: found ? PlatformFont.systemFont(ofSize: size, weight: .medium) : Fonts.italic(size: size),
-            ]
-            if match.range(at: 3).location != NSNotFound { token[.toolTip] = title }
-            storage.addAttributes(token, range: sub(shownRange))
-            // The brackets — and the target, before a bar — are markup.
-            markup(NSRange(location: match.range.location, length: shownRange.location - match.range.location))
-            markup(NSRange(location: NSMaxRange(shownRange), length: NSMaxRange(match.range) - NSMaxRange(shownRange)))
-        }
-        // Pictures and comments, as Prism reads them: markup, the pictures
-        // drawn under the line.
         for span in InlineMarkup.spans(in: nsLine, range: NSRange(location: 0, length: nsLine.length)) {
             switch span.kind {
+            case .link, .wikiLink, .url, .tag: link(span, pills: hashes == 0)
+            // Pictures and comments, as Prism reads them: markup, the
+            // pictures drawn under the line.
             case .image, .comment: markup(span.range)
             default: break
             }
@@ -288,7 +350,10 @@ struct MarkdownStyler {
             look.attachment = .block(trimmed)
             look.hidden = !shown
         }
-        if !look.hidden {
+        if look.hidden {
+            // Nothing of a hidden line is drawn: its links' pills neither.
+            for key in [NSAttributedString.Key.weftPill, .weftEllipsis, .kern] { storage.removeAttribute(key, range: range) }
+        } else {
             for local in concealed { storage.addAttributes(Self.hidden, range: sub(local)) }
         }
         return look

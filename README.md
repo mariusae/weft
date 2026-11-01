@@ -67,8 +67,12 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   Preview. Its body reads as what it says, and is edited as it reads: as
   **Text** (Markdown, its markup showing only on the lines the caret is on)
   or as an **Outline** (Prism's outline editor, on the Mac) — the switch in
-  its header. What is written saves itself a moment after typing pauses;
-  when the caret leaves the card, a new title takes effect. Beside the
+  its header. In both, links and tags are pills, as Slack draws them: an
+  icon for a page, a day or the web, an address shortened to its site and
+  the ends of its path; a click (or tap) follows one, and on the Mac a
+  right-click opens or copies it. What is written saves itself a moment
+  after typing pauses; when the caret leaves the card, a new title takes
+  effect. Beside the
   switch, in a glass capsule, its menu (Rename, Fold, Close Others, Add
   Tag, Add Field, Insert Query, Copy Link, Show in Finder, Delete) and its
   close button. ⌘↩ puts the caret in the selected card, or takes it out.

@@ -267,6 +267,59 @@ final class TiddlerTextView: NSTextView {
         if changed { onResize() }
     }
 
+    // MARK: Links
+
+    /// Follows a link clicked.
+    var onOpenLink: (URL) -> Void = { _ in }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas where area.owner === self && area.userInfo?["links"] != nil { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+                                       owner: self, userInfo: ["links": true]))
+    }
+
+    /// Over a link, the pointer is a hand: it is to be clicked.
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        if link(at: convert(event.locationInWindow, from: nil)) != nil { NSCursor.pointingHand.set() }
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if link(at: convert(event.locationInWindow, from: nil)) != nil {
+            NSCursor.pointingHand.set()
+        } else {
+            super.cursorUpdate(with: event)
+        }
+    }
+
+    /// A click on a link follows it — once the button comes up without the
+    /// pointer having moved off to drag.
+    override func mouseDown(with event: NSEvent) {
+        guard event.clickCount == 1, !event.modifierFlags.contains(.shift),
+              let url = link(at: convert(event.locationInWindow, from: nil)) else { return super.mouseDown(with: event) }
+        let start = event.locationInWindow
+        while let next = window?.nextEvent(matching: [.leftMouseUp, .leftMouseDragged]) {
+            let moved = hypot(next.locationInWindow.x - start.x, next.locationInWindow.y - start.y)
+            if next.type == .leftMouseUp {
+                if moved < 4 { onOpenLink(url) }
+                return
+            }
+            if moved >= 4 { return }
+        }
+    }
+
+    /// A link's menu: to open it, or copy it.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let url = link(at: convert(event.locationInWindow, from: nil)) else { return super.menu(for: event) }
+        let menu = NSMenu(title: "Link")
+        let title = InlineMarkdown.title(from: url)
+        menu.addItem(ActionItem(title: title == nil ? "Open Link" : "Open") { [weak self] in self?.onOpenLink(url) })
+        menu.addItem(.separator())
+        menu.addItem(ActionItem(title: "Copy Link") { Platform.copy(title.map { "[[\($0)]]" } ?? url.absoluteString) })
+        return menu
+    }
+
     /// ⌘B, ⌘I, ⌘K: bold, italic, a link — there being no bar of buttons.
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -394,6 +447,21 @@ final class TiddlerTextView: NSTextView {
 /// The list of titles, in a window of its own beside the editor's, so the
 /// card it is in does not cut it off.
 @MainActor
+/// A menu item that does what it is given.
+private final class ActionItem: NSMenuItem {
+    private let action_: () -> Void
+
+    init(title: String, _ action: @escaping () -> Void) {
+        action_ = action
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("unused") }
+
+    @objc private func run() { action_() }
+}
+
 final class SuggestionPanel {
     private let panel: NSPanel
     private let host: NSHostingView<SuggestionList>
@@ -446,7 +514,7 @@ private struct EditorRepresentable: NSViewRepresentable {
 
     func makeNSView(context: Context) -> TiddlerTextView {
         let storage = NSTextStorage()
-        let layout = NSLayoutManager()
+        let layout = LiveLayoutManager()
         storage.addLayoutManager(layout)
         let container = NSTextContainer(size: NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = true
@@ -466,6 +534,7 @@ private struct EditorRepresentable: NSViewRepresentable {
         view.suggest = suggest
         view.onEscape = onEscape
         view.controller = controller
+        view.onOpenLink = { [river, card] in follow($0, in: river, from: card) }
         let live = LiveMarkdown(view: view, styler: styler, store: store, river: river, card: card)
         live.onResize = { [weak view] in view?.invalidateIntrinsicContentSize() }
         context.coordinator.live = live
@@ -575,6 +644,15 @@ final class TiddlerTextView: UITextView {
         replace(textRange, withText: text)
     }
 
+    /// A tap on a link follows it, instead of putting the caret there.
+    func followLinks(_ open: @escaping (URL) -> Void) {
+        let tap = LinkTap(view: self, open: open)
+        linkTap = tap
+        addGestureRecognizer(tap.recognizer)
+    }
+
+    private var linkTap: LinkTap?
+
     func offerCompletions() {
         guard let range = linkPartialRange(in: text as NSString, caret: selectedRange.location) else {
             if controller?.suggestions.isEmpty == false { controller?.suggestions = [] }
@@ -597,6 +675,36 @@ final class TiddlerTextView: UITextView {
     }
 }
 
+/// Taps on a text view's links: recognized only on one, and before the
+/// text view's own taps — which would put the caret there — so those wait.
+private final class LinkTap: NSObject, UIGestureRecognizerDelegate {
+    let recognizer = UITapGestureRecognizer()
+    private weak var view: UITextView?
+    private let open: (URL) -> Void
+
+    init(view: UITextView, open: @escaping (URL) -> Void) {
+        self.view = view
+        self.open = open
+        super.init()
+        recognizer.addTarget(self, action: #selector(tapped))
+        recognizer.delegate = self
+    }
+
+    @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
+        guard let view, let url = view.link(at: recognizer.location(in: view)) else { return }
+        open(url)
+    }
+
+    func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+        guard let view else { return false }
+        return view.link(at: recognizer.location(in: view)) != nil
+    }
+
+    func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        other is UITapGestureRecognizer && other !== recognizer
+    }
+}
+
 private struct EditorRepresentable: UIViewRepresentable {
     @Binding var text: String
     let controller: EditorController
@@ -613,7 +721,14 @@ private struct EditorRepresentable: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> TiddlerTextView {
-        let view = TiddlerTextView(usingTextLayoutManager: false)
+        // Laid out by the layout manager that draws links as pills.
+        let storage = NSTextStorage()
+        let layout = LiveLayoutManager()
+        storage.addLayoutManager(layout)
+        let container = NSTextContainer(size: CGSize(width: 350, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layout.addTextContainer(container)
+        let view = TiddlerTextView(frame: .zero, textContainer: container)
         view.isScrollEnabled = false
         view.backgroundColor = .clear
         view.font = PlatformFont.systemFont(ofSize: styler.size)
@@ -626,6 +741,7 @@ private struct EditorRepresentable: UIViewRepresentable {
         view.tintColor = Palette.accent
         view.suggest = suggest
         view.controller = controller
+        view.followLinks { [river, card] in follow($0, in: river, from: card) }
         let live = LiveMarkdown(view: view, styler: styler, store: store, river: river, card: card)
         live.onResize = { [weak view] in view?.invalidateIntrinsicContentSize() }
         context.coordinator.live = live
