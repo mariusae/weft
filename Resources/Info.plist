@@ -4,13 +4,13 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Weft</string>
 	<key>CFBundleExecutable</key>
 	<string>WeftMac</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.mariusae.weft</string>
 	<key>CFBundleName</key>
-	<string>Weft</string>
-	<key>CFBundleDisplayName</key>
 	<string>Weft</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
@@ -24,5 +24,18 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Weft Card</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.mariusae.weft.card</string>
+		</dict>
+	</array>
 </dict>
 </plist>

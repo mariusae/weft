@@ -161,6 +161,18 @@ public final class River: Identifiable {
         return focus == title
     }
 
+    /// A card dragged to just before or after another, and selected; one
+    /// dragged from another river is opened here, there.
+    public func move(_ title: String, to target: String, after: Bool) {
+        let title = store.canonicalTitle(title)
+        guard title != target else { return }
+        var moved = cards.filter { $0 != title }
+        guard let index = moved.firstIndex(of: target) else { return }
+        moved.insert(title, at: after ? index + 1 : index)
+        cards = moved
+        select(title)
+    }
+
     /// Makes a card the one ⌘↩ and the outline go to, without moving the river.
     public func select(_ title: String) {
         if focus != title { focus = title }

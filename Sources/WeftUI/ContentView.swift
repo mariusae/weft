@@ -355,13 +355,15 @@ private struct RiverColumn: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// The card at the top of the river, as it is scrolled.
     @State private var inView: String?
+    /// Where a card being dragged would be dropped.
+    @State private var drop: CardDrop?
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 18) {
                     ForEach(river.cards, id: \.self) { title in
-                        Card(title: title)
+                        DroppableCard(title: title, drop: $drop, gap: 18)
                             .id(title)
                             .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity),
                                                     removal: .opacity.combined(with: .scale(scale: 0.97))))

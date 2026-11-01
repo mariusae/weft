@@ -61,6 +61,23 @@ import Testing
         #expect(store.editorMode("Prose") == .text)
     }
 
+    @Test func aCardDraggedGoesBeforeOrAfterWhereItIsDropped() {
+        let one = river(["Alpha", "Beta", "Gamma"])
+        one.save(as: "Order")
+        one.move("Gamma", to: "Alpha", after: false)
+        #expect(one.cards == ["Gamma", "Alpha", "Beta"])
+        one.move("Gamma", to: "Beta", after: true)
+        #expect(one.cards == ["Alpha", "Beta", "Gamma"])
+        one.move("Alpha", to: "Alpha", after: true)
+        #expect(one.cards == ["Alpha", "Beta", "Gamma"])
+        #expect(one.isSelected("Gamma"))
+        // The saved river keeps the order; a card from another river is opened here.
+        #expect(file("Order") == "- [[Alpha]]\n- [[Beta]]\n- [[Gamma]]\n")
+        write("Delta", "About Delta.")
+        one.move("Delta", to: "Beta", after: false)
+        #expect(one.cards == ["Alpha", "Delta", "Beta", "Gamma"])
+    }
+
     @Test func savingWritesTheRiverAndKeepsItAsItChanges() {
         let one = river(["Alpha", "Beta"])
         one.save(as: "Work")

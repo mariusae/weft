@@ -50,8 +50,11 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
 
 - **The river**: open cards, one after another. A link opens its card just
   after the one it was clicked in and scrolls to it; a card already open is
-  scrolled to. Cards fold to their titles (the chevron) and close (×). On
-  the iPhone, the sidebar and the river take turns.
+  scrolled to. Cards fold to their titles (the chevron) and close (×), and
+  are dragged by their titles to elsewhere in the river — on the phone,
+  held first — a line in the gap saying where; one dragged from another
+  window's river is opened there. On the iPhone, the sidebar and the
+  river take turns.
 - **Rivers**: more than one river can be open. On the Mac each is a tab —
   ⌘T opens one, with Quick Open showing; a page open in two tabs is one
   draft in both. On the phone, the title's menu lists the rivers open and

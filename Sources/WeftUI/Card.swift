@@ -160,6 +160,8 @@ struct Card: View {
         // runs on under the controls and is cut off at the card's edge.
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 30, alignment: .leading)
         .clipped()
+        // Dragged by its title to elsewhere in the river; on the phone, held first.
+        .draggingCard(title, shown: shown, enabled: !renaming)
         .overlay(alignment: .trailing) {
             controls
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { controlsWidth = $0 }
