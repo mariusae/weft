@@ -16,6 +16,8 @@ struct WeftApp: App {
     }()
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var store = WeftApp.store
+    /// The rivers open, one shown at a time.
+    @State private var rivers = RiverSet(store: WeftApp.store)
     @State private var relay = Relay()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -24,6 +26,8 @@ struct WeftApp: App {
             Group {
                 if store.onboarded && store.root != nil {
                     ContentView()
+                        .environment(rivers)
+                        .environment(rivers.current)
                 } else {
                     Onboarding(allowsFolder: false,
                                openClone: { store.open(graph: GitHubGraph.root) },
@@ -33,6 +37,7 @@ struct WeftApp: App {
             .environment(store)
             .environment(GitHubGraph.account)
             .onAppear(perform: openGraph)
+            .onChange(of: store.loadedRoot, initial: true) { rivers.load() }
             // While open, told by the relay of another device's push.
             .onChange(of: store.root, initial: true) { follow() }
             .onChange(of: GitHubGraph.account.isSignedIn) { follow() }

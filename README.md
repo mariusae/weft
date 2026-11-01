@@ -50,36 +50,51 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
 
 - **The river**: open cards, one after another. A link opens its card just
   after the one it was clicked in and scrolls to it; a card already open is
-  scrolled to. Cards fold to their titles (the chevron) and close (×). Which
-  cards are open is remembered per graph, on this device only. On the
-  iPhone, the sidebar and the river take turns.
-- **A card** is in Edit or in Preview, and that is all: the switch in its
-  header, or ⌘↩ for the selected card. What is written in Edit saves itself
-  a moment after typing pauses; a new title takes effect back in Preview.
-  Beside the switch, in a glass capsule, its menu (Fold, Close Others, Copy
-  Link, Show in Finder, Delete) and its close button.
-- **In Preview**: its title, tag pills (click one to open the tag's card),
-  its body, what is tagged with it, its other fields — and at its foot what
-  links to it, as Manifold shows links: small faces bunched, dealt out
-  under the pointer, each showing who links and the words around the link.
-  Links to tiddlers that don't exist yet are faded; their card offers to
-  create them. `![[Title]]` shows the other tiddler inside, live.
+  scrolled to. Cards fold to their titles (the chevron) and close (×). On
+  the iPhone, the sidebar and the river take turns.
+- **Rivers**: more than one river can be open. On the Mac each is a tab —
+  ⌘T opens one, with Quick Open showing; a page open in two tabs is one
+  draft in both. On the phone, the title's menu lists the rivers open and
+  makes a new one, and the bar at the foot of the river swipes between them.
+  A river is this device's alone, remembered per graph, until it is saved
+  under a name (Story ▸ Save River…, or the stack button above the river):
+  then it is a file in the graph's `rivers/` folder — a link to each card a
+  line — synced with the rest and kept as its cards change. A saved river
+  is not opened anywhere until it is brought back from **Saved Rivers**
+  (⇧⌘R, or the title's menu on the phone), which also duplicates, renames
+  and deletes them; deleting one leaves its cards open where they are.
+- **A card** is written in where it stands — there is no Edit and no
+  Preview. Its body reads as what it says, and is edited as it reads: as
+  **Text** (Markdown, its markup showing only on the lines the caret is on)
+  or as an **Outline** (Prism's outline editor, on the Mac) — the switch in
+  its header. What is written saves itself a moment after typing pauses;
+  when the caret leaves the card, a new title takes effect. Beside the
+  switch, in a glass capsule, its menu (Rename, Fold, Close Others, Add
+  Tag, Add Field, Insert Query, Copy Link, Show in Finder, Delete) and its
+  close button. ⌘↩ puts the caret in the selected card, or takes it out.
+- **On a card**: its title (double-click to rename), tag pills (click one to
+  open the tag's card; + adds one), its body, what is tagged with it, its
+  other fields — and at its foot what links to it, as Manifold shows links:
+  small faces bunched, dealt out under the pointer, each showing who links
+  and the words around the link. Links to tiddlers that don't exist yet are
+  faded; their card is there to write in. Under their lines, pictures, the
+  card of a link alone in its line, `![[Title]]` — the other tiddler, live —
+  and what a query finds.
 - **Queries**: a ```` ```query ```` block lists the tiddlers it finds —
   tagged with something, linking to something, listed in a tiddler's `list`,
   with words in them — as a list, a line of links, a table, cards, a count,
-  or a table-of-contents tree. **Edit Query** on the card changes it with a
-  form; **Insert Query** in the editor makes one. `{this}` stands for the
+  or a table-of-contents tree. **Insert Query…** in a card's menu makes one with a form. `{this}` stands for the
   tiddler it's in. The importer turns TiddlyWiki's `<<list-links>>`,
   `<<toc>>`, `<$list>` and `{{{ }}}` into queries where their filters allow.
-- **Editing**: the pencil, or double-click the title. The body is Markdown,
-  styled as it is typed: links are tokens (faint brackets, a missing tiddler
-  slanted), emphasis and headings show, markup is faded. Typing `[[` finishes
-  the title inline — the rest of the best one faint after the caret, Tab or →
-  taking it — and lists tiddlers, notes, days and a new tiddler under the
-  caret (↑↓, Return; Escape puts it away); on the phone, above the keyboard.
-  The formatting bar does bold, italic, code, headings, lists, links, embeds
-  and callouts. Tags offer the ones already in use. Escape goes back to
-  Preview. A save writes only what changed in the file.
+- **Writing**: click into a card. Off the caret's lines, Markdown is drawn
+  as what it means: headings, emphasis, code, quotes, bullets, links as
+  tokens (a missing tiddler slanted) — the markup hidden. Typing `[[`
+  finishes the title inline — the rest of the best one faint after the
+  caret, Tab or → taking it — and lists tiddlers, notes, days and a new
+  tiddler under the caret (↑↓, Return; Escape puts it away); on the phone,
+  above the keyboard, with the formatting buttons. ⌘B, ⌘I and ⌘K do bold,
+  italic and a link. Tags offer the ones already in use. Escape takes the
+  caret out. A save writes only what changed in the file.
 - **Quick Open** (⌘O): a tiddler, note or day by what is typed — today and
   the tiddlers written last, with nothing typed — opened in the river; or a
   new tiddler of that name.
@@ -99,7 +114,7 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   title, then an alias — and opens it as a card, read-only for now. A
   note's card shows its #tags, its body, and what links to it; a tiddler's
   card lists the notes linking to it. Search finds notes too, as Reflect's
-  chooser does. Today (⌘T) opens today's note. Private notes never show.
+  chooser does. Today (⇧⌘T) opens today's note. Private notes never show.
 - **Typed tags**: a tag tiddler's `fields` list — `birthday (date)`,
   `company (link)`, `status (active | paused | done)`, `rating (number)`,
   `website (url)`, `met (yes/no)`, or a bare name for text — gives every
@@ -135,8 +150,9 @@ WikiText a click away.
   (`TiddlyWiki/`), and TiddlyWiki's names for GraphKit's types (`Tiddler`
   for `Page`, `Wiki` for `PageIndex`, …).
 - `Sources/WeftUI` — the views, for the Mac and the phone: `WikiStore` (the
-  graph, the river, editing and saving, the sync), `ContentView` (sidebar
-  and river), `Card`, `CardEditor`, `BacklinkFan`, `QuickOpen`,
+  graph, editing and saving, saved rivers, the sync), `River` (one river's
+  cards, selection and caret), `Rivers` (the phone's rivers, Saved
+  Rivers), `ContentView` (sidebar and river), `Card`, `CardEditor`, `BacklinkFan`, `QuickOpen`,
   `MarkdownView`, `QueryView`, `ConflictView`, and `Editor/` (the text view,
   its styling and inline completion).
 - `Sources/WeftGitHub` — GitHub: a graph cloned into weft's own folder and
@@ -145,7 +161,8 @@ WikiText a click away.
 - `Sources/WeftMac` — the Mac app around them. `Snapshot` draws the window
   to a PNG for checking the app without a person at it:
   `WEFT_SNAPSHOT=out.png WEFT_OPEN="A|B" WEFT_EDIT=A WEFT_TYPE="[[Ch"
-  WEFT_FAN=0 WEFT_QUICK_OPEN=1 WEFT_DELAY=3`, or an onboarding page with
+  WEFT_FAN=0 WEFT_QUICK_OPEN=1 WEFT_TABS="A|B;C" WEFT_SAVE_RIVER=Work
+  WEFT_RIVERS=1 WEFT_DELAY=3`, or an onboarding page with
   `WEFT_ONBOARDING_STEP=place`; panels open over the window are saved beside
   it. It never syncs, and never touches the GitHub account (the keychain).
 

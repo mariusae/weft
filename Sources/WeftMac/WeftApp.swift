@@ -30,10 +30,12 @@ struct WeftApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        // A window for each river, as tabs of one window: a new one opened
+        // with a saved river recalled, or with nothing.
+        WindowGroup(for: RiverSeed.self) { $seed in
             Group {
                 if store.onboarded && store.root != nil {
-                    ContentView()
+                    RiverWindow(store: store, seed: seed)
                         .frame(minWidth: 760, minHeight: 480)
                 } else {
                     Onboarding(allowsFolder: true,
@@ -45,7 +47,8 @@ struct WeftApp: App {
             .environment(store)
             .withGitHubAccount(Snapshot.usesAccount)
             .onAppear {
-                store.openInitialGraph()
+                // The first window opens the graph; a tab opened after, not again.
+                if store.root == nil { store.openInitialGraph() }
                 Snapshot.takeIfAsked(store: store)
             }
             // Told by the relay of another device's push: sync at once.
@@ -60,42 +63,7 @@ struct WeftApp: App {
             }
         }
         .defaultSize(width: 1240, height: 860)
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("New Tiddler") { store.newTiddler() }
-                    .keyboardShortcut("n")
-                    .disabled(store.root == nil)
-                Button("Quick Open…") { store.quickOpenShown = true }
-                    .keyboardShortcut("o")
-                    .disabled(store.root == nil)
-                Button("Open Folder…") { store.chooseGraph() }
-                    .keyboardShortcut("o", modifiers: [.command, .shift])
-                ConnectMenuItem()
-            }
-            CommandGroup(after: .textEditing) {
-                Button("Find Tiddler") { store.searchFocusRequest += 1 }
-                    .keyboardShortcut("f")
-            }
-            CommandGroup(after: .saveItem) {
-                Button("Sync Now") { store.syncNow() }
-                    .keyboardShortcut("r")
-                    .disabled(store.sync == nil)
-            }
-            CommandMenu("Story") {
-                Button("Today") { store.openToday() }
-                    .keyboardShortcut("t")
-                    .disabled(store.root == nil)
-                Button("Close All Cards") { store.closeAll() }
-                    .keyboardShortcut("w", modifiers: [.command, .shift])
-                Divider()
-                Button("Previous Card") { store.step(-1) }
-                    .keyboardShortcut(.upArrow, modifiers: [.command, .option])
-                    .disabled(store.river.isEmpty)
-                Button("Next Card") { store.step(1) }
-                    .keyboardShortcut(.downArrow, modifiers: [.command, .option])
-                    .disabled(store.river.isEmpty)
-            }
-        }
+        .commands { RiverCommands(store: store) }
 
         Window("GitHub", id: "github") {
             GitHubWindow()
@@ -133,13 +101,5 @@ extension View {
     /// which may ask the person at the keyboard.
     @ViewBuilder func withGitHubAccount(_ used: Bool) -> some View {
         if used { environment(GitHubGraph.account) } else { self }
-    }
-}
-
-private struct ConnectMenuItem: View {
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Button("Connect to GitHub…") { openWindow(id: "github") }
     }
 }

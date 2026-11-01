@@ -112,19 +112,30 @@ func ghostText(typed: String, best: LinkTarget?) -> String? {
     return String(best.title.dropFirst(typed.count))
 }
 
-/// The body being edited, styled as it is typed, as tall as what it holds.
+/// A card's body, written in where it is: Markdown that reads as what it
+/// says — its markup showing only on the caret's lines, its pictures, link
+/// cards, embeds and queries drawn under their lines — as tall as it is.
 struct TiddlerEditor: View {
+    @Environment(WikiStore.self) private var store
+    @Environment(River.self) private var river
     @Binding var text: String
     let controller: EditorController
+    /// The card it is in, for links opened from what it draws.
+    let card: String
     let suggest: (String) -> [LinkTarget]
     let exists: (String) -> Bool
     var onEscape: () -> Void = {}
-    var focusOnAppear = false
+    /// Whether to take the caret, and what to say once it has.
+    var wantsCaret = false
+    var onCaretTaken: () -> Void = {}
+    /// Told when the caret comes in, and when it leaves.
+    var onFocusChange: (Bool) -> Void = { _ in }
 
     var body: some View {
-        EditorRepresentable(text: $text, controller: controller, suggest: suggest,
+        EditorRepresentable(text: $text, controller: controller, store: store, river: river, card: card, suggest: suggest,
                             styler: MarkdownStyler(size: MarkdownStyler.defaultSize, exists: exists),
-                            onEscape: onEscape, focusOnAppear: focusOnAppear)
+                            onEscape: onEscape, wantsCaret: wantsCaret, onCaretTaken: onCaretTaken,
+                            onFocusChange: onFocusChange)
     }
 }
 
@@ -191,6 +202,10 @@ struct SuggestionList: View {
 final class TiddlerTextView: NSTextView {
     var suggest: (String) -> [LinkTarget] = { _ in [] }
     var onEscape: () -> Void = {}
+    var onFocusChange: (Bool) -> Void = { _ in }
+    /// Told when it is made another size: what is under its lines placed again.
+    var onResize: () -> Void = {}
+    weak var controller: EditorController?
     private let model = SuggestionModel()
     private lazy var panel = SuggestionPanel(model: model)
     private let ghost = NSTextField(labelWithString: "")
@@ -233,9 +248,37 @@ final class TiddlerTextView: NSTextView {
         if window == nil { hideCompletions() }
     }
 
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocusChange(true) }
+        return became
+    }
+
     override func resignFirstResponder() -> Bool {
         hideCompletions()
-        return super.resignFirstResponder()
+        let resigned = super.resignFirstResponder()
+        if resigned { onFocusChange(false) }
+        return resigned
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size
+        super.setFrameSize(newSize)
+        if changed { onResize() }
+    }
+
+    /// ⌘B, ⌘I, ⌘K: bold, italic, a link — there being no bar of buttons.
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == .command, let controller {
+            switch event.charactersIgnoringModifiers {
+            case "b": return controller.wrap("**")
+            case "i": return controller.wrap("*")
+            case "k": return controller.startLink()
+            default: break
+            }
+        }
+        super.keyDown(with: event)
     }
 
     override func didChangeText() {
@@ -389,10 +432,15 @@ final class SuggestionPanel {
 private struct EditorRepresentable: NSViewRepresentable {
     @Binding var text: String
     let controller: EditorController
+    let store: WikiStore
+    let river: River
+    let card: String
     let suggest: (String) -> [LinkTarget]
     let styler: MarkdownStyler
     let onEscape: () -> Void
-    let focusOnAppear: Bool
+    let wantsCaret: Bool
+    let onCaretTaken: () -> Void
+    let onFocusChange: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -402,6 +450,8 @@ private struct EditorRepresentable: NSViewRepresentable {
         storage.addLayoutManager(layout)
         let container = NSTextContainer(size: NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = true
+        // In line with the card's title.
+        container.lineFragmentPadding = 0
         layout.addTextContainer(container)
         let view = TiddlerTextView(frame: .zero, textContainer: container)
         view.isRichText = false
@@ -410,18 +460,26 @@ private struct EditorRepresentable: NSViewRepresentable {
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
-        view.textContainerInset = NSSize(width: 4, height: 6)
+        view.textContainerInset = NSSize(width: 0, height: 2)
         view.font = PlatformFont.systemFont(ofSize: styler.size)
         view.insertionPointColor = Palette.accent
         view.suggest = suggest
         view.onEscape = onEscape
+        view.controller = controller
+        let live = LiveMarkdown(view: view, styler: styler, store: store, river: river, card: card)
+        live.onResize = { [weak view] in view?.invalidateIntrinsicContentSize() }
+        context.coordinator.live = live
+        view.onResize = { [weak live] in live?.attachments.place() }
+        view.onFocusChange = { [weak view, weak coordinator = context.coordinator] focused in
+            guard let view, let coordinator else { return }
+            coordinator.live?.focusChanged(focused, selection: view.selectedRange())
+            coordinator.parent.onFocusChange(focused)
+        }
         view.delegate = context.coordinator
         storage.delegate = context.coordinator
         view.string = text
+        live.restyleAll()
         controller.textView = view
-        if focusOnAppear {
-            DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
-        }
         return view
     }
 
@@ -430,20 +488,39 @@ private struct EditorRepresentable: NSViewRepresentable {
         view.suggest = suggest
         view.onEscape = onEscape
         controller.textView = view
-        if view.string != text { view.string = text }
+        if view.string != text {
+            view.string = text
+            context.coordinator.live?.changed()
+        }
+        if wantsCaret {
+            DispatchQueue.main.async { [onCaretTaken] in
+                guard let window = view.window else { return }
+                if window.firstResponder !== view {
+                    window.makeFirstResponder(view)
+                    view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+                }
+                onCaretTaken()
+            }
+        }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: TiddlerTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 600
         guard let container = view.textContainer, let layout = view.layoutManager else { return nil }
-        container.containerSize = NSSize(width: max(50, width - view.textContainerInset.width * 2), height: .greatestFiniteMagnitude)
+        let containerWidth = max(50, width - view.textContainerInset.width * 2)
+        if abs(container.containerSize.width - containerWidth) > 0.5 {
+            container.containerSize = NSSize(width: containerWidth, height: .greatestFiniteMagnitude)
+            context.coordinator.live?.attachments.place()
+        }
         layout.ensureLayout(for: container)
-        let height = layout.usedRect(for: container).height + view.textContainerInset.height * 2
-        return CGSize(width: width, height: max(160, ceil(height) + 20))
+        var height = layout.usedRect(for: container).height
+        height = max(height, context.coordinator.live?.attachments.bottom ?? 0, ceil(styler.size * 1.5))
+        return CGSize(width: width, height: ceil(height) + view.textContainerInset.height * 2)
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: EditorRepresentable
+        var live: LiveMarkdown?
 
         init(_ parent: EditorRepresentable) {
             self.parent = parent
@@ -452,17 +529,17 @@ private struct EditorRepresentable: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }
             parent.text = view.string
+            live?.changed()
         }
 
-        /// Fence lines in the text as last styled.
-        var fences = -1
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let view = notification.object as? NSTextView else { return }
+            live?.selectionChanged(view.selectedRange())
+        }
 
         func textStorage(_ storage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range: NSRange, changeInLength: Int) {
             guard editedMask.contains(.editedCharacters) else { return }
-            let count = MarkdownStyler.fences(in: storage.string as NSString)
-            // A fence come or gone changes what is inside a block below it: all of it styled again.
-            parent.styler.style(storage, around: count == fences ? range : nil)
-            fences = count
+            MainActor.assumeIsolated { live?.edited(range, in: storage) }
         }
     }
 }
@@ -474,6 +551,17 @@ private struct EditorRepresentable: NSViewRepresentable {
 final class TiddlerTextView: UITextView {
     var suggest: (String) -> [LinkTarget] = { _ in [] }
     weak var controller: EditorController?
+    /// Told when it is laid out again: what is under its lines placed again.
+    var onLayout: () -> Void = {}
+    private var laidOutWidth: CGFloat = 0
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if abs(bounds.width - laidOutWidth) > 0.5 {
+            laidOutWidth = bounds.width
+            onLayout()
+        }
+    }
 
     var selection: NSRange {
         get { selectedRange }
@@ -512,10 +600,15 @@ final class TiddlerTextView: UITextView {
 private struct EditorRepresentable: UIViewRepresentable {
     @Binding var text: String
     let controller: EditorController
+    let store: WikiStore
+    let river: River
+    let card: String
     let suggest: (String) -> [LinkTarget]
     let styler: MarkdownStyler
     let onEscape: () -> Void
-    let focusOnAppear: Bool
+    let wantsCaret: Bool
+    let onCaretTaken: () -> Void
+    let onFocusChange: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -527,13 +620,20 @@ private struct EditorRepresentable: UIViewRepresentable {
         view.autocorrectionType = .default
         view.smartQuotesType = .no
         view.smartDashesType = .no
-        view.textContainerInset = UIEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
+        view.textContainerInset = UIEdgeInsets(top: 2, left: 0, bottom: 2, right: 0)
+        // In line with the card's title.
+        view.textContainer.lineFragmentPadding = 0
         view.tintColor = Palette.accent
         view.suggest = suggest
         view.controller = controller
+        let live = LiveMarkdown(view: view, styler: styler, store: store, river: river, card: card)
+        live.onResize = { [weak view] in view?.invalidateIntrinsicContentSize() }
+        context.coordinator.live = live
+        view.onLayout = { [weak live] in live?.attachments.place() }
         view.delegate = context.coordinator
         view.textStorage.delegate = context.coordinator
         view.text = text
+        live.restyleAll()
         let bar = UIHostingController(rootView: KeyboardBar(controller: controller))
         bar.view.frame = CGRect(x: 0, y: 0, width: 400, height: 46)
         bar.view.backgroundColor = .clear
@@ -541,9 +641,6 @@ private struct EditorRepresentable: UIViewRepresentable {
         view.inputAccessoryView = bar.view
         context.coordinator.bar = bar
         controller.textView = view
-        if focusOnAppear {
-            DispatchQueue.main.async { view.becomeFirstResponder() }
-        }
         return view
     }
 
@@ -551,18 +648,32 @@ private struct EditorRepresentable: UIViewRepresentable {
         context.coordinator.parent = self
         view.suggest = suggest
         controller.textView = view
-        if view.text != text { view.text = text }
+        if view.text != text {
+            view.text = text
+            context.coordinator.live?.changed()
+        }
+        if wantsCaret {
+            DispatchQueue.main.async { [onCaretTaken] in
+                if !view.isFirstResponder {
+                    view.becomeFirstResponder()
+                    view.selectedRange = NSRange(location: (view.text as NSString).length, length: 0)
+                }
+                onCaretTaken()
+            }
+        }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView view: TiddlerTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 350
         let size = view.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        return CGSize(width: width, height: max(140, size.height + 12))
+        let below = (context.coordinator.live?.attachments.bottom ?? 0) + view.textContainerInset.top + view.textContainerInset.bottom
+        return CGSize(width: width, height: max(size.height, below, ceil(styler.size * 1.6)))
     }
 
     final class Coordinator: NSObject, UITextViewDelegate, NSTextStorageDelegate {
         var parent: EditorRepresentable
         var bar: UIHostingController<KeyboardBar>?
+        var live: LiveMarkdown?
 
         init(_ parent: EditorRepresentable) {
             self.parent = parent
@@ -570,22 +681,28 @@ private struct EditorRepresentable: UIViewRepresentable {
 
         func textViewDidChange(_ view: UITextView) {
             parent.text = view.text
+            live?.changed()
             (view as? TiddlerTextView)?.offerCompletions()
         }
 
         func textViewDidChangeSelection(_ view: UITextView) {
+            live?.selectionChanged(view.selectedRange)
             (view as? TiddlerTextView)?.offerCompletions()
         }
 
-        /// Fence lines in the text as last styled.
-        var fences = -1
+        func textViewDidBeginEditing(_ view: UITextView) {
+            live?.focusChanged(true, selection: view.selectedRange)
+            parent.onFocusChange(true)
+        }
+
+        func textViewDidEndEditing(_ view: UITextView) {
+            live?.focusChanged(false, selection: view.selectedRange)
+            parent.onFocusChange(false)
+        }
 
         func textStorage(_ storage: NSTextStorage, didProcessEditing editedMask: NSTextStorage.EditActions, range: NSRange, changeInLength: Int) {
             guard editedMask.contains(.editedCharacters) else { return }
-            let count = MarkdownStyler.fences(in: storage.string as NSString)
-            // A fence come or gone changes what is inside a block below it: all of it styled again.
-            parent.styler.style(storage, around: count == fences ? range : nil)
-            fences = count
+            MainActor.assumeIsolated { live?.edited(range, in: storage) }
         }
     }
 }

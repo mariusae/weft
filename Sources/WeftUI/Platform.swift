@@ -38,6 +38,15 @@ enum Platform {
         #endif
     }
 
+    /// The caret taken out of whatever has it.
+    static func endEditing() {
+        #if os(macOS)
+        if let window = NSApp.keyWindow { window.makeFirstResponder(nil) }
+        #else
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        #endif
+    }
+
     static var canReveal: Bool {
         #if os(macOS)
         true

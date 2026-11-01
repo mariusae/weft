@@ -5,6 +5,7 @@ import WeftCore
 /// opened in the river — or, when nothing is called that, a new tiddler.
 struct QuickOpen: View {
     @Environment(WikiStore.self) private var store
+    @Environment(River.self) private var river
     @State private var query = ""
     @State private var selected = 0
     @FocusState private var focused: Bool
@@ -60,7 +61,7 @@ struct QuickOpen: View {
             return .handled
         }
         .onKeyPress(.escape) {
-            store.quickOpenShown = false
+            river.quickOpenShown = false
             return .handled
         }
         .onChange(of: query) { selected = 0 }
@@ -87,7 +88,7 @@ struct QuickOpen: View {
                 .lineLimit(1)
                 .foregroundStyle(chosen ? .white : Ink.text.color)
             Spacer(minLength: 8)
-            if store.river.contains(target.title) {
+            if river.cards.contains(target.title) {
                 Text("Open")
                     .font(.caption)
                     .foregroundStyle(chosen ? .white.opacity(0.8) : Ink.secondary.color)
@@ -106,12 +107,12 @@ struct QuickOpen: View {
     private func open(_ results: [LinkTarget]) {
         guard results.indices.contains(selected) else { return }
         let target = results[selected]
-        store.quickOpenShown = false
+        river.quickOpenShown = false
         withAnimation(.snappy(duration: 0.28)) {
             if target.kind == .new {
-                store.edit(target.title)
+                river.edit(target.title)
             } else {
-                store.open(target.title)
+                river.open(target.title)
             }
         }
     }

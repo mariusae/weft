@@ -1,4 +1,5 @@
 import Foundation
+import ReflectCore
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -6,9 +7,13 @@ import AppKit
 import UIKit
 #endif
 
-/// Markdown styled as it is typed: headings large, emphasis emphatic, code
-/// in a fixed face, the markup itself faded — and a `[[link]]` a token, its
-/// brackets faint, a link to no tiddler drawn as missing.
+/// Markdown written as it reads: headings large, emphasis emphatic, code
+/// in a fixed face, a `[[link]]` a token — a link to no tiddler drawn as
+/// missing. The markup shows, faint, only on the lines the caret is on;
+/// elsewhere it is hidden, and what a line shows besides words — its
+/// pictures, the card of a link alone in it, a tiddler embedded, what a
+/// query finds — is drawn under it, in room kept for it.
+@MainActor
 struct MarkdownStyler {
     var size: CGFloat
     /// Whether a tiddler has a title, to draw links to it.
@@ -25,37 +30,94 @@ struct MarkdownStyler {
     /// Styles the paragraphs an edit touched — or every one, when `edited`
     /// is nil — knowing whether they are inside a fenced block from the
     /// fences before them. Styling only what changed leaves the rest of the
-    /// text laid out as it was: typing costs a paragraph, however long the page.
-    func style(_ storage: NSTextStorage, around edited: NSRange?) {
+    /// text laid out as it was: typing costs a paragraph, however long the
+    /// page. `revealed`: the paragraphs whose markup shows. `room`: how tall
+    /// what is drawn under a line is.
+    func style(_ storage: NSTextStorage, around edited: NSRange?, revealed: NSRange? = nil,
+               room: @escaping (EditorAttachment) -> CGFloat = { _ in 0 }) {
         let text = storage.string as NSString
         let whole = NSRange(location: 0, length: text.length)
         let range = edited.map { text.paragraphRange(for: NSRange(location: min($0.location, text.length), length: min($0.length, text.length - min($0.location, text.length)))) } ?? whole
         var fence: String?
+        var fenceStart = 0
         if range.location > 0 {
             // Inside a fence or not: the fences before say.
-            text.enumerateSubstrings(in: NSRange(location: 0, length: range.location), options: [.byParagraphs]) { line, _, _, _ in
+            text.enumerateSubstrings(in: NSRange(location: 0, length: range.location), options: [.byParagraphs]) { line, lineRange, _, _ in
                 guard let line, line.hasPrefix("```") else { return }
-                fence = fence == nil ? line.drop { $0 == "`" }.trimmingCharacters(in: .whitespaces) : nil
+                if fence == nil {
+                    fence = line.drop { $0 == "`" }.trimmingCharacters(in: .whitespaces)
+                    fenceStart = lineRange.location
+                } else {
+                    fence = nil
+                }
             }
         }
         storage.beginEditing()
         storage.setAttributes(base, range: range)
-        text.enumerateSubstrings(in: range, options: [.byParagraphs]) { line, range, _, _ in
+        text.enumerateSubstrings(in: range, options: [.byParagraphs]) { line, lineRange, enclosing, _ in
             guard let line else { return }
+            let shown = revealed.map { NSIntersectionRange($0, enclosing).length > 0 || $0.location == enclosing.location } ?? false
+            var look = LineLook()
             if let current = fence {
-                storage.addAttributes([.font: mono, .foregroundColor: current == "query" ? Palette.accent : Palette.text], range: range)
-                if line.hasPrefix("```") { fence = nil; storage.addAttribute(.foregroundColor, value: Palette.faint, range: range) }
-                return
-            }
-            if line.hasPrefix("```") {
+                if current == "query", !shown {
+                    look.hidden = true
+                } else {
+                    storage.addAttributes([.font: mono, .foregroundColor: current == "query" ? Palette.accent : Palette.text], range: lineRange)
+                }
+                if line.hasPrefix("```") {
+                    fence = nil
+                    if !look.hidden { storage.addAttribute(.foregroundColor, value: Palette.faint, range: lineRange) }
+                    // What a query finds, under its block.
+                    if current == "query" {
+                        look.attachment = .block(text.substring(with: NSRange(location: fenceStart, length: NSMaxRange(lineRange) - fenceStart)))
+                    }
+                }
+            } else if line.hasPrefix("```") {
                 fence = line.drop { $0 == "`" }.trimmingCharacters(in: .whitespaces)
-                storage.addAttributes([.font: mono, .foregroundColor: Palette.faint], range: range)
-                return
+                fenceStart = lineRange.location
+                if fence == "query", !shown {
+                    look.hidden = true
+                } else {
+                    storage.addAttributes([.font: mono, .foregroundColor: Palette.faint], range: lineRange)
+                }
+            } else {
+                look = styleLine(line, range: lineRange, shown: shown, in: storage)
             }
-            styleLine(line, range: range, in: storage)
+            apply(look, to: enclosing, in: storage, room: room)
         }
         storage.endEditing()
     }
+
+    /// How a line is laid out, besides its words: hidden whole, indented,
+    /// with something drawn under it.
+    private struct LineLook {
+        var hidden = false
+        /// Where its first line starts, and where the lines it wraps onto do.
+        var firstIndent: CGFloat = 0
+        var indent: CGFloat = 0
+        var attachment: EditorAttachment?
+    }
+
+    private func apply(_ look: LineLook, to range: NSRange, in storage: NSTextStorage, room: (EditorAttachment) -> CGFloat) {
+        guard range.length > 0 else { return }
+        if look.hidden { storage.addAttributes(Self.hidden, range: range) }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = look.hidden ? 0 : 3
+        if look.hidden { paragraph.maximumLineHeight = 0.5 }
+        paragraph.firstLineHeadIndent = look.firstIndent
+        paragraph.headIndent = look.indent
+        if let attachment = look.attachment {
+            let height = room(attachment)
+            paragraph.paragraphSpacing = height > 0 ? height + 10 : 0
+            // Marked on its last character, where what is drawn under it goes.
+            storage.addAttribute(.weftAttachment, value: AttachmentMark(attachment), range: NSRange(location: NSMaxRange(range) - 1, length: 1))
+        }
+        storage.addAttribute(.paragraphStyle, value: paragraph, range: range)
+    }
+
+    /// Text hidden: there, for the caret to go through and the file to
+    /// keep, but taking no room.
+    static let hidden: [NSAttributedString.Key: Any] = [.font: PlatformFont.systemFont(ofSize: 0.1), .foregroundColor: PlatformColor.clear]
 
     /// How many fence lines a text has: when an edit changes it, what is
     /// inside a block and what is not may have changed below it too.
@@ -73,6 +135,26 @@ struct MarkdownStyler {
         return count
     }
 
+    /// The paragraphs a selection touches — the whole of a query block, when
+    /// it is in one: what shows its markup while the caret is there.
+    static func revealed(for selection: NSRange, in text: NSString) -> NSRange {
+        let clamped = NSRange(location: min(selection.location, text.length), length: min(selection.length, text.length - min(selection.location, text.length)))
+        var range = text.paragraphRange(for: clamped)
+        var start: Int?
+        // The query blocks, found by their fences, that the range touches.
+        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: [.byParagraphs]) { line, _, enclosing, _ in
+            guard let line, line.hasPrefix("```") else { return }
+            if let opened = start {
+                let block = NSRange(location: opened, length: NSMaxRange(enclosing) - opened)
+                if NSIntersectionRange(block, range).length > 0 || NSLocationInRange(range.location, block) { range = NSUnionRange(range, block) }
+                start = nil
+            } else if line.dropFirst(3).trimmingCharacters(in: .whitespaces) == "query" {
+                start = enclosing.location
+            }
+        }
+        return range
+    }
+
     private var base: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
@@ -81,64 +163,141 @@ struct MarkdownStyler {
 
     private var mono: PlatformFont { PlatformFont.monospacedSystemFont(ofSize: size * 0.92, weight: .regular) }
 
-    private func styleLine(_ line: String, range: NSRange, in storage: NSTextStorage) {
+    private func styleLine(_ line: String, range: NSRange, shown: Bool, in storage: NSTextStorage) -> LineLook {
         let nsLine = line as NSString
         func sub(_ local: NSRange) -> NSRange { NSRange(location: range.location + local.location, length: local.length) }
-        // A heading: larger, its hashes faint.
+        var look = LineLook()
+        /// Markup: faint on the caret's lines, hidden on the rest — once
+        /// the line is otherwise styled.
+        var concealed: [NSRange] = []
+        func markup(_ local: NSRange) {
+            guard local.length > 0 else { return }
+            if shown {
+                storage.addAttribute(.foregroundColor, value: Palette.faint, range: sub(local))
+            } else {
+                concealed.append(local)
+            }
+        }
+        // A heading: larger, its hashes markup.
         let hashes = line.prefix { $0 == "#" }.count
         if (1...6).contains(hashes), line.dropFirst(hashes).first == " " {
             let scale: CGFloat = [1.45, 1.25, 1.12, 1.05, 1, 1][hashes - 1]
             storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size * scale, weight: .semibold), range: range)
-            storage.addAttribute(.foregroundColor, value: Palette.faint, range: sub(NSRange(location: 0, length: hashes + 1)))
+            markup(NSRange(location: 0, length: hashes + 1))
         }
-        // A quote or callout's marker, a list's bullet or number.
-        for pattern in [#"^>\s?(\[![A-Za-z]+\])?"#, #"^\s*(?:[-*+]|\d+[.)])\s(?:\[[ xX]\]\s)?"#] {
-            for match in Self.matches(pattern, in: line) {
-                storage.addAttribute(.foregroundColor, value: Palette.faint, range: sub(match.range))
+        // A quote: its marker markup, its words set in and quieter.
+        if let match = Self.matches(#"^>\s?"#, in: line).first {
+            markup(match.range)
+            if !shown {
+                look.firstIndent = 14
+                look.indent = 14
+                storage.addAttribute(.foregroundColor, value: Palette.dim, range: range)
             }
+        }
+        // A callout's kind: faint, always — it is what the quote is.
+        for match in Self.matches(#"^>\s?(\[![A-Za-z]+\])"#, in: line) {
+            storage.addAttribute(.foregroundColor, value: Palette.faint, range: sub(match.range(at: 1)))
+        }
+        // A list's item: set in by its depth — the spaces that say so taking
+        // no room — its lines hanging after its bullet, which is faint, and
+        // drawn as a bullet off the caret's line. What it says is after it.
+        var content = line
+        if let match = Self.matches(#"^([ \t]*)([-*+]|\d+[.)])\s(?:\[[ xX]\]\s)?"#, in: line).first {
+            let lead = match.range(at: 1)
+            let depth = CGFloat(nsLine.substring(with: lead).reduce(0) { $0 + ($1 == "\t" ? 2 : 1) } / 2)
+            if lead.length > 0 { storage.addAttributes(Self.hidden, range: sub(lead)) }
+            let marker = NSRange(location: lead.upperBound, length: match.range.upperBound - lead.upperBound)
+            storage.addAttribute(.foregroundColor, value: Palette.faint, range: sub(marker))
+            let bullet = match.range(at: 2)
+            if !shown, bullet.length == 1, "-*+".contains(nsLine.substring(with: bullet)) {
+                storage.addAttribute(.weftBullet, value: true, range: sub(bullet))
+            }
+            let width = (nsLine.substring(with: marker) as NSString).size(withAttributes: [.font: PlatformFont.systemFont(ofSize: size)]).width
+            look.firstIndent = depth * 20
+            look.indent = depth * 20 + ceil(width)
+            content = nsLine.substring(from: match.range.upperBound)
         }
         for match in Self.matches(#"\*\*(?=\S)(.+?)(?<=\S)\*\*"#, in: line) {
             storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size, weight: .semibold), range: sub(match.range(at: 1)))
-            fade(markers: match.range, inner: match.range(at: 1), in: storage, offset: range.location)
+            markers(match.range, inner: match.range(at: 1), markup)
         }
         for match in Self.matches(#"(?<![*\w])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?!\*)"#, in: line) {
             storage.addAttribute(.font, value: Fonts.italic(size: size), range: sub(match.range(at: 1)))
-            fade(markers: match.range, inner: match.range(at: 1), in: storage, offset: range.location)
+            markers(match.range, inner: match.range(at: 1), markup)
         }
-        for match in Self.matches(#"`[^`]+`"#, in: line) {
-            storage.addAttributes([.font: mono, .backgroundColor: Palette.codeBackground], range: sub(match.range))
+        for match in Self.matches(#"(?<![_\w])__(?=\S)(.+?)(?<=\S)__(?![_\w])"#, in: line) {
+            storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size, weight: .semibold), range: sub(match.range(at: 1)))
+            markers(match.range, inner: match.range(at: 1), markup)
         }
-        for match in Self.matches(#"\[([^\[\]]+)\]\(([^)\s]+)\)"#, in: line) {
+        for match in Self.matches(#"(?<![_\w])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![_\w])"#, in: line) {
+            storage.addAttribute(.font, value: Fonts.italic(size: size), range: sub(match.range(at: 1)))
+            markers(match.range, inner: match.range(at: 1), markup)
+        }
+        for match in Self.matches(#"~~(?=\S)(.+?)(?<=\S)~~"#, in: line) {
+            storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: sub(match.range(at: 1)))
+            markers(match.range, inner: match.range(at: 1), markup)
+        }
+        // A character escaped: its backslash is markup.
+        for match in Self.matches(#"\\[\\`*_{}\[\]()#+\-.!~|<>]"#, in: line) {
+            markup(NSRange(location: match.range.location, length: 1))
+        }
+        for match in Self.matches(#"`([^`]+)`"#, in: line) {
+            storage.addAttributes([.font: mono, .backgroundColor: Palette.codeBackground], range: sub(match.range(at: 1)))
+            markers(match.range, inner: match.range(at: 1), markup)
+        }
+        for match in Self.matches(#"(?<!!)\[([^\[\]]+)\]\(([^)\s]+)\)"#, in: line) {
             storage.addAttribute(.foregroundColor, value: Palette.accent, range: sub(match.range(at: 1)))
-            storage.addAttribute(.foregroundColor, value: Palette.faint, range: sub(NSRange(location: match.range(at: 1).upperBound,
-                                                                                           length: match.range.upperBound - match.range(at: 1).upperBound)))
+            markers(match.range, inner: match.range(at: 1), markup)
         }
         // `[[Title]]`, `[[Title|shown]]`, `![[Embed]]`: tokens.
         for match in Self.matches(#"(!?)\[\[([^\[\]|]+)(?:\|([^\[\]]+))?\]\]"#, in: line) {
             let title = nsLine.substring(with: match.range(at: 2)).trimmingCharacters(in: .whitespaces)
             let found = exists(title)
-            let shown = match.range(at: 3).location != NSNotFound ? match.range(at: 3) : match.range(at: 2)
-            storage.addAttribute(.foregroundColor, value: Palette.faint, range: sub(match.range))
+            let shownRange = match.range(at: 3).location != NSNotFound ? match.range(at: 3) : match.range(at: 2)
             storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size * 0.8), range: sub(match.range))
             var token: [NSAttributedString.Key: Any] = [
                 .foregroundColor: found ? Palette.accent : Palette.dim,
                 .backgroundColor: (found ? Palette.accent : Palette.dim).withAlphaComponent(match.range(at: 1).length > 0 ? 0.16 : 0.10),
                 .font: found ? PlatformFont.systemFont(ofSize: size, weight: .medium) : Fonts.italic(size: size),
             ]
-            if match.range(at: 3).location != NSNotFound {
-                // The target, before the bar, is faint like the brackets.
-                storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size * 0.8), range: sub(match.range(at: 2)))
-                token[.toolTip] = title
-            }
-            storage.addAttributes(token, range: sub(shown))
+            if match.range(at: 3).location != NSNotFound { token[.toolTip] = title }
+            storage.addAttributes(token, range: sub(shownRange))
+            // The brackets — and the target, before a bar — are markup.
+            markup(NSRange(location: match.range.location, length: shownRange.location - match.range.location))
+            markup(NSRange(location: NSMaxRange(shownRange), length: NSMaxRange(match.range) - NSMaxRange(shownRange)))
         }
+        // Pictures and comments, as Prism reads them: markup, the pictures
+        // drawn under the line.
+        for span in InlineMarkup.spans(in: nsLine, range: NSRange(location: 0, length: nsLine.length)) {
+            switch span.kind {
+            case .image, .comment: markup(span.range)
+            default: break
+            }
+        }
+        let pieces = MarkdownCache.pieces(content)
+        let trimmed = content.trimmingCharacters(in: .whitespaces)
+        if let card = pieces.card {
+            // A link alone in its line: its card, in its place.
+            look.attachment = .card(card.source, card.text)
+            look.hidden = !shown
+        } else if !pieces.pictures.isEmpty {
+            look.attachment = .pictures(pieces.pictures)
+            look.hidden = !shown && pieces.words.isEmpty
+        } else if trimmed.hasPrefix("![["), trimmed.hasSuffix("]]"), !trimmed.dropFirst(3).dropLast(2).contains("]") {
+            // A tiddler embedded alone in its line: drawn there, live.
+            look.attachment = .block(trimmed)
+            look.hidden = !shown
+        }
+        if !look.hidden {
+            for local in concealed { storage.addAttributes(Self.hidden, range: sub(local)) }
+        }
+        return look
     }
 
-    private func fade(markers whole: NSRange, inner: NSRange, in storage: NSTextStorage, offset: Int) {
-        let before = NSRange(location: offset + whole.location, length: inner.location - whole.location)
-        let after = NSRange(location: offset + inner.upperBound, length: whole.upperBound - inner.upperBound)
-        storage.addAttribute(.foregroundColor, value: Palette.faint, range: before)
-        storage.addAttribute(.foregroundColor, value: Palette.faint, range: after)
+    /// The markup either side of what it marks.
+    private func markers(_ whole: NSRange, inner: NSRange, _ markup: (NSRange) -> Void) {
+        markup(NSRange(location: whole.location, length: inner.location - whole.location))
+        markup(NSRange(location: inner.upperBound, length: whole.upperBound - inner.upperBound))
     }
 
     private static var cache: [String: NSRegularExpression] = [:]

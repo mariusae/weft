@@ -9,6 +9,7 @@ import WeftCore
 /// More than fit, the last is a stack of the rest, a menu of them.
 struct BacklinkFan: View {
     @Environment(WikiStore.self) private var store
+    @Environment(River.self) private var river
     let card: String
     let links: [LinkTarget]
     /// `WEFT_FAN=<n>` deals them out and rests on the nth, for a snapshot.
@@ -37,13 +38,13 @@ struct BacklinkFan: View {
                         .opacity(fanned || index < 3 ? 1 : 0)
                         .zIndex(Double(links.count - index))
                         .onHover { inside in rest(inside ? index : nil) }
-                        .onTapGesture { store.open(link.title, from: card) }
+                        .onTapGesture { river.open(link.title, from: card) }
                         .help(link.shown)
                 }
                 if overflow > 0 {
                     Menu {
                         ForEach(links.suffix(overflow), id: \.self) { link in
-                            Button { store.open(link.title, from: card) } label: { Label(link.shown, systemImage: link.kind.symbol) }
+                            Button { river.open(link.title, from: card) } label: { Label(link.shown, systemImage: link.kind.symbol) }
                         }
                     } label: {
                         Text("+\(overflow)")

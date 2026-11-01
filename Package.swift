@@ -34,6 +34,7 @@ let package = Package(
         // The Mac app around it. Wrapped as Weft.app by scripts/build-app.sh.
         .executableTarget(name: "WeftMac", dependencies: ["WeftCore", "WeftUI", "WeftGitHub", .product(name: "ReflectCore", package: "reflect-mac")]),
         .testTarget(name: "WeftCoreTests", dependencies: ["WeftCore"]),
+        .testTarget(name: "WeftUITests", dependencies: ["WeftUI", "WeftCore"]),
     ],
     swiftLanguageModes: [.v5]
 )

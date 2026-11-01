@@ -3,8 +3,8 @@ import Observation
 import ReflectCore
 import WeftCore
 
-/// The graph open in the window, its wiki, and how this Mac shows it: the
-/// river of open cards, which are being edited, and their drafts.
+/// The graph open, its wiki, and what is being written in it: the cards
+/// being edited and their drafts — shown in as many rivers as are open.
 @MainActor @Observable
 public final class WikiStore {
     public init() {}
@@ -72,26 +72,6 @@ public final class WikiStore {
         graphVersion += 1
     }
 
-    /// The open cards, top to bottom.
-    public private(set) var river: [String] = []
-    /// The card to bring into view, and a count so that asking again does.
-    public private(set) var focus: String? {
-        didSet {
-            guard focus != oldValue else { return }
-            for title in [oldValue, focus].compactMap({ $0 }) { selectionSignals[title]?.version += 1 }
-        }
-    }
-    /// Each card's own word of whether it is the selected one: selecting a
-    /// card redraws it and the one before, not every card.
-    @ObservationIgnored private var selectionSignals: [String: PageSignal] = [:]
-
-    public func isSelected(_ title: String) -> Bool {
-        let signal = selectionSignals[title] ?? { let made = PageSignal(); selectionSignals[title] = made; return made }()
-        _ = signal.version
-        // Read past the observation: the card's own signal is what it watches.
-        return _focus == title
-    }
-    public private(set) var focusRequest = 0
     /// Cards being edited, by the title they are open under, and what they say so far.
     @ObservationIgnored private var drafts: [String: Tiddler] = [:]
     /// Which cards are being edited, apart from what their drafts say: a
@@ -107,13 +87,6 @@ public final class WikiStore {
     @ObservationIgnored private var createdWhileEditing: Set<String> = []
     /// The tags a new tiddler was made with, which alone do not make it worth a file.
     @ObservationIgnored private var schemaTags: [String: [String]] = [:]
-    /// Cards showing only their titles.
-    public var folded: Set<String> = []
-
-    public var search = ""
-    public var searchFocusRequest = 0
-    /// Whether ⌘O's Quick Open is showing.
-    public var quickOpenShown = false
     public var error: String?
     /// How a graph is chosen here: a folder on the Mac, a GitHub repository
     /// on the phone. Set by the app.
@@ -133,7 +106,12 @@ public final class WikiStore {
     /// Whether the first launch's onboarding is done — or skipped, for a
     /// graph given with `-GraphPath`.
     public private(set) var onboarded = UserDefaults.standard.bool(forKey: "Onboarded")
-        || ProcessInfo.processInfo.arguments.contains("-GraphPath")
+        || WikiStore.isGivenGraph
+
+    /// Whether the graph was given with `-GraphPath` — a test's, or a
+    /// snapshot's: not remembered as the one to open next time, or the app
+    /// opened afterwards would show that graph instead of the person's own.
+    private static let isGivenGraph = ProcessInfo.processInfo.arguments.contains("-GraphPath")
 
     public func finishOnboarding() {
         UserDefaults.standard.set(true, forKey: "Onboarded")
@@ -158,12 +136,12 @@ public final class WikiStore {
         root = url.standardizedFileURL
         self.wiki = nil
         isLoading = true
+        loadedRoot = nil
+        for river in rivers { river.reset() }
         drafts = [:]
         editing = []
-        folded = []
         outlined = []
         linkNotes = nil
-        river = []
         sync = nil
         listsVersion += 1
         Task {
@@ -190,9 +168,8 @@ public final class WikiStore {
     private func loaded(_ wiki: Wiki, at url: URL) {
         self.wiki = wiki
         wiki.onChanged = { [weak self] before, after in self?.changed(before, after) }
-        UserDefaults.standard.set(url.path, forKey: "GraphPath")
-        river = UserDefaults.standard.stringArray(forKey: riverKey) ?? []
-        if river.isEmpty { river = defaultRiver(wiki) }
+        if !Self.isGivenGraph { UserDefaults.standard.set(url.path, forKey: "GraphPath") }
+        loadedRoot = root
         namesVersion += 1
         listsVersion += 1
         graphVersion += 1
@@ -204,6 +181,9 @@ public final class WikiStore {
         whenLoaded = []
         for body in waiting { body() }
     }
+
+    /// The graph whose pages are read, once they are: the rivers show its cards then.
+    public private(set) var loadedRoot: URL?
 
     /// Whether the graph's pages are being read.
     public private(set) var isLoading = false
@@ -290,6 +270,13 @@ public final class WikiStore {
     private func pulled(_ paths: [String]) {
         guard let wiki else { return }
         for path in paths where PageFolder.isPage(path) { wiki.reload(path: path) }
+        let saved = paths.filter { $0.hasPrefix(Self.riversFolder + "/") }
+        guard !saved.isEmpty else { return }
+        savedVersion += 1
+        for river in rivers {
+            guard let name = river.name, saved.contains(Self.riverPath(name)) else { continue }
+            if let cards = savedRiver(name) { river.savedChanged(cards) } else { river.forget() }
+        }
     }
 
     // MARK: Conflicts
@@ -319,24 +306,19 @@ public final class WikiStore {
         sync?.noteChanged()
     }
 
-    public func openConflicts() {
-        for title in conflicted().reversed() { open(title) }
-    }
-
     public var graphName: String { root?.lastPathComponent ?? "Weft" }
 
-    /// Which cards are open is kept per graph, on this Mac only.
-    private var riverKey: String { "River:\(root?.path ?? "")" }
-
-    private func saveRiver() {
-        UserDefaults.standard.set(river, forKey: riverKey)
-    }
-
-    private func defaultRiver(_ wiki: Wiki) -> [String] {
+    /// The cards a river opens with when nothing was kept of it: the
+    /// graph's HelloThere, or the page written last.
+    public func defaultCards() -> [String] {
+        guard let wiki else { return [] }
         if wiki["HelloThere"] != nil { return ["HelloThere"] }
         let recent = wiki.recent(limit: 1)
         return recent.isEmpty ? [ShadowTiddlers.gettingStarted] : recent
     }
+
+    /// A page's title, for any name it answers to.
+    func canonicalTitle(_ title: String) -> String { wiki?.title(for: title) ?? title }
 
     // MARK: Reading
 
@@ -403,10 +385,6 @@ public final class WikiStore {
         write(page, from: title)
     }
 
-    public func openToday() {
-        open(Day.today.description)
-    }
-
     public func backlinks(_ title: String) -> [String] {
         watch(title)
         return wiki?.backlinks(to: title) ?? []
@@ -459,7 +437,7 @@ public final class WikiStore {
 
     /// Titles matching what is typed — those with it in the title first,
     /// starting with it before containing it — then those with it in the text.
-    public func searchResults(limit: Int = 200) -> [String] {
+    public func searchResults(_ search: String, limit: Int = 200) -> [String] {
         _ = listsVersion
         return wiki?.search(search, limit: limit) ?? []
     }
@@ -478,87 +456,225 @@ public final class WikiStore {
         return root.appendingPathComponent(path)
     }
 
-    // MARK: The river
+    // MARK: Writing
 
-    /// Opens a card, or brings it into view when it is open already. A card
-    /// opened from another goes just after it, as in TiddlyWiki; otherwise
-    /// at the top.
-    public func open(_ title: String, from source: String? = nil) {
-        // A page opened by an alias, or in other case, is opened by its title.
-        let title = wiki?.title(for: title) ?? title
-        if !river.contains(title) {
-            if let source, let index = river.firstIndex(of: source) {
-                river.insert(title, at: index + 1)
-            } else {
-                river.insert(title, at: 0)
-            }
-            saveRiver()
-        }
-        folded.remove(title)
-        bringIntoView(title)
+    /// Every card is written in where it stands — there is no Edit and no
+    /// Preview. One being written has a draft, begun with its first change:
+    /// what it says, its title, tags and fields, as typed — saved a moment
+    /// after typing pauses. When the caret leaves the card the draft is
+    /// written and let go, and a new title takes effect.
+    public func isEditing(_ title: String) -> Bool { editing.contains(title) }
+
+    /// Cards whose other fields are shown.
+    public var fieldsShown: Set<String> = []
+
+    /// Changes what a card says — its body, tags or fields — beginning its
+    /// draft if this is the first change.
+    public func change(_ title: String, _ change: (inout Tiddler) -> Void) {
+        beginDraft(title)
+        guard var draft = drafts[title] else { return }
+        change(&draft)
+        updateDraft(title, draft)
     }
 
-    public func bringIntoView(_ title: String) {
-        focus = title
-        focusRequest += 1
+    private func beginDraft(_ title: String) {
+        guard drafts[title] == nil else { return }
+        drafts[title] = tiddler(title) ?? Tiddler(title: title)
+        editing.insert(title)
+        draftBases[title] = wiki?[title]
+        draftChanged(title)
     }
 
-    /// The card at the top of the river as it is scrolled, as the river says.
-    @ObservationIgnored public var cardInView: String?
+    // MARK: Rivers
 
-    /// ⌥⌘↑, ⌥⌘↓: the card before or after the one selected — or the one in
-    /// view — selected and brought into view.
-    public func step(_ by: Int) {
-        guard !river.isEmpty else { return }
-        let from = focus.flatMap { river.firstIndex(of: $0) } ?? cardInView.flatMap { river.firstIndex(of: $0) }
-        let index = from.map { min(max($0 + by, 0), river.count - 1) } ?? 0
-        bringIntoView(river[index])
+    private struct Held { weak var river: River? }
+    @ObservationIgnored private var held: [Held] = []
+
+    /// The rivers open: a tab's each, on the Mac; the phone's.
+    public var rivers: [River] { held.compactMap(\.river) }
+
+    /// A river opened: told what changes the graph — a page renamed or
+    /// deleted, the graph changed.
+    public func adopt(_ river: River) {
+        held.removeAll { $0.river == nil || $0.river === river }
+        held.append(Held(river: river))
     }
 
-    /// Makes a card the one ⌘↩ and the outline go to, without moving the river.
-    public func select(_ title: String) {
-        if focus != title { focus = title }
+    /// A river closed: what it was writing in, written; the cards only it
+    /// had open, closed.
+    public func release(_ river: River) {
+        held.removeAll { $0.river == nil || $0.river === river }
+        for title in river.cards { cardClosed(title) }
     }
 
-    /// ⌘↩: the selected card between editing and reading.
-    public func toggleEditing() {
-        guard let title = focus, river.contains(title) else { return }
-        if isEditing(title) {
-            finishEditing(title)
-        } else {
-            edit(title)
-        }
-    }
-
-    public func close(_ title: String) {
+    /// A river closed a card: unless another has it open, its draft is
+    /// written and let go.
+    func cardClosed(_ title: String) {
+        guard !rivers.contains(where: { $0.cards.contains(title) }) else { return }
         if isEditing(title) { finishEditing(title, closing: true) }
-        river.removeAll { $0 == title }
+        dropDraft(title)
+    }
+
+    private func dropDraft(_ title: String) {
         drafts[title] = nil
         draftChanged(title)
         editing.remove(title)
         draftBases[title] = nil
-        folded.remove(title)
-        saveRiver()
     }
 
-    public func closeOthers(_ title: String) {
-        for other in river where other != title { close(other) }
+    /// The cards the Mac's window opens with when it kept none of its own:
+    /// those of the river changed last, per graph, on this device.
+    public var lastRiver: [String]? {
+        get { UserDefaults.standard.stringArray(forKey: "River:\(root?.path ?? "")") }
+        set { UserDefaults.standard.set(newValue, forKey: "River:\(root?.path ?? "")") }
     }
 
-    public func closeAll() {
-        for title in river { close(title) }
+    // MARK: Saved rivers
+
+    /// Saved rivers are files in the graph's `rivers/` folder — one a name,
+    /// a link to each card a line — synced with the rest. They are not
+    /// pages: nothing links to them, and no search finds them.
+    static let riversFolder = "rivers"
+
+    static func riverPath(_ name: String) -> String { "\(riversFolder)/\(name).md" }
+
+    /// Bumped when a saved river comes, goes, or changes.
+    public private(set) var savedVersion = 0
+
+    private func riverFile(_ name: String) -> URL? {
+        root?.appendingPathComponent(Self.riverPath(name))
     }
 
-    public func toggleFold(_ title: String) {
-        if folded.contains(title) { folded.remove(title) } else { folded.insert(title) }
+    /// A name a file can have: no slashes or colons, no dot to begin it.
+    private static func riverName(_ name: String) -> String? {
+        var name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        while name.hasPrefix(".") { name.removeFirst() }
+        return name.isEmpty ? nil : name
     }
 
-    // MARK: Editing
+    /// The saved rivers, by name.
+    public func savedRivers() -> [String] {
+        _ = savedVersion
+        guard let root else { return [] }
+        let folder = root.appendingPathComponent(Self.riversFolder)
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return files.filter { $0.hasSuffix(".md") }.map { String($0.dropLast(3)) }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
 
-    /// A card is in Edit or in Preview, and that is all: what is written in
-    /// Edit is saved a moment after typing pauses, and when the card goes
-    /// back to Preview — where a new title, too, takes effect.
-    public func isEditing(_ title: String) -> Bool { editing.contains(title) }
+    /// A saved river's cards, as its file has them.
+    public func savedRiver(_ name: String) -> [String]? {
+        guard let file = riverFile(name), let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+        return text.components(separatedBy: .newlines).compactMap { line in
+            let line = line.trimmingCharacters(in: .whitespaces)
+            guard let start = line.range(of: "[["), let end = line.range(of: "]]", range: start.upperBound..<line.endIndex) else { return nil }
+            let title = String(line[start.upperBound..<end.lowerBound])
+            return title.isEmpty ? nil : title
+        }
+    }
+
+    private func writeSavedRiver(_ name: String, _ cards: [String]) -> Bool {
+        guard let file = riverFile(name) else { return false }
+        let text = cards.map { "- [[\($0)]]\n" }.joined()
+        if (try? String(contentsOf: file, encoding: .utf8)) == text { return true }
+        do {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: file, atomically: true, encoding: .utf8)
+        } catch {
+            self.error = "Couldn't save the river “\(name)”: \(error.localizedDescription)"
+            return false
+        }
+        sync?.noteChanged()
+        return true
+    }
+
+    /// A river's cards changed: its file says so.
+    func keepSavedRiver(_ name: String, _ cards: [String]) {
+        _ = writeSavedRiver(name, cards)
+    }
+
+    /// A river saved under a name no other has. The name it was saved under.
+    func addSavedRiver(_ name: String, _ cards: [String]) -> String? {
+        guard let name = Self.riverName(name) else { return nil }
+        guard !savedRivers().contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else {
+            error = "There is already a river called “\(name)”."
+            return nil
+        }
+        guard writeSavedRiver(name, cards) else { return nil }
+        savedVersion += 1
+        return name
+    }
+
+    /// A copy of a saved river, under a new name — not opened.
+    public func cloneSavedRiver(_ name: String, as new: String) {
+        guard let cards = savedRiver(name) else { return }
+        _ = addSavedRiver(new, cards)
+    }
+
+    /// A name for a copy of a saved river: “Work copy”, “Work copy 2”…
+    public func cloneName(_ name: String) -> String {
+        let names = Set(savedRivers().map { $0.lowercased() })
+        var candidate = "\(name) copy"
+        var number = 2
+        while names.contains(candidate.lowercased()) {
+            candidate = "\(name) copy \(number)"
+            number += 1
+        }
+        return candidate
+    }
+
+    /// Gives a saved river another name — and the river showing it. The new name.
+    @discardableResult
+    public func renameSavedRiver(_ name: String, to new: String) -> String? {
+        guard let new = Self.riverName(new), let from = riverFile(name), let to = riverFile(new) else { return nil }
+        guard new != name else { return name }
+        if new.caseInsensitiveCompare(name) != .orderedSame,
+           savedRivers().contains(where: { $0.caseInsensitiveCompare(new) == .orderedSame }) {
+            error = "There is already a river called “\(new)”."
+            return nil
+        }
+        do {
+            try FileManager.default.moveItem(at: from, to: to)
+        } catch {
+            self.error = "Couldn't rename the river “\(name)”: \(error.localizedDescription)"
+            return nil
+        }
+        for river in rivers where river.name == name { river.named(new) }
+        savedVersion += 1
+        sync?.noteChanged()
+        return new
+    }
+
+    /// Deletes a saved river's file. A river showing it stays open, kept on
+    /// this device alone.
+    public func deleteSavedRiver(_ name: String) {
+        guard let file = riverFile(name) else { return }
+        do {
+            try FileManager.default.removeItem(at: file)
+        } catch {
+            self.error = "Couldn't delete the river “\(name)”: \(error.localizedDescription)"
+            return
+        }
+        for river in rivers where river.name == name { river.forget() }
+        savedVersion += 1
+        sync?.noteChanged()
+    }
+
+    /// The river showing a saved one, if one does.
+    public func river(named name: String) -> River? {
+        rivers.first { $0.name == name }
+    }
+
+    /// Changes the cards of the saved rivers no river shows — the ones
+    /// shown change with their river.
+    private func reviseSavedRivers(_ change: ([String]) -> [String]) {
+        for name in savedRivers() where river(named: name) == nil {
+            guard let cards = savedRiver(name) else { continue }
+            let revised = change(cards)
+            if revised != cards { _ = writeSavedRiver(name, revised) }
+        }
+    }
 
     // MARK: Text or Outline
 
@@ -574,7 +690,27 @@ public final class WikiStore {
     public func editorMode(_ title: String) -> EditorMode { outlined.contains(title) ? .outline : .text }
 
     public func setEditorMode(_ mode: EditorMode, for title: String) {
-        if mode == .outline { outlined.insert(title) } else { outlined.remove(title) }
+        if mode == .outline {
+            // An outline only of what it would write back as it was.
+            let text = (drafts[title] ?? tiddler(title))?.text ?? ""
+            guard canOutline(text) else {
+                error = "“\(shownTitle(title))” can't be edited as an outline without changing how it's written."
+                return
+            }
+            outlined.insert(title)
+        } else {
+            outlined.remove(title)
+        }
+    }
+
+    /// Whether a body can be edited as an outline: on the Mac, where Prism's
+    /// outline editor is.
+    private func canOutline(_ text: String) -> Bool {
+        #if os(macOS)
+        OutlineEditing.canEdit(text)
+        #else
+        false
+        #endif
     }
 
     /// The graph's pages, for an outline's queries and embeds to ask.
@@ -602,15 +738,6 @@ public final class WikiStore {
     public func draft(_ title: String) -> Tiddler? {
         watchDraft(title)
         return drafts[title]
-    }
-
-    public func edit(_ title: String) {
-        guard !isEditing(title) else { return open(title) }
-        drafts[title] = tiddler(title) ?? Tiddler(title: title)
-        draftChanged(title)
-        editing.insert(title)
-        draftBases[title] = wiki?[title]
-        open(title)
     }
 
     public func updateDraft(_ title: String, _ tiddler: Tiddler) {
@@ -660,7 +787,7 @@ public final class WikiStore {
             draftChanged(title)
             editing.remove(title)
             draftBases[title] = nil
-            if !closing, !exists(title) { close(title) }
+            if !closing, !exists(title) { for river in rivers { river.close(title) } }
             return
         }
         tiddler.title = tiddler.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -683,11 +810,9 @@ public final class WikiStore {
         editing.remove(title)
         draftBases[title] = nil
         createdWhileEditing.remove(title)
-        if tiddler.title != title, let index = river.firstIndex(of: title) {
-            river[index] = tiddler.title
-            if folded.remove(title) != nil { folded.insert(tiddler.title) }
-            if focus == title { focus = tiddler.title }
-            saveRiver()
+        if tiddler.title != title {
+            for river in rivers { river.renamed(title, to: tiddler.title) }
+            reviseSavedRivers { $0.map { $0 == title ? tiddler.title : $0 } }
         }
     }
 
@@ -755,18 +880,20 @@ public final class WikiStore {
             self.error = "Couldn't delete “\(title)”: \(error.localizedDescription)"
             return
         }
-        close(title)
+        for river in rivers { river.removed(title) }
+        dropDraft(title)
+        reviseSavedRivers { $0.filter { $0 != title } }
         sync?.noteChanged()
     }
 
-    /// A new tiddler, at the top of the river, being edited — tagged with
-    /// `tag`, when there is one, and given its fields.
-    public func newTiddler(taggedWith tag: String? = nil) {
-        guard wiki != nil else { return }
+    /// A new tiddler's draft — tagged with `tag`, when there is one, and
+    /// given its fields — under a title no page and no card has. Its title.
+    func makeTiddler(taggedWith tag: String? = nil) -> String? {
+        guard wiki != nil else { return nil }
         var title = tag.map { "New \($0)" } ?? "New Tiddler"
         let base = title
         var number = 1
-        while exists(title) || river.contains(title) {
+        while exists(title) || rivers.contains(where: { $0.cards.contains(title) }) {
             title = "\(base) \(number)"
             number += 1
         }
@@ -776,9 +903,9 @@ public final class WikiStore {
         for spec in schema(for: tiddler) { tiddler[field: spec.name] = .text("") }
         schemaTags[title] = tiddler.tags
         drafts[title] = tiddler
-        draftChanged(title)
         editing.insert(title)
-        open(title)
+        draftChanged(title)
+        return title
     }
 }
 
