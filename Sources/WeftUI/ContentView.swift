@@ -21,6 +21,23 @@ public struct ContentView: View {
                 NavigationSplitView(preferredCompactColumn: $compactColumn) {
                     Sidebar()
                         .navigationSplitViewColumnWidth(min: 220, ideal: 270, max: 400)
+                        #if os(iOS)
+                        // On the iPhone, back to the river without opening a card.
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            if sizeClass == .compact {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button { compactColumn = .detail } label: {
+                                        HStack(spacing: 4) {
+                                            Text(river.title).lineLimit(1)
+                                            Image(systemName: "chevron.forward").fontWeight(.semibold)
+                                        }
+                                    }
+                                    .accessibilityLabel("Back to \(river.title)")
+                                }
+                            }
+                        }
+                        #endif
                 } detail: {
                     RiverColumn()
                         // Its scroll and the card in view, each river's own.
