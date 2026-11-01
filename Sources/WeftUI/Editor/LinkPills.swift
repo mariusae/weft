@@ -81,14 +81,44 @@ extension NSAttributedString.Key {
     static let weftEllipsis = NSAttributedString.Key("WeftEllipsis")
     /// Over a link's words: what it is to, followed when it is clicked.
     static let weftLink = NSAttributedString.Key("WeftLink")
+    /// Over a quote's line: a bar drawn down its left.
+    static let weftQuote = NSAttributedString.Key("WeftQuote")
 }
 
-/// Draws a card's links as pills, under its words.
+/// Draws a card's links as pills, under its words, and its quotes' bars.
 final class LiveLayoutManager: NSLayoutManager {
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        drawQuoteBars(in: characters, origin: origin)
         drawPills(in: characters, origin: origin)
+    }
+
+    /// Each quote's line a bar down its left, from its first line to its
+    /// last — the outline's, a line its row.
+    private func drawQuoteBars(in characters: NSRange, origin: CGPoint) {
+        guard let storage = textStorage, characters.length > 0 else { return }
+        let text = storage.string as NSString
+        var drawn = Set<Int>()
+        storage.enumerateAttribute(.weftQuote, in: characters) { value, range, _ in
+            guard value != nil else { return }
+            var location = range.location
+            while location < NSMaxRange(range) {
+                let paragraph = text.paragraphRange(for: NSRange(location: location, length: 0))
+                location = NSMaxRange(paragraph)
+                guard drawn.insert(paragraph.location).inserted else { continue }
+                var words = paragraph
+                while words.length > 1, text.character(at: NSMaxRange(words) - 1) == 10 { words.length -= 1 }
+                let glyphs = glyphRange(forCharacterRange: words, actualCharacterRange: nil)
+                guard glyphs.length > 0 else { continue }
+                let top = lineFragmentUsedRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+                let bottom = lineFragmentUsedRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil)
+                let line = lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+                Graphics.fill([CGRect(x: line.minX + origin.x + 3, y: top.minY + origin.y + 2,
+                                      width: 3, height: bottom.maxY - top.minY - 4)],
+                              color: Palette.faint, radius: 1.5)
+            }
+        }
     }
 
     /// Whether a glyph is nothing to see: hidden markup with no room made

@@ -186,13 +186,14 @@ struct MarkdownStyler {
             storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size * scale, weight: .semibold), range: range)
             markup(NSRange(location: 0, length: hashes + 1))
         }
-        // A quote: its marker markup, its words set in and quieter.
+        // A quote: its marker markup, its words set in and quieter, a bar
+        // down their left, as the outline draws one.
         if let match = Self.matches(#"^>\s?"#, in: line).first {
             markup(match.range)
             if !shown {
                 look.firstIndent = 14
                 look.indent = 14
-                storage.addAttribute(.foregroundColor, value: Palette.dim, range: range)
+                storage.addAttributes([.foregroundColor: Palette.dim, .weftQuote: true], range: range)
             }
         }
         // A callout's kind: faint, always — it is what the quote is.
