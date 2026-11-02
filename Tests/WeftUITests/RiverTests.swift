@@ -311,6 +311,20 @@ import ReflectCore
         #expect(store.linking(toRiver: "Taxes") == ["Plans"])
     }
 
+    @Test func aPageHasAHomeRiverInItsFrontmatter() throws {
+        #expect(store.homeRiver(of: "Alpha") == nil)
+        store.setHomeRiver("Weft work", of: "Alpha")
+        #expect(store.homeRiver(of: "Alpha") == "Weft work")
+        let file = try String(contentsOf: root.appendingPathComponent(store.pages!.entries["Alpha"]!.path), encoding: .utf8)
+        #expect(file.contains("river: Weft work"))
+        // Written as a link, read the same.
+        store.change("Beta") { $0[field: RiverLink.homeKey] = .text("[[rivers/Taxes]]") }
+        store.finishEditing("Beta")
+        #expect(store.homeRiver(of: "Beta") == "Taxes")
+        store.setHomeRiver(nil, of: "Alpha")
+        #expect(store.homeRiver(of: "Alpha") == nil)
+    }
+
     @Test func quickOpenListsTodayOnce() {
         write(Day.today.description, "- written today\n")
         let titles = store.quickOpen("").map(\.title)

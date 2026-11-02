@@ -1,3 +1,4 @@
+import ReflectCore
 import SwiftUI
 import WeftCore
 
@@ -243,7 +244,7 @@ struct CardEditor: View {
         let fields = page.fields.filter { field in
             // `wiki` is the badge by the title; `list` and the fields a tag
             // gives are shown as what they are.
-            field.value.text != nil && !["list", "wiki", "related", FieldSpec.field].contains(field.name) && !typed.contains(field.name)
+            field.value.text != nil && !["list", "wiki", "related", RiverLink.homeKey, FieldSpec.field].contains(field.name) && !typed.contains(field.name)
         }
         if !fields.isEmpty || addingField {
             DisclosureGroup(isExpanded: Binding(get: { addingField || store.fieldsShown.contains(title) },

@@ -105,7 +105,10 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   `weft://river/Work` brings the river back in Weft, on the Mac or the
   phone; **Copy River Address** gives it. Embedded alone in its line —
   `![[rivers/Work]]` — a river is drawn as its name and its cards, each a
-  link: a page of rivers, a dashboard of what is under way.
+  link: a page of rivers, a dashboard of what is under way. A page may
+  name its home river in its frontmatter — `river: Work`, from **Home
+  River** in its card's menu — shown beside its title, a tap bringing the
+  river back.
 - **A card** is written in where it stands — there is no Edit and no
   Preview. Its body reads as what it says, and is edited as it reads: as
   an **Outline** (Prism's outline editor, the Mac's and the phone's) where

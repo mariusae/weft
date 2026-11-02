@@ -553,6 +553,28 @@ public final class WikiStore {
         return found
     }
 
+    /// The saved river a page calls its home — its frontmatter `river:` —
+    /// as its draft has it: a link's target or a name alike.
+    public func homeRiver(of title: String) -> String? {
+        watch(title)
+        let named: String? = switch (drafts[title] ?? tiddler(title))?[field: RiverLink.homeKey] {
+        case .text(let text): text
+        case .list(let items): items.first
+        case nil: nil
+        }
+        let name = named.map(Related.clean).map { RiverLink.name($0) ?? $0 }?.trimmingCharacters(in: .whitespaces)
+        return name?.isEmpty == false ? name : nil
+    }
+
+    /// A page's home river set — or taken off, for nil.
+    public func setHomeRiver(_ name: String?, of title: String) {
+        let before = homeRiver(of: title)
+        guard name != before else { return }
+        change(title) { $0[field: RiverLink.homeKey] = name.map { .text($0) } }
+        if !river(writing: title) { finishEditing(title) }
+        undoable(name == nil ? "Remove Home River" : "Set Home River") { [weak self] in self?.setHomeRiver(before, of: title) }
+    }
+
     /// The names a page's own frontmatter relates it to, as its draft has them.
     private func relatedNames(_ title: String) -> [String] {
         switch (drafts[title] ?? tiddler(title))?[field: Related.key] {

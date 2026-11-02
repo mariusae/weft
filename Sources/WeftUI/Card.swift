@@ -1,3 +1,4 @@
+import ReflectCore
 import SwiftUI
 import WeftCore
 
@@ -136,6 +137,28 @@ struct Card: View {
         }
     }
 
+    /// Which saved river the page calls its home — frontmatter `river:` —
+    /// shown in its header, a tap bringing it back.
+    @ViewBuilder private var homeRiverMenu: some View {
+        let saved = store.savedRivers()
+        let home = store.homeRiver(of: title)
+        if !saved.isEmpty || home != nil {
+            Menu("Home River", systemImage: RiverLink.symbol) {
+                if let name = river.name, home != name {
+                    Button("This River, “\(name)”") { store.setHomeRiver(name, of: title) }
+                    Divider()
+                }
+                ForEach(saved, id: \.self) { name in
+                    Toggle(name, isOn: Binding(get: { home == name }, set: { store.setHomeRiver($0 ? name : nil, of: title) }))
+                }
+                if home != nil {
+                    Divider()
+                    Button("None") { store.setHomeRiver(nil, of: title) }
+                }
+            }
+        }
+    }
+
     private var canRename: Bool { store.kind(title) != .day && !store.isShadow(title) }
 
     private func startRenaming() {
@@ -206,6 +229,24 @@ struct Card: View {
                     .background(Ink.accent.color.opacity(0.1), in: Capsule())
                     .fixedSize()
                     .help("A wiki page: canonical, kept up")
+            }
+            // Its home river, a tap away — but in it already.
+            if let home = store.homeRiver(of: title), home.caseInsensitiveCompare(river.name ?? "") != .orderedSame {
+                Button { river.follow(river: home) } label: {
+                    Label(home, systemImage: RiverLink.symbol)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .foregroundStyle(store.savedRiverName(home) == nil ? Ink.secondary.color : Ink.accent.color)
+                        .background(Ink.accent.color.opacity(0.1), in: Capsule())
+                        .fixedSize()
+                }
+                .buttonStyle(.plain)
+                .help("Its home river: bring back “\(home)”")
+                .contextMenu {
+                    Button("Remove Home River", systemImage: "minus.circle") { store.setHomeRiver(nil, of: title) }
+                }
             }
         }
         // As wide as the card gives, however long the title: the rest of it
@@ -348,6 +389,7 @@ struct Card: View {
             Divider()
             Button("Add Tag", systemImage: "tag") { addingTag = true }
             Button("Relate To…", systemImage: "link") { addingRelated = true }
+            homeRiverMenu
             Button("Add Field", systemImage: "plus.rectangle") {
                 addingField = true
                 store.fieldsShown.insert(title)
