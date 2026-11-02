@@ -199,7 +199,8 @@ struct RiverCommands: Commands {
                 .disabled(river?.cards.isEmpty ?? true)
             Button("Switch Between Outline and Text") { river?.toggleEditorMode() }
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(river?.cards.isEmpty ?? true)
+                // Quick Open's ⌘↩ while it shows: a new tab.
+                .disabled(river?.cards.isEmpty ?? true || river?.quickOpenShown == true)
             Button("Close All Cards") { river?.closeAll() }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
             Divider()

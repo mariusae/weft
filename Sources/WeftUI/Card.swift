@@ -17,6 +17,8 @@ struct Card: View {
     /// The title being typed in: renaming.
     @State private var renaming = false
     @FocusState private var titleFocused: Bool
+    /// What of the title is selected as it is typed in: a new tiddler's, all of it.
+    @State private var titleSelection: TextSelection?
     @State private var controller = EditorController()
     @State private var insertingQuery = false
     @State private var addingTag = false
@@ -140,6 +142,13 @@ struct Card: View {
         guard canRename else { return }
         renaming = true
         titleFocused = true
+        // A new tiddler's made-up name, all selected: typed over at once.
+        guard !store.exists(title) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(60))
+            let name = store.draftHead(title)?.title ?? title
+            titleSelection = TextSelection(range: name.startIndex..<name.endIndex)
+        }
     }
 
     /// The title on one line — running on under the controls, which float
@@ -159,7 +168,7 @@ struct Card: View {
                     store.draftHead(title)?.title ?? title
                 } set: { value in
                     store.change(title) { $0.title = value }
-                })
+                }, selection: $titleSelection)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
                 .lineLimit(1)

@@ -134,8 +134,11 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   italic and a link. Tags offer the ones already in use. Escape takes the
   caret out. A save writes only what changed in the file.
 - **Quick Open** (⌘O): a tiddler, note or day by what is typed — today and
-  the tiddlers written last, with nothing typed — opened in the river; or a
-  new tiddler of that name.
+  the tiddlers written last, with nothing typed — opened in the river (⌘↩
+  on the Mac, in a tab of its own); or a new tiddler of that name. Set as
+  Prism's Go to is: on the Mac a card of paper over the river, each row a
+  name and when it was written; on the phone a sheet, each row its kind,
+  its name, and under it when.
 - **Colours**: Prism's — warm paper and ink, the cards lighter on a page a
   shade under them, its blue.
 - **Sync**: Reflect's own — commit thirty seconds after writing stops, a
@@ -211,7 +214,8 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
 - **History**: a card's menu has **History…** — each version of the page in
   the graph's history, one put back with Restore — and **Recently
   Deleted…** (the File menu, or ⋯ on the phone) brings back pages deleted.
-- ⌘N makes a new tiddler; ⇧⌘W closes every card not being edited.
+- ⌘N makes a new tiddler, its made-up title selected to type over; ⇧⌘W
+  closes every card not being edited.
 
 WikiText the importer couldn't convert shows as a dashed placeholder, the
 WikiText a click away.

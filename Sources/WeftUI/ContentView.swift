@@ -130,18 +130,32 @@ public struct ContentView: View {
                 }
             }
         }
+        #if os(macOS)
+        // Over the river, as Prism's Go to is: a click outside it puts it away.
         .overlay(alignment: .top) {
             if river.quickOpenShown && store.root != nil {
                 ZStack(alignment: .top) {
-                    Color.black.opacity(0.12)
+                    Color.clear
+                        .contentShape(Rectangle())
                         .ignoresSafeArea()
                         .onTapGesture { river.quickOpenShown = false }
-                    QuickOpen().padding(.top, sizeClass == .compact ? 12 : 70)
+                    QuickOpen().padding(.top, 12)
                 }
                 .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.15), value: river.quickOpenShown)
+        .animation(.easeOut(duration: 0.12), value: river.quickOpenShown)
+        #else
+        // A sheet, as Prism's Go to is on the phone.
+        .sheet(isPresented: Binding(get: { river.quickOpenShown && store.root != nil }, set: { river.quickOpenShown = $0 })) {
+            QuickOpen()
+                .environment(store)
+                .environment(river)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Ink.paper.color)
+        }
+        #endif
         .sheet(isPresented: Binding(get: { river.deletedShown }, set: { river.deletedShown = $0 })) {
             DeletedPagesSheet().environment(store).environment(river)
         }

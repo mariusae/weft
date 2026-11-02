@@ -1,8 +1,16 @@
+import ReflectCore
 import SwiftUI
 import WeftCore
+#if os(iOS)
+import PhoneUI
+#endif
 
 /// ⌘O: a tiddler, a Reflect note or a day, found by what is typed and
 /// opened in the river — or, when nothing is called that, a new tiddler.
+/// Set as Prism's Go to is: on the Mac a card of paper over the river, the
+/// field in large type, each row a name and when it was written; on the
+/// phone a sheet, its field at the top, each row its kind's symbol, its
+/// name, and under it when.
 struct QuickOpen: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
@@ -11,61 +19,15 @@ struct QuickOpen: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        let results = found
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(Ink.secondary.color)
-                TextField("Open a page or a day", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 19))
-                    .focused($focused)
-                    .onSubmit { open(results) }
+        content
+            .onChange(of: query) { selected = 0 }
+            .task {
+                // Once it is on screen: on the phone, asked at once, the keys don't come.
+                #if os(iOS)
+                try? await Task.sleep(for: .milliseconds(100))
+                #endif
+                focused = true
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            if !results.isEmpty {
-                Divider()
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 1) {
-                            ForEach(Array(results.enumerated()), id: \.element) { index, target in
-                                row(target, chosen: index == selected)
-                                    .id(index)
-                                    .onTapGesture {
-                                        selected = index
-                                        open(results)
-                                    }
-                            }
-                        }
-                        .padding(6)
-                    }
-                    .frame(maxHeight: 380)
-                    .onChange(of: selected) { proxy.scrollTo(selected) }
-                }
-            }
-        }
-        // As wide as the Mac's window allows it; on the phone, its width.
-        .frame(maxWidth: 580)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Ink.rule.color))
-        .shadow(color: .black.opacity(0.2), radius: 30, y: 12)
-        .padding(.horizontal, 12)
-        .onKeyPress(.upArrow) {
-            selected = max(0, selected - 1)
-            return .handled
-        }
-        .onKeyPress(.downArrow) {
-            selected = min(results.count - 1, selected + 1)
-            return .handled
-        }
-        .onKeyPress(.escape) {
-            river.quickOpenShown = false
-            return .handled
-        }
-        .onChange(of: query) { selected = 0 }
-        .onAppear { focused = true }
     }
 
     /// What is found, and a new tiddler of the name typed when none has it.
@@ -78,36 +40,40 @@ struct QuickOpen: View {
         return results
     }
 
-    private func row(_ target: LinkTarget, chosen: Bool) -> some View {
-        HStack(spacing: 11) {
-            Image(systemName: target.kind.symbol)
-                .font(.system(size: 14, weight: .medium))
-                .frame(width: 20)
-                .foregroundStyle(chosen ? .white : Ink.accent.color)
-            Text(target.kind == .new ? "New page “\(target.title)”" : target.shown)
-                .lineLimit(1)
-                .foregroundStyle(chosen ? .white : Ink.text.color)
-            Spacer(minLength: 8)
-            if river.cards.contains(target.title) {
-                Text("Open")
-                    .font(.caption)
-                    .foregroundStyle(chosen ? .white.opacity(0.8) : Ink.secondary.color)
-            }
-            Text(target.kind == .new ? "" : target.kind.label)
-                .font(.caption)
-                .foregroundStyle(chosen ? .white.opacity(0.8) : Ink.secondary.color)
-        }
-        .font(.system(size: 14))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(chosen ? Ink.accent.color : .clear, in: RoundedRectangle(cornerRadius: 8))
-        .contentShape(Rectangle())
+    private func name(_ target: LinkTarget) -> String {
+        target.kind == .new ? "New page “\(target.title)”" : target.shown
     }
 
-    private func open(_ results: [LinkTarget]) {
-        guard results.indices.contains(selected) else { return }
-        let target = results[selected]
+    /// What is said of a row beside its name: a day's name for it, and
+    /// whether it has a page yet; when a page was written — and that it is
+    /// open in the river already.
+    private func detail(_ target: LinkTarget) -> String {
+        if target.kind == .new { return "New page" }
+        let entry = store.pages?.entries[target.title]
+        var words: [String] = []
+        if river.cards.contains(target.title) { words.append("Open") }
+        if target.kind == .day, let day = Day(target.title) {
+            let names = [0: "Today", -1: "Yesterday", 1: "Tomorrow"]
+            if let named = (-1...1).first(where: { Day.today.adding($0) == day }).flatMap({ names[$0] }) { words.append(named) }
+            if entry == nil { words.append("no page yet") }
+        } else if let modified = entry?.modified {
+            words.append(Self.relative.localizedString(for: modified, relativeTo: Date()))
+        }
+        return words.joined(separator: " · ")
+    }
+
+    private static let relative: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+
+    private func open(_ target: LinkTarget, inNewTab: Bool = false) {
         river.quickOpenShown = false
+        if inNewTab, target.kind != .new {
+            river.openNew(River.State(graph: store.root?.path ?? "", cards: [target.title]))
+            return
+        }
         withAnimation(.snappy(duration: 0.28)) {
             if target.kind == .new {
                 river.edit(target.title)
@@ -116,4 +82,168 @@ struct QuickOpen: View {
             }
         }
     }
+
+    #if os(macOS)
+    /// How many rows show at once: the rest scrolled to.
+    private static let shown = 9
+    private static let rowHeight: CGFloat = 40
+
+    private var content: some View {
+        let results = found
+        return VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                TextField("Go to a page or a day", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 21))
+                    .foregroundStyle(Ink.text.color)
+                    .focused($focused)
+                    .onSubmit { if results.indices.contains(selected) { open(results[selected]) } }
+                    // ⌘↩: a tab of its own. The menu's ⌘↩ stands aside while this shows.
+                    .onKeyPress(.return, phases: .down) { press in
+                        guard press.modifiers.contains(.command), results.indices.contains(selected) else { return .ignored }
+                        open(results[selected], inNewTab: true)
+                        return .handled
+                    }
+                Text("↩ Open   ⌘↩ New Tab")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Ink.faint.color)
+                    .fixedSize()
+            }
+            .padding(.horizontal, 22)
+            .frame(height: 60)
+            if !results.isEmpty {
+                Rectangle().fill(Ink.rule.color).frame(height: 1)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(Array(results.enumerated()), id: \.element) { index, target in
+                                row(target, chosen: index == selected)
+                                    .id(index)
+                                    // Only the pointer moved chooses: not a row come under a still one.
+                                    .onContinuousHover { if case .active = $0, selected != index { selected = index } }
+                                    .onTapGesture { open(target, inNewTab: NSEvent.modifierFlags.contains(.command)) }
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .scrollIndicators(.automatic)
+                    .frame(height: CGFloat(min(results.count, Self.shown)) * Self.rowHeight + 16)
+                    .onChange(of: selected) { proxy.scrollTo(selected) }
+                }
+            }
+        }
+        .frame(maxWidth: 600)
+        .background(Ink.paper.color, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.rule.color, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.18), radius: 15, y: 8)
+        .padding(.horizontal, 24)
+        .onKeyPress(.upArrow) {
+            selected = max(0, selected - 1)
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            selected = min(results.count - 1, selected + 1)
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            river.quickOpenShown = false
+            return .handled
+        }
+    }
+
+    private func row(_ target: LinkTarget, chosen: Bool) -> some View {
+        HStack(spacing: 12) {
+            Text(name(target))
+                .font(.system(size: 15.5))
+                .foregroundStyle(chosen ? Ink.text.color : Ink.secondary.color)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 12)
+            Text(detail(target))
+                .font(.system(size: 12.5))
+                .foregroundStyle(Ink.faint.color)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: Self.rowHeight)
+        .background(chosen ? Ink.hover.color : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+    #else
+    private var face: Typeface { TextSettings.face }
+
+    private var content: some View {
+        let results = found
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(Ink.secondary.color)
+                    TextField("Go to a page or a day", text: $query)
+                        .font(Font(face.body(17)))
+                        .foregroundStyle(Ink.text.color)
+                        .textInputAutocapitalization(.never)
+                        .submitLabel(.go)
+                        .focused($focused)
+                        .onSubmit { if let first = results.first { open(first) } }
+                    if !query.isEmpty {
+                        Button { query = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(Ink.faint.color)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Clear")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 40)
+                .background(Ink.rule.color, in: Capsule())
+                Button("Cancel") { river.quickOpenShown = false }
+                    .font(Font(face.body(17)))
+                    .foregroundStyle(Ink.accent.color)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
+            List {
+                ForEach(Array(results.enumerated()), id: \.element) { index, target in
+                    Button { open(target) } label: { row(target, first: index == 0) }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparatorTint(Ink.rule.color)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.immediately)
+        }
+        .background(Ink.paper.color)
+    }
+
+    private func row(_ target: LinkTarget, first: Bool) -> some View {
+        let detail = detail(target)
+        return HStack(spacing: 14) {
+            Image(systemName: target.kind.symbol)
+                .font(.system(size: 17))
+                .foregroundStyle(Ink.secondary.color)
+                .frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name(target))
+                    .font(Font(face.body(17, weight: first ? .semibold : .regular)))
+                    .foregroundStyle(Ink.text.color)
+                    .lineLimit(1)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(Font(face.body(14)))
+                        .foregroundStyle(Ink.secondary.color)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+    #endif
 }

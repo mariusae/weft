@@ -101,6 +101,8 @@ struct Ink {
     static let secondary = Ink(light: 0x6f665d, dark: 0xa79e92)
     static let faint = Ink(light: 0x2b2724, dark: 0xece6dc, alpha: 0.32)
     static let rule = Ink(light: 0x2b2724, dark: 0xece6dc, alpha: 0.1)
+    /// A row under the pointer, or chosen with the keys.
+    static let hover = Ink(light: 0x2b2724, dark: 0xece6dc, alpha: 0.06)
     static let accent = Ink(light: 0x265cd1, dark: 0x85adff)
 
     private static func make(_ value: UInt32, _ alpha: CGFloat) -> PlatformColor {

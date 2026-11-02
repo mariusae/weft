@@ -62,6 +62,8 @@ enum Snapshot {
         for title in environment["WEFT_FOLD"]?.split(separator: "|") ?? [] { river.setFolded(String(title), true) }
         if let edit = environment["WEFT_EDIT"] { river.edit(edit) }
         if environment["WEFT_QUICK_OPEN"] != nil { river.quickOpenShown = true }
+        // `WEFT_NEW`: a new tiddler, its title being typed.
+        if environment["WEFT_NEW"] != nil { river.newTiddler() }
         if let search = environment["WEFT_SEARCH"] { river.search = search }
         if let name = environment["WEFT_SAVE_RIVER"] { river.save(as: name) }
         // `WEFT_RECALL`: a saved river brought back, folded as its file says;
