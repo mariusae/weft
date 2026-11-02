@@ -399,6 +399,7 @@ public final class WikiStore {
     public func kind(_ title: String) -> LinkTarget.Kind {
         watch(title)
         if Day(title) != nil || Week(title) != nil { return .day }
+        if RiverLink.name(title) != nil { return .river }
         if let entry = wiki?.entries[title] {
             if case .note = entry.kind { return entry.page.isWiki ? .wiki : .note }
             return .day
@@ -409,6 +410,7 @@ public final class WikiStore {
 
     /// How a title is shown: a day's date in words, else the title.
     public func shownTitle(_ title: String) -> String {
+        if let river = RiverLink.name(title) { return river }
         guard let date = Day(title)?.date else { return title }
         return date.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
     }
@@ -1364,13 +1366,14 @@ public struct LinkTarget: Hashable, Sendable {
     public var kind: Kind
 
     public enum Kind: Sendable {
-        case wiki, note, day, new
+        case wiki, note, day, river, new
 
         public var symbol: String {
             switch self {
             case .wiki: "book.closed"
             case .note: "doc.text"
             case .day: "calendar"
+            case .river: RiverLink.symbol
             case .new: "plus.circle"
             }
         }
@@ -1380,6 +1383,7 @@ public struct LinkTarget: Hashable, Sendable {
             case .wiki: "Wiki"
             case .note: "Note"
             case .day: "Day"
+            case .river: "River"
             case .new: "New page"
             }
         }
@@ -1456,7 +1460,9 @@ extension WikiStore {
         var found = titles.filter { pageNames($0).contains { name in name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil } || query.isEmpty }
             .prefix(limit).map(target)
         if let day = dayTarget(query), !found.contains(day) { found.insert(day, at: 0) }
-        found = Array(found.prefix(limit))
+        // Saved rivers the words name, kept a place among the pages.
+        let rivers = root.map { RiverLink.matching(query, in: $0, limit: 2) } ?? []
+        found = Array(found.prefix(limit - rivers.count)) + rivers.map(riverTarget)
         if !query.isEmpty, !found.contains(where: { $0.title.caseInsensitiveCompare(query) == .orderedSame }), wiki?.title(for: query) == nil {
             found.append(LinkTarget(title: query, shown: query, kind: .new))
         }
@@ -1480,6 +1486,11 @@ extension WikiStore {
             found.insert(day, at: min(1, found.count))
         }
         return Array(found.prefix(limit))
+    }
+
+    /// A saved river, as a link leads to it: `rivers/Work`, shown as Work.
+    func riverTarget(_ name: String) -> LinkTarget {
+        LinkTarget(title: RiverLink.target(name), shown: name, kind: .river)
     }
 
     /// A day, by its date or as today, yesterday or tomorrow.

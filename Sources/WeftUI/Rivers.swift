@@ -1,3 +1,4 @@
+import ReflectCore
 import SwiftUI
 import WeftCore
 
@@ -159,6 +160,9 @@ struct RiverSetMenu: View {
             Button("New River", systemImage: "plus") { rivers.add() }
             Button(current.name == nil ? "Save River…" : "Rename River…", systemImage: "square.and.arrow.down") {
                 current.naming = current.name.map { .rename($0) } ?? .save
+            }
+            if let name = current.name {
+                Button("Copy Link to River", systemImage: "link") { Platform.copy(RiverLink.link(name)) }
             }
             Button("Saved Rivers…", systemImage: "tray.full") { current.riversShown = true }
         }
@@ -336,6 +340,7 @@ struct RiversPanel: View {
                 river.riversShown = false
                 river.recall(name)
             }
+            Button("Copy Link", systemImage: "link") { Platform.copy(RiverLink.link(name)) }
             Button("Duplicate…", systemImage: "plus.square.on.square") { ask(.clone(name)) }
             Button("Rename…", systemImage: "pencil") { ask(.rename(name)) }
             Divider()

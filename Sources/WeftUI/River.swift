@@ -598,6 +598,13 @@ public final class River: Identifiable {
         recall(saved)
     }
 
+    /// What a river dragged into a card writes there: a link to it, saved;
+    /// else its cards' links, a row each.
+    public var dropped: String {
+        if let name { return RiverLink.link(name) }
+        return cards.map { "- [[\($0)]]" }.joined(separator: "\n")
+    }
+
     /// No longer a saved river — its file deleted — but still open, here alone.
     func forget() { name = nil }
 

@@ -286,6 +286,16 @@ import ReflectCore
         #expect(store.tiddler("Plans")?.text.contains("[[rivers/Project|the work]]") == true)
     }
 
+    @Test func riversAreOfferedToLinkAndDraggedAsLinks() {
+        let one = river(["Alpha", "Beta"])
+        #expect(one.dropped == "- [[Alpha]]\n- [[Beta]]")
+        one.save(as: "Weft work")
+        #expect(one.dropped == "[[rivers/Weft work]]")
+        let offered = store.linkSuggestions("weft")
+        #expect(offered.contains(LinkTarget(title: "rivers/Weft work", shown: "Weft work", kind: .river)))
+        #expect(store.target("rivers/Weft work").kind == .river && store.shownTitle("rivers/Weft work") == "Weft work")
+    }
+
     @Test func quickOpenListsTodayOnce() {
         write(Day.today.description, "- written today\n")
         let titles = store.quickOpen("").map(\.title)

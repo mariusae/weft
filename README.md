@@ -95,6 +95,10 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   shown as **Work** with a stack before it — and a tap on the link brings
   the river back: to the front where it shows, else beside. Renaming the
   river rewrites the links to it; one to a river deleted is drawn faint.
+  `[[` offers the saved rivers its words name; a tab dragged into a card
+  writes a link to its river there (an unsaved river's cards, a link a
+  row); and **Copy Link to River** is in a tab's menu, the phone's river
+  menu, and each saved river's.
 - **A card** is written in where it stands — there is no Edit and no
   Preview. Its body reads as what it says, and is edited as it reads: as
   an **Outline** (Prism's outline editor, the Mac's and the phone's) where

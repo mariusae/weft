@@ -1,4 +1,5 @@
 #if os(macOS)
+import ReflectCore
 import SwiftUI
 import UniformTypeIdentifiers
 import WeftCore
@@ -45,6 +46,7 @@ enum TabLayout {
 /// Open — closed from its ×, dragged to another place among the others, and
 /// from its menu saved, closed, or moved to a window of its own. Many, the
 /// others bunch to their icons; the pointer run over them opens each out.
+/// Dragged into a card, a tab is written there as a link to its river.
 struct RiverTabs: View {
     @Environment(WikiStore.self) private var store
     let rivers: RiverSet
@@ -76,7 +78,8 @@ struct RiverTabs: View {
                 .contextMenu { menu(river) }
                 .onDrag {
                     dragged = river
-                    return NSItemProvider(object: river.id.uuidString as NSString)
+                    // Into a card: a link to the river saved, else its cards' links.
+                    return NSItemProvider(object: river.dropped as NSString)
                 }
                 .onDrop(of: [.text], delegate: TabDrop(target: river, rivers: rivers, dragged: $dragged))
             }
@@ -103,6 +106,9 @@ struct RiverTabs: View {
         Button(river.name == nil ? "Save River…" : "Rename River…") {
             rivers.select(river)
             river.naming = river.name.map { .rename($0) } ?? .save
+        }
+        if let name = river.name {
+            Button("Copy Link to River") { Platform.copy(RiverLink.link(name)) }
         }
         Divider()
         Button("Move Tab to New Window") { moveToWindow(river) }
