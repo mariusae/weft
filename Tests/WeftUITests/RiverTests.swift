@@ -200,6 +200,13 @@ import ReflectCore
         #expect(store.summary(of: "Delta").more == 2)
     }
 
+    @Test func quickOpenListsTodayOnce() {
+        write(Day.today.description, "- written today\n")
+        let titles = store.quickOpen("").map(\.title)
+        #expect(titles.first == Day.today.description)
+        #expect(titles.filter { $0 == Day.today.description }.count == 1)
+    }
+
     @Test func savingWritesTheRiverAndKeepsItAsItChanges() {
         let one = river(["Alpha", "Beta"])
         one.save(as: "Work")
@@ -278,5 +285,21 @@ import ReflectCore
         let again = river()
         again.restore(state)
         #expect(again.name == "Work" && again.cards == ["Gamma"])
+    }
+}
+
+/// Tabs in the Mac's title bar: alike while they show their names, else bunched.
+@Suite struct TabLayoutTests {
+    @Test func tabsShareTheRoomThenBunch() {
+        let roomy = TabLayout.widths(count: 3, current: 2, pointed: nil, in: 600)
+        #expect(Set(roomy.map { Int($0) }).count == 1)
+        let tight = TabLayout.widths(count: 8, current: 7, pointed: nil, in: 500)
+        #expect(tight[0] == TabLayout.bunched)
+        #expect(tight[7] >= TabLayout.shownMin)
+        #expect(tight.reduce(0, +) + TabLayout.spacing * 7 <= 500.5)
+        let pointed = TabLayout.widths(count: 8, current: 7, pointed: 2, in: 500)
+        #expect(pointed[2] == TabLayout.pointed)
+        let crowded = TabLayout.widths(count: 12, current: 11, pointed: nil, in: 420)
+        #expect(crowded[0] < TabLayout.bunched && crowded[0] >= TabLayout.tightest)
     }
 }

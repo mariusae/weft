@@ -62,9 +62,11 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   window's river is opened there. On the iPhone, the sidebar and the
   river take turns.
 - **Rivers**: more than one river can be open. On the Mac each is a tab in
-  the window's title bar, as Safari's are — the one shown wider, standing
+  the window's title bar, as Safari's are, filling what the toolbar's
+  buttons leave of it from the sidebar's button on — the one shown standing
   as the title, a click on it Quick Open; the others named, a slanted name
-  for a river not saved. ⌘T opens one, with Quick Open showing; ⌘W closes
+  for a river not saved. When they would not show their names, the others
+  bunch to their icons, the one under the pointer opening out to its name. ⌘T opens one, with Quick Open showing; ⌘W closes
   it (⌥⌘W the window); ⇧⌘[ ⇧⌘] and ⌘1–9 go between them; a tab is dragged
   to another place, and from its menu saved, closed with the others, or
   moved to a window of its own (⇧⌘N opens a new window). With one river,

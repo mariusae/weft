@@ -1443,7 +1443,9 @@ extension WikiStore {
     public func quickOpen(_ query: String, limit: Int = 14) -> [LinkTarget] {
         let query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else {
-            return [dayTarget("today")!] + recent().prefix(limit - 1).map(target)
+            // Today first — not again among the pages written last, when it is one.
+            let today = dayTarget("today")!
+            return [today] + recent().map(target).filter { $0.title != today.title }.prefix(limit - 1)
         }
         var found = (wiki?.search(query, limit: limit) ?? []).map(target)
         if let day = dayTarget(query), !found.contains(day) {

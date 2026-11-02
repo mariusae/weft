@@ -22,8 +22,25 @@ public struct ContentView: View {
     }
 
     #if os(macOS)
-    /// How wide the window is: what the tabs may have of the title bar.
+    /// How wide the window is, and the river's column in it: what the tabs
+    /// may have of the title bar.
     @State private var windowWidth: CGFloat = 900
+    @State private var detailWidth: CGFloat = 900
+    /// What the toolbar keeps besides: its own spacing round its items.
+    static let tabSlack: CGFloat = 8
+
+    /// The title bar's room for tabs: the river's column, less the window's
+    /// buttons and the sidebar's at its left — while the sidebar is shut —
+    /// and the toolbar's buttons at its right, each as the toolbar shows it.
+    private var tabRoom: CGFloat {
+        let sidebarShut = detailWidth > windowWidth - 40
+        let left: CGFloat = (sidebarShut ? 150 : 24) + Self.tabSlack
+        var buttons: CGFloat = 4
+        if store.sync != nil { buttons += 1 }
+        let review: CGFloat = store.conflicted().isEmpty ? 0 : 130
+        let right = buttons * 38 + 30 + review
+        return max(TabLayout.shownMin + 2 * TabLayout.bunched, detailWidth - left - right)
+    }
 
     private var hasTabs: Bool { (riverSet?.rivers.count ?? 0) > 1 }
 
@@ -62,6 +79,9 @@ public struct ContentView: View {
                         // Its scroll and the card in view, each river's own.
                         .id(river.id)
                         #if os(macOS)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
+                        #endif
+                        #if os(macOS)
                         // A card's pages read beside the river.
                         .inspector(isPresented: Binding(get: { river.reading != nil }, set: { if !$0 { river.reading = nil } })) {
                             if let reading = river.reading {
@@ -87,13 +107,15 @@ public struct ContentView: View {
                         // A folder in no repository is not synced: said, as Sync Now
                         // greyed out alone would not.
                         .navigationSubtitle(hasTabs ? "" : graphLine)
+                        // The tabs stand as the title: none kept room for besides.
+                        .toolbar(removing: hasTabs ? .title : nil)
                         .toolbar {
                             if hasTabs, let riverSet {
-                                ToolbarItem(placement: .principal) {
-                                    // As wide as its tabs would like, up to a point: the
-                                    // toolbar's buttons keep their room.
-                                    RiverTabs(rivers: riverSet, moveToWindow: moveToWindow)
-                                        .frame(width: min(CGFloat(riverSet.rivers.count) * 170 + 90, max(160, windowWidth - 470)))
+                                // At the leading edge, after the sidebar's button, as Safari's.
+                                ToolbarItem(placement: .navigation) {
+                                    // All the room the toolbar's buttons leave: they keep
+                                    // theirs, the tabs bunching to make do with the rest.
+                                    RiverTabs(rivers: riverSet, width: tabRoom, moveToWindow: moveToWindow)
                                 }
                             }
                         }
