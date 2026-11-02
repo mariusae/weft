@@ -168,6 +168,22 @@ import ReflectCore
         #expect(store.graphVersion > graph)
     }
 
+    @Test func pagesAreRelatedBothWaysInFrontmatter() throws {
+        store.relate("Alpha", to: "beta")
+        #expect(store.related(of: "Alpha").map(\.title) == ["Beta"])
+        #expect(store.related(of: "Beta").map(\.title) == ["Alpha"])
+        #expect(store.related(of: "Beta").first?.isOwn == false)
+        let file = try String(contentsOf: root.appendingPathComponent("notes/alpha.md"), encoding: .utf8)
+        #expect(file.contains("related: [Beta]"))
+        // Already related, the other way: not written twice.
+        store.relate("Beta", to: "Alpha")
+        #expect(store.related(of: "Beta").count == 1)
+        // Unrelated from the side that doesn't hold it.
+        store.unrelate("Beta", from: "Alpha")
+        #expect(store.related(of: "Alpha").isEmpty)
+        #expect(try String(contentsOf: root.appendingPathComponent("notes/alpha.md"), encoding: .utf8).contains("related") == false)
+    }
+
     @Test func savingWritesTheRiverAndKeepsItAsItChanges() {
         let one = river(["Alpha", "Beta"])
         one.save(as: "Work")

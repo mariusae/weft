@@ -476,6 +476,76 @@ public final class WikiStore {
         if !river(writing: title) { finishEditing(title) }
     }
 
+    // MARK: Related pages
+
+    /// A page a card is related to, without a link in its text.
+    public struct RelatedPage: Hashable, Sendable {
+        public let title: String
+        public let exists: Bool
+        /// Written in this card's frontmatter — else in the other's, naming this one.
+        public let isOwn: Bool
+    }
+
+    /// A card's relations, both ways — frontmatter `related:`, as Prism
+    /// writes it: those it names, in order, then those naming it, by title.
+    public func related(of title: String) -> [RelatedPage] {
+        watch(title)
+        _ = listsVersion
+        var seen = Set<String>([NoteIndex.foldKey(title)])
+        var found: [RelatedPage] = []
+        for name in relatedNames(title) {
+            let resolved = wiki?.title(for: name)
+            guard seen.insert(NoteIndex.foldKey(resolved ?? name)).inserted else { continue }
+            found.append(RelatedPage(title: resolved ?? name, exists: resolved != nil, isOwn: true))
+        }
+        for other in wiki?.relating(to: title) ?? [] where seen.insert(NoteIndex.foldKey(other)).inserted {
+            found.append(RelatedPage(title: other, exists: true, isOwn: false))
+        }
+        return found
+    }
+
+    /// The names a page's own frontmatter relates it to, as its draft has them.
+    private func relatedNames(_ title: String) -> [String] {
+        switch (drafts[title] ?? tiddler(title))?[field: Related.key] {
+        case .list(let items): items.map(Related.clean).filter { !$0.isEmpty }
+        case .text(let text): text.isEmpty ? [] : [Related.clean(text)]
+        case nil: []
+        }
+    }
+
+    private func setRelatedNames(_ names: [String], of title: String) {
+        change(title) { $0[field: Related.key] = names.isEmpty ? nil : .list(names) }
+        if !river(writing: title) { finishEditing(title) }
+    }
+
+    /// Two pages related, the relation written in the first's frontmatter.
+    public func relate(_ title: String, to other: String) {
+        let other = canonicalTitle(other.trimmingCharacters(in: .whitespaces))
+        guard !other.isEmpty, NoteIndex.foldKey(other) != NoteIndex.foldKey(title),
+              !related(of: title).contains(where: { NoteIndex.foldKey($0.title) == NoteIndex.foldKey(other) }) else { return }
+        setRelatedNames(relatedNames(title) + [other], of: title)
+        undoable("Relate to “\(shownTitle(other))”") { [weak self] in self?.unrelate(title, from: other, undoable: false) }
+    }
+
+    /// Two pages related no longer: taken out of whichever's frontmatter
+    /// names the other.
+    public func unrelate(_ title: String, from other: String, undoable: Bool = true) {
+        func names(_ page: String) -> Set<String> { Set(pageNames(page).map(NoteIndex.foldKey) + [NoteIndex.foldKey(page)]) }
+        let others = names(other), mine = names(title)
+        var undo: [(String, [String])] = []
+        for (page, removed) in [(title, others), (other, mine)] {
+            let before = relatedNames(page)
+            let after = before.filter { !removed.contains(NoteIndex.foldKey($0)) }
+            guard after.count != before.count else { continue }
+            undo.append((page, before))
+            setRelatedNames(after, of: page)
+        }
+        guard undoable, !undo.isEmpty else { return }
+        self.undoable("Unrelate “\(shownTitle(other))”") { [weak self] in
+            for (page, names) in undo { self?.setRelatedNames(names, of: page) }
+        }
+    }
+
     // MARK: Prism's lenses
 
     /// The pages in the inbox, newest first, as Prism's Inbox lists them.
@@ -549,7 +619,7 @@ public final class WikiStore {
 
     /// Whether a card is being written in, in any river: its draft is left
     /// to be saved when it is let go.
-    private func river(writing title: String) -> Bool { rivers.contains { $0.isWriting(title) } }
+    func river(writing title: String) -> Bool { rivers.contains { $0.isWriting(title) } }
 
     public func setWiki(_ title: String, _ wiki: Bool) {
         if var draft = drafts[title] {

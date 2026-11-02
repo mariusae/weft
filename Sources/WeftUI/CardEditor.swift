@@ -14,6 +14,7 @@ struct CardEditor: View {
     /// Asked for from the card's menu.
     @Binding var addingTag: Bool
     @Binding var addingField: Bool
+    @Binding var addingRelated: Bool
     @Binding var definingFields: Bool
     @State private var newTag = ""
     @State private var newField = ""
@@ -48,6 +49,8 @@ struct CardEditor: View {
                 .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
             }
             editor(page)
+            // Related without a link: pages named in its frontmatter, or naming it.
+            if page != nil || addingRelated { RelatedRow(title: title, adding: $addingRelated) }
             if let page { foot(page, specs: specs) }
         }
         .onChange(of: focus) { _, now in
@@ -238,7 +241,7 @@ struct CardEditor: View {
         let fields = page.fields.filter { field in
             // `wiki` is the badge by the title; `list` and the fields a tag
             // gives are shown as what they are.
-            field.value.text != nil && !["list", "wiki", FieldSpec.field].contains(field.name) && !typed.contains(field.name)
+            field.value.text != nil && !["list", "wiki", "related", FieldSpec.field].contains(field.name) && !typed.contains(field.name)
         }
         if !fields.isEmpty || addingField {
             DisclosureGroup(isExpanded: Binding(get: { addingField || store.fieldsShown.contains(title) },

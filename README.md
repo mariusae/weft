@@ -170,6 +170,12 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
 - **Settings** (⌘, on the Mac; ⋯ ▸ Settings… on the phone): the size cards
   are set in; on the phone, the outline's face, and the GitHub account.
 - On the iPad, each window has rivers of its own.
+- **Related pages**, without a link in the text: Relate To… in a card's
+  menu, or the + under its **Related**, names another page in the card's
+  frontmatter `related:` list — Prism's own, read and written by both. A
+  relation shows on both cards (↩ on the one it isn't written in); a pill
+  opens its card after this one, and its menu unrelates it, from whichever
+  page has it written.
 - **Prism's lenses** in the sidebar: the **Inbox**, **Tasks** (every
   open `+ [ ]`, grouped as Prism groups them, each ticked off where it
   stands) and **Pinned**; a card's menu puts it in the inbox, or pins it.

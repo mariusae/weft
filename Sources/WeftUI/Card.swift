@@ -23,6 +23,7 @@ struct Card: View {
     @State private var addingField = false
     @State private var definingFields = false
     @State private var historyShown = false
+    @State private var addingRelated = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     private var compact: Bool { sizeClass == .compact }
 
@@ -35,7 +36,7 @@ struct Card: View {
                     ConflictView(title: title)
                 } else {
                     CardEditor(title: title, controller: controller, addingTag: $addingTag,
-                               addingField: $addingField, definingFields: $definingFields)
+                               addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
                 }
                 let links = store.backlinks(of: title)
                 if !links.isEmpty {
@@ -264,6 +265,7 @@ struct Card: View {
             #endif
             Divider()
             Button("Add Tag", systemImage: "tag") { addingTag = true }
+            Button("Relate To…", systemImage: "link") { addingRelated = true }
             Button("Add Field", systemImage: "plus.rectangle") {
                 addingField = true
                 store.fieldsShown.insert(title)
