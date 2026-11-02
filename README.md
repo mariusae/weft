@@ -52,7 +52,7 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   after the one it was clicked in and scrolls to it; a card already open is
   scrolled to. Cards fold to their titles — on the Mac by the chevron
   in the margin before the title (⌥-click folds or opens every card) or
-  ⌃⌘↑ and ⌃⌘↓; on the phone by a tap on the title — and a folded card
+  ⌃⌘↑ and ⌃⌘↓ (when not writing in an outline); on the phone by a tap on the title — and a folded card
   shows its first line and how many more; pinching the river in folds
   every card, out opens them, as Fold All and Unfold All do (the Story
   menu, ⌃⌥⌘↑ ⌃⌥⌘↓, or ⋯ on the phone). A river keeps its folds. Cards
@@ -156,7 +156,11 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   quote, and Done. ⌘B, ⌘I and ⌘K do bold,
   italic and a link; ⌘↩ makes the row or line a checklist item, then
   checks it, then makes it a plain item again (Format ▸ Checklist Item), and
-  ⇧⌘↩ a task, as Prism's do. Tags offer the ones already in use. Escape takes the
+  ⇧⌘↩ a task, as Prism's do. An outline takes all of Prism's keys while
+  the caret is in it — ⇧⌘K deletes rows, ⇧⌘D duplicates them, ⌃⌘↑ ⌃⌘↓
+  move them and ⌃⌘→ ⌃⌘← indent them, ⌘9 and ⌘0 fold and unfold them, and
+  the rest of Prism's Format, Outline and Selection menus — over the
+  river's own keys that share one. Tags offer the ones already in use. Escape takes the
   caret out. A save writes only what changed in the file.
 - **Quick Open** (⌘O): a tiddler, note or day by what is typed — today and
   the tiddlers written last, with nothing typed — opened in the river (⌘↩

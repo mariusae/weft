@@ -37,6 +37,8 @@ struct OutlineCardEditor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> PageOutlineEditor {
         let editor = PageOutlineEditor(text: "", fontSize: TextSettings.size + 1, root: store.root)
+        // Prism's keys, ⌘⇧K deleting rows and the rest: Weft has not its menus.
+        editor.takesEditorKeys = true
         // Folded as it was left in this river.
         let coordinator = context.coordinator
         coordinator.folds = river.rowFolds(of: title)

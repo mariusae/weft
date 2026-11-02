@@ -41,6 +41,34 @@ enum Snapshot {
         store.whenLoaded { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { take(store: store) } }
     }
 
+    /// A key like `cmd-shift-k` or `cmd-ctrl-up`, pressed as the app
+    /// takes a key with ⌘: the window's views first, then the menus.
+    private static func press(_ key: String, in window: NSWindow) {
+        var parts = key.split(separator: "-").map(String.init)
+        let named = ["return": "\r", "up": String(UnicodeScalar(NSUpArrowFunctionKey)!), "down": String(UnicodeScalar(NSDownArrowFunctionKey)!),
+                     "left": String(UnicodeScalar(NSLeftArrowFunctionKey)!), "right": String(UnicodeScalar(NSRightArrowFunctionKey)!)]
+        let last = parts.removeLast()
+        let character = named[last] ?? last
+        var flags: NSEvent.ModifierFlags = []
+        for part in parts {
+            switch part {
+            case "cmd": flags.insert(.command)
+            case "shift": flags.insert(.shift)
+            case "opt": flags.insert(.option)
+            case "ctrl": flags.insert(.control)
+            default: break
+            }
+        }
+        if named[last] != nil, last != "return" { flags.insert([.numericPad, .function]) }
+        let codes: [String: UInt16] = ["return": 36, "up": 126, "down": 125, "left": 123, "right": 124, "k": 40, "d": 2, "b": 11, "l": 37, "9": 25, "0": 29, "8": 28]
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: window.windowNumber, context: nil,
+                                           characters: flags.contains(.shift) ? character.uppercased() : character,
+                                           charactersIgnoringModifiers: flags.contains(.shift) ? character.uppercased() : character,
+                                           isARepeat: false, keyCode: codes[last] ?? 0) else { return }
+        if !window.performKeyEquivalent(with: event) { _ = NSApp.mainMenu?.performKeyEquivalent(with: event) }
+    }
+
     private static func take(store: WikiStore) {
         guard let river = rivers?.current ?? store.rivers.first else { return }
         let environment = ProcessInfo.processInfo.environment
@@ -110,11 +138,11 @@ enum Snapshot {
                     view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
                     view.insertText(typed, replacementRange: view.selectedRange())
                 }
-                // `WEFT_KEY=cmd-return`: what ⌘↩, Format ▸ Checklist Item, sends
-                // the card being written in — sent it straight, the window
-                // not being key in a snapshot.
-                if environment["WEFT_KEY"] == "cmd-return", let view = NSApp.windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first {
-                    _ = view.tryToPerform(Selector(("cycleChecklist:")), with: nil)
+                // `WEFT_KEY=cmd-shift-k`: the key pressed in the card being
+                // written in, as the app would take it — the window not being
+                // key in a snapshot, given to it and then the menus straight.
+                if let key = environment["WEFT_KEY"], let window = NSApp.windows.first(where: { $0.firstResponder is NSTextView }) {
+                    press(key, in: window)
                 }
                 // `WEFT_SWITCH`: the card being written in switched to text, or outline.
                 if environment["WEFT_SWITCH"] != nil { river.toggleEditorMode() }
