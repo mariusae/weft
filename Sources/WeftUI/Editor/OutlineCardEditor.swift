@@ -83,7 +83,7 @@ struct OutlineCardEditor: NSViewRepresentable {
         if coordinator.asks {
             // An embed shows another page's words: every save, not only
             // what changes queries.
-            let revision = store.graphVersion &+ store.textVersion &* 7919
+            let revision = store.graphVersion &+ store.textVersion &* 7919 &+ store.savedVersion &* 104_729
             if coordinator.revision != revision {
                 coordinator.revision = revision
                 editor.setGraph(store.pages, title: title, refreshing: true)

@@ -103,7 +103,9 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   (**In Rivers**); and Saved Rivers says how many pages link to each,
   listed in its menu. From outside the graph — a reminder, a message, Prism —
   `weft://river/Work` brings the river back in Weft, on the Mac or the
-  phone; **Copy River Address** gives it.
+  phone; **Copy River Address** gives it. Embedded alone in its line —
+  `![[rivers/Work]]` — a river is drawn as its name and its cards, each a
+  link: a page of rivers, a dashboard of what is under way.
 - **A card** is written in where it stands — there is no Edit and no
   Preview. Its body reads as what it says, and is edited as it reads: as
   an **Outline** (Prism's outline editor, the Mac's and the phone's) where

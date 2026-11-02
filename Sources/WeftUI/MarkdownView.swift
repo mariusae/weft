@@ -66,7 +66,11 @@ struct MarkdownView: View {
         case .image(let alt, let source, let width):
             PictureView(reference: ImageReference(source: source, alt: alt, width: width))
         case .embed(let title):
-            Embed(title: title, card: card, depth: depth)
+            if let river = RiverLink.name(title) {
+                RiverEmbed(name: river)
+            } else {
+                Embed(title: title, card: card, depth: depth)
+            }
         case .rule:
             Divider().padding(.vertical, 4)
         }
@@ -311,5 +315,44 @@ private struct Embed: View {
         } else {
             InlineText(text: "[[\(title)]]")
         }
+    }
+}
+
+/// A saved river embedded, `![[rivers/Work]]`: its name, bringing it back,
+/// and its cards, each opening beside the card it is in.
+private struct RiverEmbed: View {
+    @Environment(WikiStore.self) private var store
+    let name: String
+
+    var body: some View {
+        _ = store.savedVersion
+        let saved = store.savedRiverName(name)
+        let cards = saved.flatMap(store.savedCards) ?? []
+        return VStack(alignment: .leading, spacing: 6) {
+            Link(destination: InlineMarkdown.url(for: RiverLink.target(saved ?? name))) {
+                Label(saved ?? name, systemImage: RiverLink.symbol)
+                    .font(.callout.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(saved == nil ? Ink.secondary.color : Ink.text.color)
+            .help(saved == nil ? "No saved river is called “\(name)”" : "Bring back the river “\(name)”")
+            if saved == nil {
+                Text("Not a saved river yet.").font(.caption).foregroundStyle(Ink.secondary.color)
+            } else if cards.isEmpty {
+                Text("No cards.").font(.caption).foregroundStyle(Ink.secondary.color)
+            }
+            ForEach(cards, id: \.self) { card in
+                Link(destination: InlineMarkdown.url(for: card)) {
+                    Label(store.shownTitle(card), systemImage: store.kind(card).symbol)
+                        .font(.callout)
+                        .italic(!store.exists(card))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(store.exists(card) ? Ink.accent.color : Ink.secondary.color)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
     }
 }
