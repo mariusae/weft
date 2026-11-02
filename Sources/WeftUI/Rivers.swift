@@ -4,10 +4,13 @@ import WeftCore
 extension FocusedValues {
     /// The river of the window in front, for the menus to act on.
     @Entry public var river: River?
+    /// And the rivers of that window: its tabs, on the Mac.
+    @Entry public var rivers: RiverSet?
 }
 
-/// The phone's rivers, one shown at a time — on the Mac each is a tab of
-/// its own. Kept per graph, on this device.
+/// A window's rivers, one shown at a time — on the phone, swiped between at
+/// the river's foot; on the Mac, its tabs, in the title bar. Kept per graph,
+/// on this device.
 @MainActor @Observable
 public final class RiverSet {
     let store: WikiStore
@@ -88,6 +91,31 @@ public final class RiverSet {
         let next = index + by
         guard rivers.indices.contains(next) else { return }
         select(rivers[next])
+    }
+
+    /// The window's rivers just this one: a tab moved to a window of its own.
+    public func start(with state: River.State) {
+        for river in rivers { store.release(river) }
+        let river = make(state)
+        rivers = [river]
+        current = river
+        keep()
+    }
+
+    /// A river dragged to another place among the tabs.
+    public func move(_ river: River, to index: Int) {
+        guard let from = rivers.firstIndex(where: { $0 === river }) else { return }
+        rivers.remove(at: from)
+        rivers.insert(river, at: min(max(0, index), rivers.count))
+        keep()
+    }
+
+    /// The rivers but this one closed.
+    public func closeOthers(_ kept: River) {
+        for river in rivers where river !== kept { store.release(river) }
+        rivers = [kept]
+        current = kept
+        keep()
     }
 
     /// Closes a river — not the last. A saved river stays saved.

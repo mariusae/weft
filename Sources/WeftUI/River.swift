@@ -49,7 +49,12 @@ public final class River: Identifiable {
     @ObservationIgnored public var cardInView: String?
     /// Cards showing only their titles: each told of its own.
     @ObservationIgnored public private(set) var folded: Set<String> = [] {
-        didSet { for title in folded.symmetricDifference(oldValue) { cardChanged(title) } }
+        didSet {
+            let changed = folded.symmetricDifference(oldValue)
+            for title in changed { cardChanged(title) }
+            // Kept with the river, as its cards are.
+            if !changed.isEmpty { foldsVersion += 1; onChange() }
+        }
     }
 
     public func isFolded(_ title: String) -> Bool {
@@ -84,16 +89,21 @@ public final class River: Identifiable {
         public var graph: String
         public var name: String?
         public var cards: [String]
+        /// The cards showing only their titles; none, in what was kept before.
+        public var folded: [String]?
 
-        public init(graph: String, name: String? = nil, cards: [String]) {
+        public init(graph: String, name: String? = nil, cards: [String], folded: [String]? = nil) {
             self.graph = graph
             self.name = name
             self.cards = cards
+            self.folded = folded
         }
     }
 
     /// What is kept of it — of the graph read, once it is.
-    public var state: State { State(graph: store.loadedRoot?.path ?? "", name: name, cards: cards) }
+    public var state: State {
+        State(graph: store.loadedRoot?.path ?? "", name: name, cards: cards, folded: folded.isEmpty ? nil : cards.filter(folded.contains))
+    }
 
     /// Shows what was kept: a saved river as its file has it now, which
     /// another device may have changed; one of this device's as it was.
@@ -105,7 +115,7 @@ public final class River: Identifiable {
             name = nil
             cards = state.cards
         }
-        folded = []
+        folded = Set(state.folded ?? []).intersection(cards)
         focus = nil
     }
 
@@ -305,6 +315,30 @@ public final class River: Identifiable {
     func reopen(_ title: String, at index: Int) {
         guard !cards.contains(title) else { return }
         cards.insert(title, at: min(index, cards.count))
+    }
+
+    /// Bumped when any card folds or unfolds: for what says whether all are.
+    public private(set) var foldsVersion = 0
+
+    /// The card the keys act on: the one selected, else the one at the top
+    /// of the river as it is scrolled.
+    public var selected: String? {
+        if let focus, cards.contains(focus) { return focus }
+        return cardInView.flatMap { cards.contains($0) ? $0 : nil }
+    }
+
+    /// Whether every card shows only its title.
+    public var allFolded: Bool {
+        _ = foldsVersion
+        return !cards.isEmpty && cards.allSatisfy(folded.contains)
+    }
+
+    /// Every card down to its title — a river at a glance — or all opened again.
+    public func foldAll() { folded = Set(cards) }
+    public func unfoldAll() { folded = [] }
+
+    public func setFolded(_ title: String, _ fold: Bool) {
+        if fold { folded.insert(title) } else { folded.remove(title) }
     }
 
     public func toggleFold(_ title: String) {

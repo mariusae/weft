@@ -50,14 +50,26 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
 
 - **The river**: open cards, one after another. A link opens its card just
   after the one it was clicked in and scrolls to it; a card already open is
-  scrolled to. Cards fold to their titles (the chevron) and close (×), and
+  scrolled to. Cards fold to their titles — on the Mac by the chevron
+  in the margin before the title (⌥-click folds or opens every card) or
+  ⌃⌘↑ and ⌃⌘↓; on the phone by a tap on the title — and a folded card
+  shows its first line and how many more; pinching the river in folds
+  every card, out opens them, as Fold All and Unfold All do (the Story
+  menu, ⌃⌥⌘↑ ⌃⌥⌘↓, or ⋯ on the phone). A river keeps its folds. Cards
+  close (×), and
   are dragged by their titles to elsewhere in the river — on the phone,
   held first — a line in the gap saying where; one dragged from another
   window's river is opened there. On the iPhone, the sidebar and the
   river take turns.
-- **Rivers**: more than one river can be open. On the Mac each is a tab —
-  ⌘T opens one, with Quick Open showing; a page open in two tabs is one
-  draft in both. On the phone, the bar at the foot of the river says which
+- **Rivers**: more than one river can be open. On the Mac each is a tab in
+  the window's title bar, as Safari's are — the one shown wider, standing
+  as the title, a click on it Quick Open; the others named, a slanted name
+  for a river not saved. ⌘T opens one, with Quick Open showing; ⌘W closes
+  it (⌥⌘W the window); ⇧⌘[ ⇧⌘] and ⌘1–9 go between them; a tab is dragged
+  to another place, and from its menu saved, closed with the others, or
+  moved to a window of its own (⇧⌘N opens a new window). With one river,
+  the title is its name, the graph under it. A page open in two tabs is
+  one draft in both. On the phone, the bar at the foot of the river says which
   it is: its menu lists the rivers open and makes a new one, and a swipe on
   it goes between them. There is no bar at the top: the river runs up under
   glass controls — back to the sidebar, Quick Open, Today, and a menu —
@@ -222,7 +234,7 @@ WikiText a click away.
   to a PNG for checking the app without a person at it:
   `WEFT_SNAPSHOT=out.png WEFT_OPEN="A|B" WEFT_EDIT=A WEFT_TYPE="[[Ch"
   WEFT_FAN=0 WEFT_QUICK_OPEN=1 WEFT_TABS="A|B;C" WEFT_SAVE_RIVER=Work
-  WEFT_RIVERS=1 WEFT_DELAY=3`, or an onboarding page with
+  WEFT_RIVERS=1 WEFT_FOLD="A|B" WEFT_DELAY=3`, or an onboarding page with
   `WEFT_ONBOARDING_STEP=place`; panels open over the window are saved beside
   it. It never syncs, and never touches the GitHub account (the keychain).
 

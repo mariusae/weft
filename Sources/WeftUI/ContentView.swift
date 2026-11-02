@@ -14,7 +14,23 @@ public struct ContentView: View {
     /// On the iPhone, where the sidebar and the river take turns: which shows.
     @State private var compactColumn = NavigationSplitViewColumn.detail
 
-    public init() {}
+    /// A tab moved to a window of its own: opened by the app, which knows its windows.
+    let moveToWindow: (River) -> Void
+
+    public init(moveToWindow: @escaping (River) -> Void = { _ in }) {
+        self.moveToWindow = moveToWindow
+    }
+
+    #if os(macOS)
+    /// How wide the window is: what the tabs may have of the title bar.
+    @State private var windowWidth: CGFloat = 900
+
+    private var hasTabs: Bool { (riverSet?.rivers.count ?? 0) > 1 }
+
+    private var graphLine: String {
+        store.isLoading || store.sync != nil ? "\(store.graphName) · \(store.count) pages" : "\(store.graphName) · \(store.count) pages · not synced"
+    }
+    #endif
 
     public var body: some View {
         Group {
@@ -65,12 +81,22 @@ public struct ContentView: View {
                         }
                         #endif
                         #if os(macOS)
-                        // Each tab called by its river.
-                        .navigationTitle(river.title)
+                        // One river: called by it, the graph under it. More: their
+                        // tabs in the title bar, as Safari's, the one shown the title.
+                        .navigationTitle(hasTabs ? "" : river.title)
                         // A folder in no repository is not synced: said, as Sync Now
                         // greyed out alone would not.
-                        .navigationSubtitle(store.isLoading || store.sync != nil
-                                            ? "\(store.graphName) · \(store.count) pages" : "\(store.graphName) · \(store.count) pages · not synced")
+                        .navigationSubtitle(hasTabs ? "" : graphLine)
+                        .toolbar {
+                            if hasTabs, let riverSet {
+                                ToolbarItem(placement: .principal) {
+                                    // As wide as its tabs would like, up to a point: the
+                                    // toolbar's buttons keep their room.
+                                    RiverTabs(rivers: riverSet, moveToWindow: moveToWindow)
+                                        .frame(width: min(CGFloat(riverSet.rivers.count) * 170 + 90, max(160, windowWidth - 470)))
+                                }
+                            }
+                        }
                         #else
                         // Which river it is, the bar at its foot says; on the
                         // phone, glass controls float over it in place of a bar.
@@ -104,6 +130,9 @@ public struct ContentView: View {
         }
         #else
         .riverNaming(river)
+        #endif
+        #if os(macOS)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         #endif
         // Prism's warm ink and its accent, throughout.
         .foregroundStyle(Ink.text.color)
@@ -584,9 +613,9 @@ private struct RiverColumn: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 18) {
+                LazyVStack(spacing: 22) {
                     ForEach(river.cards, id: \.self) { title in
-                        DroppableCard(title: title, drop: $drop, gap: 18)
+                        DroppableCard(title: title, drop: $drop, gap: 22)
                             .id(title)
                             .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity),
                                                     removal: .opacity.combined(with: .scale(scale: 0.97))))
@@ -612,6 +641,16 @@ private struct RiverColumn: View {
             // Not over what is over the keys: a find bar, a card's own bar.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keysUp = true }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keysUp = false }
+            // Pinched in, every card down to its title — the river at a
+            // glance; pinched out, all open again.
+            .simultaneousGesture(MagnifyGesture(minimumScaleDelta: 0.08).onEnded { value in
+                if value.magnification < 0.8, !river.allFolded {
+                    withAnimation(.snappy(duration: 0.3)) { river.foldAll() }
+                } else if value.magnification > 1.25 {
+                    withAnimation(.snappy(duration: 0.3)) { river.unfoldAll() }
+                }
+            })
+            .sensoryFeedback(.impact(weight: .light), trigger: river.foldsVersion)
             // Pulled down, a sync — as Prism's day is.
             .refreshable { await store.syncPulled() }
             // A tick for a card moved, a lighter one for one closed.
@@ -751,6 +790,11 @@ private struct RiverControls: View {
                 Menu {
                     Button("New Tiddler", systemImage: "plus") { river.newTiddler() }
                     Button("Close All", systemImage: "rectangle.stack.badge.minus") { river.closeAll() }
+                    if river.allFolded {
+                        Button("Unfold All", systemImage: "rectangle.expand.vertical") { withAnimation(.snappy) { river.unfoldAll() } }
+                    } else {
+                        Button("Fold All", systemImage: "rectangle.compress.vertical") { withAnimation(.snappy) { river.foldAll() } }
+                    }
                     if let sync = store.sync {
                         Section(syncState(sync)) {
                             Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { store.syncNow() }

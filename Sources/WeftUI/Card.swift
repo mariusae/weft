@@ -28,10 +28,12 @@ struct Card: View {
     private var compact: Bool { sizeClass == .compact }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             header
             relinking
-            if !river.isFolded(title) {
+            if river.isFolded(title) {
+                foldedSummary
+            } else {
                 if store.needsReview(title) {
                     ConflictView(title: title)
                 } else {
@@ -45,8 +47,11 @@ struct Card: View {
                 }
             }
         }
-        .padding(.horizontal, sizeClass == .compact ? 14 : 22)
-        .padding(.vertical, sizeClass == .compact ? 14 : 18)
+        // Room round what it says: more at its foot, where the last line
+        // would otherwise sit close against the edge.
+        .padding(.horizontal, sizeClass == .compact ? 16 : 28)
+        .padding(.top, sizeClass == .compact ? 16 : 22)
+        .padding(.bottom, sizeClass == .compact ? 22 : 30)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.card, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.rule.color.opacity(river.isSelected(title) ? 0 : 1)))
@@ -82,6 +87,33 @@ struct Card: View {
                 renaming = false
                 river.caretLeft(title)
             }
+        }
+    }
+
+    /// Folded: what it begins with, faint, and how much more there is —
+    /// a tap opens it again.
+    @ViewBuilder private var foldedSummary: some View {
+        let (first, more) = store.summary(of: title)
+        if first != nil || more > 0 {
+            Button { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } } label: {
+                HStack(spacing: 6) {
+                    if let first {
+                        Text(first).lineLimit(1).truncationMode(.tail)
+                    }
+                    if more > 0 {
+                        Text(first == nil ? "\(more) \(more == 1 ? "line" : "lines")" : "· \(more) more")
+                            .fixedSize()
+                            .foregroundStyle(Ink.faint.color)
+                    }
+                }
+                .font(.callout)
+                .foregroundStyle(Ink.secondary.color)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, -6)
+            .accessibilityLabel("Unfold")
         }
     }
 
@@ -145,7 +177,15 @@ struct Card: View {
                     .foregroundStyle(store.exists(title) || store.isEditing(title) ? Ink.text.color : Ink.secondary.color)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
+                    #if os(macOS)
                     .onTapGesture(count: 2) { startRenaming() }
+                    #else
+                    // A tap folds it to its title, or opens it again; renaming is in its menu.
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint(river.isFolded(title) ? "Unfolds the card" : "Folds the card to its title")
+                    #endif
             }
             let wiki = store.draftHead(title)?.isWiki ?? (kind == .wiki)
             if wiki {
@@ -163,6 +203,10 @@ struct Card: View {
         // runs on under the controls and is cut off at the card's edge.
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 30, alignment: .leading)
         .clipped()
+        #if os(macOS)
+        // In the margin before the title: fold or unfold — ⌥, every card.
+        .overlay(alignment: .leading) { foldChevron.offset(x: -23) }
+        #endif
         // Dragged by its title to elsewhere in the river; on the phone, held first.
         .draggingCard(title, shown: shown, enabled: !renaming)
         .overlay(alignment: .trailing) {
@@ -170,6 +214,35 @@ struct Card: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { controlsWidth = $0 }
         }
     }
+
+    #if os(macOS)
+    /// The card's disclosure triangle: faint under the pointer, there always
+    /// when folded; ⌥-clicked, every card folded or opened as this one goes.
+    private var foldChevron: some View {
+        let folded = river.isFolded(title)
+        return Button {
+            withAnimation(.snappy(duration: 0.22)) {
+                if NSEvent.modifierFlags.contains(.option) {
+                    if folded { river.unfoldAll() } else { river.foldAll() }
+                } else {
+                    river.toggleFold(title)
+                }
+            }
+        } label: {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .bold))
+                .rotationEffect(.degrees(folded ? 0 : 90))
+                .frame(width: 18, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Ink.secondary.color)
+        .opacity(folded ? 0.9 : hovering ? 0.6 : 0)
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .help(folded ? "Unfold (⌃⌘↓) — ⌥-click unfolds every card" : "Fold to its title (⌃⌘↑) — ⌥-click folds every card")
+        .accessibilityLabel(folded ? "Unfold" : "Fold")
+    }
+    #endif
 
     /// Text or Outline; and, in a glass capsule, the card's menu and its
     /// close button.

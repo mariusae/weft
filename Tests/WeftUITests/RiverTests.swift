@@ -184,6 +184,22 @@ import ReflectCore
         #expect(try String(contentsOf: root.appendingPathComponent("notes/alpha.md"), encoding: .utf8).contains("related") == false)
     }
 
+    @Test func foldsAreKeptWithTheRiver() {
+        let one = river(["Alpha", "Beta", "Gamma"])
+        one.toggleFold("Beta")
+        #expect(one.state.folded == ["Beta"])
+        let two = river()
+        two.restore(one.state)
+        #expect(two.isFolded("Beta") && !two.isFolded("Alpha"))
+        two.foldAll()
+        #expect(two.allFolded)
+        two.unfoldAll()
+        #expect(two.state.folded == nil)
+        write("Delta", "# Delta\n\nFirst words, **bold**.\n- two\n- three\n")
+        #expect(store.summary(of: "Delta").first == "First words, bold.")
+        #expect(store.summary(of: "Delta").more == 2)
+    }
+
     @Test func savingWritesTheRiverAndKeepsItAsItChanges() {
         let one = river(["Alpha", "Beta"])
         one.save(as: "Work")

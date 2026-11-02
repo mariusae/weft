@@ -476,6 +476,28 @@ public final class WikiStore {
         if !river(writing: title) { finishEditing(title) }
     }
 
+    /// A folded card's line: the first of its page's words, as words, and
+    /// how many lines more it has.
+    public func summary(of title: String) -> (first: String?, more: Int) {
+        let text = (drafts[title] ?? tiddler(title))?.text ?? ""
+        var lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("```") }
+        // Its own title, as a first heading, says nothing more.
+        if let head = lines.first, head.hasPrefix("# "), head.dropFirst(2).trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(shownTitle(title)) == .orderedSame {
+            lines.removeFirst()
+        }
+        guard !lines.isEmpty else { return (nil, 0) }
+        // The first line with words in it: pictures say nothing here, and an
+        // address shows without its brackets.
+        for (index, line) in lines.enumerated() {
+            var words = line.replacingOccurrences(of: #"!\[[^\]]*\]\([^)]*\)(<!--.*?-->)?"#, with: "", options: .regularExpression)
+            words = words.replacingOccurrences(of: #"<(https?://[^>]+)>"#, with: "$1", options: .regularExpression)
+            words = Self.plain(words).trimmingCharacters(in: .whitespaces)
+            if words.isEmpty || ["-", "+", "*"].contains(words) { continue }
+            return (words, lines.count - 1 - index)
+        }
+        return (nil, lines.count)
+    }
+
     // MARK: Folds
 
     /// Which rows of a page's outline are folded, kept on this device — as

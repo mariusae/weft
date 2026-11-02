@@ -23,15 +23,26 @@ enum Snapshot {
 
     private static var taken = false
 
+    /// The window's rivers: its tabs.
+    @MainActor static var rivers: RiverSet?
+
     static func takeIfAsked(store: WikiStore) {
         guard ProcessInfo.processInfo.environment["WEFT_SNAPSHOT"] != nil, !taken else { return }
         taken = true
+        // `WEFT_MENUS=1`: the File menu's items, printed, for checking its keys.
+        if ProcessInfo.processInfo.environment["WEFT_MENUS"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                for item in NSApp.mainMenu?.items.first(where: { $0.title == "File" })?.submenu?.items ?? [] {
+                    print("MENU", item.title, item.keyEquivalentModifierMask.rawValue, item.keyEquivalent)
+                }
+            }
+        }
         // Once the window has put back its river.
         store.whenLoaded { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { take(store: store) } }
     }
 
     private static func take(store: WikiStore) {
-        guard let river = store.rivers.first else { return }
+        guard let river = rivers?.current ?? store.rivers.first else { return }
         let environment = ProcessInfo.processInfo.environment
         guard let output = environment["WEFT_SNAPSHOT"] else { return }
         // `WEFT_WIDTH`: the window this wide, as a narrow window or a phone is.
@@ -40,16 +51,21 @@ enum Snapshot {
         }
         let titles = environment["WEFT_OPEN"]?.split(separator: "|").map(String.init) ?? []
         // Just the cards named, whatever was open last.
-        if !titles.isEmpty { river.closeAll() }
+        if !titles.isEmpty {
+            // Just this river, whatever tabs were kept from before.
+            if let rivers { rivers.closeOthers(river) }
+            river.closeAll()
+        }
         for title in titles.reversed() { river.open(title) }
         // `WEFT_OUTLINE`: a card edited as an outline.
         if let outline = environment["WEFT_OUTLINE"] { store.setEditorMode(.outline, for: outline) }
+        for title in environment["WEFT_FOLD"]?.split(separator: "|") ?? [] { river.setFolded(String(title), true) }
         if let edit = environment["WEFT_EDIT"] { river.edit(edit) }
         if environment["WEFT_QUICK_OPEN"] != nil { river.quickOpenShown = true }
         if let search = environment["WEFT_SEARCH"] { river.search = search }
         if let name = environment["WEFT_SAVE_RIVER"] { river.save(as: name) }
         for tab in environment["WEFT_TABS"]?.split(separator: ";") ?? [] {
-            river.openNew(River.State(graph: store.root?.path ?? "", cards: tab.split(separator: "|").map(String.init)))
+            rivers?.add(River.State(graph: store.root?.path ?? "", cards: tab.split(separator: "|").map(String.init)))
         }
         if environment["WEFT_RIVERS"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { river.riversShown = true }

@@ -117,6 +117,14 @@ private struct PadCommands: Commands {
                 .keyboardShortcut(.return, modifiers: .command)
             Button("Close All Cards") { river.closeAll() }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
+            Button("Fold Card") { if let card = river.selected { river.setFolded(card, true) } }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .control])
+            Button("Unfold Card") { if let card = river.selected { river.setFolded(card, false) } }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .control])
+            Button("Fold All Cards") { river.foldAll() }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .control, .option])
+            Button("Unfold All Cards") { river.unfoldAll() }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .control, .option])
             Divider()
             Button("Back") { river.goBack() }
                 .keyboardShortcut("[")
