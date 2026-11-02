@@ -91,6 +91,10 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   back from **Saved Rivers** (⇧⌘R, or the bar's menu on the phone), which
   also duplicates, renames and deletes them; deleting one leaves its cards
   open where they are.
+  A page links to a saved river as to the file it is — `[[rivers/Work]]`,
+  shown as **Work** with a stack before it — and a tap on the link brings
+  the river back: to the front where it shows, else beside. Renaming the
+  river rewrites the links to it; one to a river deleted is drawn faint.
 - **A card** is written in where it stands — there is no Edit and no
   Preview. Its body reads as what it says, and is edited as it reads: as
   an **Outline** (Prism's outline editor, the Mac's and the phone's) where

@@ -92,7 +92,7 @@ struct CardEditor: View {
 
     private func textEditor(wants: Bool, taken: @escaping () -> Void, focused: @escaping (Bool) -> Void) -> some View {
         TiddlerEditor(text: text, controller: controller, card: title,
-                      suggest: { store.linkSuggestions($0) }, exists: { store.exists($0) },
+                      suggest: { store.linkSuggestions($0) }, exists: { store.linkExists($0) },
                       onEscape: { Platform.endEditing() },
                       wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused)
     }

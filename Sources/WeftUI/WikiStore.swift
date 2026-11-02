@@ -833,9 +833,9 @@ public final class WikiStore {
     /// Saved rivers are files in the graph's `rivers/` folder — one a name,
     /// a link to each card a line — synced with the rest. They are not
     /// pages: nothing links to them, and no search finds them.
-    static let riversFolder = "rivers"
+    static let riversFolder = RiverLink.folder
 
-    static func riverPath(_ name: String) -> String { "\(riversFolder)/\(name).md" }
+    static func riverPath(_ name: String) -> String { RiverLink.path(name) }
 
     /// Bumped when a saved river comes, goes, or changes.
     public private(set) var savedVersion = 0
@@ -938,6 +938,12 @@ public final class WikiStore {
             return nil
         }
         for river in rivers where river.name == name { river.named(new) }
+        // Links to it follow it, as links to a page renamed do.
+        do {
+            _ = try wiki?.relink(from: RiverLink.target(name), to: RiverLink.target(new))
+        } catch {
+            self.error = "Couldn't update the links to the river “\(name)”: \(error.localizedDescription)"
+        }
         savedVersion += 1
         sync?.noteChanged()
         return new
@@ -956,6 +962,27 @@ public final class WikiStore {
         for river in rivers where river.name == name { river.forget() }
         savedVersion += 1
         sync?.noteChanged()
+    }
+
+    /// A saved river by a name as a link writes it, in whatever case: its
+    /// name, or nil when none is called that.
+    public func savedRiverName(_ name: String) -> String? {
+        savedRivers().first { $0.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
+    /// Whether a link leads somewhere: to a page, a day, a saved river.
+    public func linkExists(_ target: String) -> Bool {
+        if let name = RiverLink.name(target) { return savedRiverName(name) != nil }
+        return exists(target)
+    }
+
+    /// What is said of a link to a saved river, under the pointer: its
+    /// cards, or that none is called that.
+    public func riverNote(_ target: String) -> String? {
+        guard let name = RiverLink.name(target) else { return nil }
+        guard let saved = savedRiverName(name), let cards = savedCards(saved) else { return "No saved river is called “\(name)”" }
+        let shown = cards.prefix(6).map(shownTitle).joined(separator: ", ")
+        return "Saved river “\(saved)” — \(cards.count) \(cards.count == 1 ? "card" : "cards")" + (cards.isEmpty ? "" : ": \(shown)\(cards.count > 6 ? "…" : "")")
     }
 
     /// The river showing a saved one, if one does.

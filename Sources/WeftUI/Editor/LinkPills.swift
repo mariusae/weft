@@ -10,7 +10,7 @@ import UIKit
 
 /// Links shown as the outline editor shows them, as Slack does: in the
 /// accent colour, on a pale pill of it, with what kind of link it is before
-/// it — the web, a page, a day. A web address is shortened to where it goes
+/// it — the web, a page, a day, a saved river. A web address is shortened to where it goes
 /// — its site, and the first and last parts of its path — and shown whole
 /// on the caret's lines. Tags are pills too, with no kind.
 ///
@@ -18,7 +18,7 @@ import UIKit
 /// takes the room of the hidden markup before the link's words, kerned
 /// wide enough for it.
 final class LinkPill: NSObject {
-    enum Kind { case web, page, day, tag }
+    enum Kind { case web, page, day, river, tag }
     let kind: Kind
     /// Whether it has hidden markup before its words to put its icon in.
     let hasLead: Bool
@@ -37,6 +37,7 @@ final class LinkPill: NSObject {
         case .web: return "link"
         case .page: return "doc.text"
         case .day: return "calendar"
+        case .river: return RiverLink.symbol
         case .tag: return nil
         }
     }

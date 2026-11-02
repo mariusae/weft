@@ -59,6 +59,7 @@ enum Snapshot {
         for title in titles.reversed() { river.open(title) }
         // `WEFT_OUTLINE`: a card edited as an outline.
         if let outline = environment["WEFT_OUTLINE"] { store.setEditorMode(.outline, for: outline) }
+        if let text = environment["WEFT_TEXT"] { store.setEditorMode(.text, for: text) }
         for title in environment["WEFT_FOLD"]?.split(separator: "|") ?? [] { river.setFolded(String(title), true) }
         if let edit = environment["WEFT_EDIT"] { river.edit(edit) }
         if environment["WEFT_QUICK_OPEN"] != nil { river.quickOpenShown = true }

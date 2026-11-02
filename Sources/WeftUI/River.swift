@@ -195,6 +195,8 @@ public final class River: Identifiable {
     /// opened from another goes just after it, as in TiddlyWiki; otherwise
     /// at the top.
     public func open(_ title: String, from source: String? = nil) {
+        // A link to a saved river brings the river back.
+        if let name = RiverLink.name(title) { return follow(river: name) }
         // A page opened by an alias, or in other case, is opened by its title.
         let title = store.canonicalTitle(title)
         if !cards.contains(title) {
@@ -584,6 +586,16 @@ public final class River: Identifiable {
         if let showing = store.river(named: saved) { return showing.present() }
         let state = State(graph: store.root?.path ?? "", name: saved, cards: [])
         if cards.isEmpty { restore(state) } else { openNew(state) }
+    }
+
+    /// A link to a saved river followed: the river brought back — to the
+    /// front where it shows, else beside this one.
+    func follow(river name: String) {
+        guard let saved = store.savedRiverName(name) else {
+            store.error = "No saved river is called “\(name)”. Save a river under that name, and the link leads to it."
+            return
+        }
+        recall(saved)
     }
 
     /// No longer a saved river — its file deleted — but still open, here alone.

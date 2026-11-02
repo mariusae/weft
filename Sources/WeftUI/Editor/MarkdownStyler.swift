@@ -19,6 +19,8 @@ struct MarkdownStyler {
     var size: CGFloat
     /// Whether a tiddler has a title, to draw links to it.
     var exists: (String) -> Bool
+    /// What is said of a link under the pointer: a saved river's cards.
+    var describe: (String) -> String? = { _ in nil }
 
     /// The size cards are set in, as Settings has it.
     static var defaultSize: CGFloat { TextSettings.size }
@@ -279,8 +281,9 @@ struct MarkdownStyler {
                 break
             }
             if let page, kind != .tag {
-                kind = Day(page) != nil || Week(page) != nil ? .day : .page
+                kind = Day(page) != nil || Week(page) != nil ? .day : RiverLink.name(page) != nil ? .river : .page
                 missing = !exists(page)
+                if kind == .river, let note = describe(page) { storage.addAttribute(.toolTip, value: note, range: sub(content)) }
             }
             let tint = missing ? Palette.dim : Palette.accent
             storage.addAttribute(.foregroundColor, value: tint, range: sub(content))

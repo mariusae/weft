@@ -256,6 +256,36 @@ import ReflectCore
         #expect(store.savedRiver("Work")?.rows["Aleph"]?.count == 1)
     }
 
+    @Test func aLinkToASavedRiverBringsItBackAndFollowsItsRenames() throws {
+        #expect(RiverLink.name("rivers/Work") == "Work" && RiverLink.name("Rivers/Work.md") == "Work")
+        #expect(RiverLink.name("rivers/") == nil && RiverLink.name("notes/Work") == nil && RiverLink.name("rivers/a/b") == nil)
+        let one = river(["Alpha", "Beta"])
+        one.save(as: "Work")
+        write("Plans", "See [[rivers/Work]] and [[rivers/Work|the work]].")
+        #expect(store.linkExists("rivers/Work") && store.linkExists("rivers/WORK") && !store.linkExists("rivers/Play"))
+        #expect(store.riverNote("rivers/Work")?.contains("2 cards") == true)
+        // Followed from a river showing other cards: the one showing it, to the front.
+        var presented = false
+        one.present = { presented = true }
+        let other = river(["Gamma"])
+        other.open("rivers/work")
+        #expect(presented && other.cards == ["Gamma"])
+        // Not open anywhere: beside this one.
+        store.release(one)
+        var opened: River.State?
+        other.openNew = { opened = $0 }
+        other.open("rivers/Work")
+        #expect(opened?.name == "Work")
+        // One no river has: said so, nothing opened.
+        other.open("rivers/Play")
+        #expect(store.error != nil && other.cards == ["Gamma"])
+        store.error = nil
+        // Renamed, its links follow.
+        store.renameSavedRiver("Work", to: "Project")
+        #expect(store.tiddler("Plans")?.text.contains("[[rivers/Project]]") == true)
+        #expect(store.tiddler("Plans")?.text.contains("[[rivers/Project|the work]]") == true)
+    }
+
     @Test func quickOpenListsTodayOnce() {
         write(Day.today.description, "- written today\n")
         let titles = store.quickOpen("").map(\.title)

@@ -233,7 +233,7 @@ struct TiddlerEditor: View {
 
     var body: some View {
         EditorRepresentable(text: $text, controller: controller, store: store, river: river, card: card, suggest: suggest,
-                            styler: MarkdownStyler(size: MarkdownStyler.defaultSize, exists: exists),
+                            styler: MarkdownStyler(size: MarkdownStyler.defaultSize, exists: exists, describe: { store.riverNote($0) }),
                             onEscape: onEscape, wantsCaret: wantsCaret, onCaretTaken: onCaretTaken,
                             onFocusChange: onFocusChange)
     }
