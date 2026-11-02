@@ -33,8 +33,11 @@ struct OutlineCardEditor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> PageOutlineEditor {
-        let editor = PageOutlineEditor(text: text, fontSize: TextSettings.size + 1, root: store.root)
+        let editor = PageOutlineEditor(text: "", fontSize: TextSettings.size + 1, root: store.root)
+        // Folded as it was left.
+        editor.load(text, folds: store.folds(of: title))
         editor.onChange = { text = $0 }
+        editor.onFoldsChange = { [store, title] in store.setFolds($0, of: title) }
         editor.onOpenTitle = { [river] title in
             withAnimation(.snappy(duration: 0.28)) { river.open(title) }
         }
@@ -47,7 +50,7 @@ struct OutlineCardEditor: NSViewRepresentable {
 
     func updateNSView(_ editor: PageOutlineEditor, context: Context) {
         context.coordinator.onFocusChange = onFocusChange
-        editor.load(text)
+        editor.load(text, folds: store.folds(of: title))
         if wantsCaret {
             DispatchQueue.main.async { [onCaretTaken] in
                 if !editor.isFocused { editor.focus() }

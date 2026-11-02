@@ -476,6 +476,31 @@ public final class WikiStore {
         if !river(writing: title) { finishEditing(title) }
     }
 
+    // MARK: Folds
+
+    /// Which rows of a page's outline are folded, kept on this device — as
+    /// Prism keeps a note's — so a card closed and opened again comes back
+    /// folded as it was left.
+    public func folds(of title: String) -> [OutlineFolds.Mark] {
+        guard let key = foldsKey(title), let data = UserDefaults.standard.data(forKey: key) else { return [] }
+        return (try? JSONDecoder().decode([OutlineFolds.Mark].self, from: data)) ?? []
+    }
+
+    public func setFolds(_ marks: [OutlineFolds.Mark], of title: String) {
+        guard let key = foldsKey(title) else { return }
+        if marks.isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else if let data = try? JSONEncoder().encode(marks) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    /// By the page's file, which a rename keeps; none for a page not yet written.
+    private func foldsKey(_ title: String) -> String? {
+        guard let root, let path = wiki?.entries[title]?.path else { return nil }
+        return "Folds:\(root.path):\(path)"
+    }
+
     // MARK: Related pages
 
     /// A page a card is related to, without a link in its text.

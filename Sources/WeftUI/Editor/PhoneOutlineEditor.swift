@@ -31,15 +31,28 @@ struct OutlineCardEditor: UIViewRepresentable {
         var loaded: String?
         var write: (String) -> Void = { _ in }
         var onFocusChange: (Bool) -> Void = { _ in }
+        /// The rows folded, as kept for the page, and keeping them.
+        var folds: () -> [OutlineFolds.Mark] = { [] }
+        var keepFolds: ([OutlineFolds.Mark]) -> Void = { _ in }
+        private var shownFolds: [OutlineFolds.Mark] = []
 
         func load(_ text: String, into editor: OutlineEditor) {
             loaded = text
             shell = OutlineMarkdown.parse(text)
-            editor.load(shell.rows.isEmpty ? [.blank] : shell.rows)
+            // Folded as it was left.
+            let marks = folds()
+            editor.load(shell.rows.isEmpty ? [.blank] : marks.isEmpty ? shell.rows : OutlineFolds.apply(marks, to: shell.rows))
+            shownFolds = OutlineFolds.marks(editor.rows)
         }
 
-        /// The rows written back as Markdown, around what is not rows.
+        /// The rows written back as Markdown, around what is not rows — and
+        /// which are folded, kept apart from them.
         func save(_ editor: OutlineEditor) {
+            let marks = OutlineFolds.marks(editor.rows)
+            if marks != shownFolds {
+                shownFolds = marks
+                keepFolds(marks)
+            }
             var outline = shell
             outline.rows = Row.unfold(editor.rows)
             let text = outline.isBlank ? "" : OutlineMarkdown.serialize(outline)
@@ -59,6 +72,8 @@ struct OutlineCardEditor: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.write = { text = $0 }
         coordinator.onFocusChange = onFocusChange
+        coordinator.folds = { [store, title] in store.folds(of: title) }
+        coordinator.keepFolds = { [store, title] in store.setFolds($0, of: title) }
         editor.onChange = { [weak editor] in
             guard let editor else { return }
             coordinator.save(editor)
