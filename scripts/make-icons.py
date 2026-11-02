@@ -7,7 +7,7 @@ tinted icons, so the system can draw every appearance:
 
     scripts/make-icons.py            # design/icons/<Name>.icon, one a design
 
-The one chosen — Weave — is also written where the apps take it from:
+The one chosen — Rapids — is also written where the apps take it from:
 Resources/Icons/Weft.icon for the Mac (compiled by scripts/build-app.sh)
 and iOS/Weft/AppIcon.icon for the iPhone and iPad.
 
@@ -22,7 +22,7 @@ import sys
 SIZE = 1024
 BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 ROOT = os.path.join(BASE, "design", "icons")
-CHOSEN = "Weave"
+CHOSEN = "Rapids"
 INSTALLED = [os.path.join(BASE, "Resources", "Icons", "Weft.icon"), os.path.join(BASE, "iOS", "Weft", "AppIcon.icon")]
 
 
@@ -247,7 +247,125 @@ def thread():
     ])
 
 
+# MARK: Rivers — the warp waving
+
+def river_bar(cx, width, top, bottom, sway):
+    """A card waving as a river does: its middle swayed sideways by
+    `sway(t)`, t from 0 at its top to 1 at its bottom, the card as wide
+    throughout and its ends round. The outline, and its left and right
+    edges, for cutting threads where they go under it."""
+    import math
+    n = 160
+    half = width / 2
+    # Its ends' middles a half-width in, so its round ends reach top and bottom.
+    middle = [(cx + sway(i / n), top + half + (bottom - top - width) * i / n) for i in range(n + 1)]
+    left, right = [], []
+    for i, (x, y) in enumerate(middle):
+        a, b = middle[max(0, i - 1)], middle[min(n, i + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dx, dy)
+        nx, ny = -dy / length, dx / length  # to the left, x growing rightwards
+        left.append((x + nx * half, y + ny * half))
+        right.append((x - nx * half, y - ny * half))
+    def cap(centre, start, inward):
+        # Half a circle from one edge to the other, round the end: the
+        # way away from the card's middle, `inward` the next point in.
+        (x, y), points = centre, []
+        a0 = math.atan2(start[1] - y, start[0] - x)
+        out = math.atan2(y - inward[1], x - inward[0])
+        sweep = math.pi if math.sin(out - a0) > 0 else -math.pi
+        for i in range(1, 24):
+            angle = a0 + sweep * i / 24
+            points.append((x + half * math.cos(angle), y + half * math.sin(angle)))
+        return points
+    outline = (right[::-1] + cap(middle[0], right[0], middle[1]) + left
+               + cap(middle[-1], left[-1], middle[-2]))
+    return outline, left, right
+
+
+def edge_at(edge, y):
+    """Where an edge is across at a height."""
+    for (x0, y0), (x1, y1) in zip(edge, edge[1:]):
+        if min(y0, y1) <= y <= max(y0, y1) and y0 != y1:
+            return x0 + (x1 - x0) * (y - y0) / (y1 - y0)
+    return edge[0][0]
+
+
+def river_woven(x0, x1, y, h, color, unders):
+    """A thread across, in front of the cards but cut where it goes under
+    one — `unders`, the cards' (left edge, right edge) — so the cut follows
+    the card's edge however it leans there."""
+    import math
+    r, steps = h / 2, 12
+    ys = [y + h * i / steps for i in range(steps + 1)]
+    def end(centre, first):
+        # Half a circle round the thread's end, from angle `first` on.
+        return [(centre + r * math.cos(first + math.pi * i / steps), y + r + r * math.sin(first + math.pi * i / steps))
+                for i in range(steps + 1)]
+    pieces, start = [], None
+    for left, right in sorted(unders, key=lambda pair: edge_at(pair[0], y)):
+        pieces.append((start, left))
+        start = right
+    pieces.append((start, None))
+    body = ""
+    for left, right in pieces:
+        # Down the right side, then up the left: round at the thread's
+        # ends, else along the edge of the card it goes under.
+        down = end(x1 - r, -math.pi / 2) if right is None else [(edge_at(right, v), v) for v in ys]
+        up = end(x0 + r, math.pi / 2) if left is None else [(edge_at(left, v), v) for v in ys[::-1]]
+        body += shape(down + up, color)
+    return body
+
+
+def river(name, sways, width=128, background=("#eef2ff", "#c9d5f6", "#1e2334", "#0c0f18")):
+    """Weave's basket, its warp waving like a river: `sways`, how each card
+    sways, left to right."""
+    top, bottom = 216, 808
+    bars = [river_bar(cx, width, top, bottom, sway) for cx, sway in zip((302, 512, 722), sways)]
+    cards = "".join(shape(outline, "#ffffff") for outline, _, _ in bars)
+    thread = 84
+    blue = river_woven(176, 848, 404, thread, "#4d6bf0", [bars[1][1:]])
+    orange = river_woven(176, 848, 560, thread, "#f0a03c", [bars[0][1:], bars[2][1:]])
+    write(name, background, [
+        ("3-weft-2.svg", orange, "#e6e6e6", "#ffb85c"),
+        ("2-weft-1.svg", blue, "#ffffff", "#7f97ff"),
+        ("1-warp.svg", cards, "#8f8f8f", "#eef1f8"),
+    ])
+
+
+def wave(amplitude, waves=1.0, phase=0.0):
+    import math
+    return lambda t: amplitude * math.sin(2 * math.pi * (waves * t + phase))
+
+
+def current():
+    """The three cards waving together, one S each: lines of a current."""
+    river("Current", [wave(30)] * 3)
+
+
+def bend():
+    """The three cards bowed together, as a river bends."""
+    import math
+    river("Bend", [lambda t: 46 * math.sin(math.pi * t) - 23] * 3)
+
+
+def ripple():
+    """Each card a little behind the one before it: a wave passing across."""
+    river("Ripple", [wave(26, 1, -i / 8) for i in range(3)])
+
+
+def rapids():
+    """The cards waving faster, a wave and a half each."""
+    river("Rapids", [wave(20, 1.5)] * 3)
+
+
+def meander():
+    """The cards swaying wide and slow, the middle one most: a meander."""
+    river("Meander", [wave(28, 0.75, 0.125), wave(40, 0.75, 0.125), wave(28, 0.75, 0.125)], width=120)
+
+
 if __name__ == "__main__":
-    designs = {"Brackets": brackets, "Stack": stack, "Weave": weave, "Thread": thread}
+    designs = {"Brackets": brackets, "Stack": stack, "Weave": weave, "Thread": thread,
+               "Current": current, "Bend": bend, "Ripple": ripple, "Rapids": rapids, "Meander": meander}
     for name in sys.argv[1:] or designs:
         designs[name]()
