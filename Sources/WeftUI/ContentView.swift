@@ -898,7 +898,9 @@ private struct RiverControls: View {
 #if os(macOS)
 /// The river at a glance, at its right edge, with the sidebar shut: a tick
 /// for each open card, the one in view marked; under the pointer, their
-/// titles — one clicked brought into view.
+/// titles — one clicked brought into view, one dragged moved in the river,
+/// a line between rows saying where. A card dragged from the river, or
+/// another window's, over it opens it out, and is put where it is let go.
 private struct RiverRail: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
@@ -910,6 +912,14 @@ private struct RiverRail: View {
     @State private var pointed: String? = ProcessInfo.processInfo.environment["WEFT_RAIL"]
     /// How tall its rows are.
     @State private var height: CGFloat = 0
+    /// Where a card dragged over it would go. `WEFT_RAIL_DROP=<title>`, for
+    /// a snapshot: just before that row.
+    @State private var drop: CardDrop? = ProcessInfo.processInfo.environment["WEFT_RAIL_DROP"].map { CardDrop(title: $0, after: false) }
+    /// Each row's middle, down the rail: a drop above one goes before it.
+    @State private var middles: [String: CGFloat] = [:]
+
+    /// The titles shown: under the pointer, or a card dragged over it.
+    private var open: Bool { hovering || drop != nil }
 
     var body: some View {
         // As tall as its rows, scrolling only when they would not fit.
@@ -920,23 +930,23 @@ private struct RiverRail: View {
         .fixedSize(horizontal: true, vertical: false)
         .frame(height: min(max(height, 1), 520))
         .background {
-            if hovering { RoundedRectangle(cornerRadius: 14).fill(.regularMaterial).shadow(color: .black.opacity(0.12), radius: 12, y: 4) }
+            if open { RoundedRectangle(cornerRadius: 14).fill(.regularMaterial).shadow(color: .black.opacity(0.12), radius: 12, y: 4) }
         }
         .onHover { hovering = $0 }
-        .animation(.snappy(duration: 0.18), value: hovering)
+        .animation(.snappy(duration: 0.18), value: open)
         .padding(.trailing, 8)
     }
 
     private var rows: some View {
         // No gap between rows while their titles show, so the pointer
         // passes from one to the next without lighting none between.
-        VStack(alignment: .trailing, spacing: hovering ? 0 : 6) {
+        VStack(alignment: .trailing, spacing: open ? 0 : 6) {
             ForEach(river.cards, id: \.self) { title in
                 let current = title == inView
                 let lit = hovering && pointed == title
                 Button { go(title) } label: {
                     HStack(spacing: 9) {
-                        if hovering {
+                        if open {
                             Text(store.shownTitle(title))
                                 .font(.callout.weight(current ? .semibold : .regular))
                                 .foregroundStyle(current || lit ? Ink.text.color : Ink.secondary.color)
@@ -952,8 +962,8 @@ private struct RiverRail: View {
                             .frame(width: current || lit ? 18 : 11, height: 3)
                             .frame(width: 18, alignment: .trailing)
                     }
-                    .padding(.vertical, hovering ? 5.5 : 0)
-                    .padding(.horizontal, hovering ? 8 : 0)
+                    .padding(.vertical, open ? 5.5 : 0)
+                    .padding(.horizontal, open ? 8 : 0)
                     // Each row as wide as the widest: none of the panel
                     // between rows that lights nothing.
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -963,15 +973,69 @@ private struct RiverRail: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .draggingCard(title, shown: store.shownTitle(title))
                 .onHover { inside in
                     if inside { pointed = title } else if pointed == title { pointed = nil }
                 }
-                .help(hovering ? "" : store.shownTitle(title))
+                .help(open ? "" : store.shownTitle(title))
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).midY } action: { middles[title] = $0 }
+                .overlay(alignment: drop?.after == true ? .bottom : .top) {
+                    if let drop, drop.title == title {
+                        Capsule()
+                            .fill(Ink.accent.color)
+                            .frame(height: 3)
+                            .padding(.horizontal, 6)
+                            .offset(y: drop.after ? 1.5 : -1.5)
+                            .allowsHitTesting(false)
+                    }
+                }
             }
         }
         .fixedSize(horizontal: true, vertical: false)
         .padding(8)
+        .coordinateSpace(.named(Self.space))
+        .onDrop(of: [.weftCard], delegate: RailDropDelegate(cards: river.cards, middles: middles, drop: $drop, river: river))
         .animation(.easeOut(duration: 0.1), value: pointed)
+        .animation(.easeOut(duration: 0.1), value: drop)
+    }
+
+    private static let space = "rail"
+}
+
+/// A card dragged over the rail: before the first row whose middle is
+/// below it, or after them all.
+private struct RailDropDelegate: DropDelegate {
+    let cards: [String]
+    let middles: [String: CGFloat]
+    @Binding var drop: CardDrop?
+    let river: River
+
+    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.weftCard]) }
+
+    func dropEntered(info: DropInfo) { aim(info) }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        aim(info)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) { drop = nil }
+
+    func performDrop(info: DropInfo) -> Bool {
+        drop = nil
+        guard let place = place(info) else { return false }
+        return river.moveDropped(info, to: place)
+    }
+
+    private func place(_ info: DropInfo) -> CardDrop? {
+        let y = info.location.y
+        if let next = cards.first(where: { (middles[$0] ?? .infinity) > y }) { return CardDrop(title: next, after: false) }
+        return cards.last.map { CardDrop(title: $0, after: true) }
+    }
+
+    private func aim(_ info: DropInfo) {
+        let aimed = place(info)
+        if drop != aimed { drop = aimed }
     }
 }
 #endif

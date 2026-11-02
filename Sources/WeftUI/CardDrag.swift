@@ -101,20 +101,26 @@ private struct CardDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        let after = info.location.y > height / 2
         drop = nil
-        guard let provider = info.itemProviders(for: [.weftCard]).first else { return false }
-        _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.weftCard.identifier) { [title, river] data, _ in
-            guard let data, let dragged = String(data: data, encoding: .utf8) else { return }
-            Task { @MainActor in
-                withAnimation(.snappy(duration: 0.28)) { river.move(dragged, to: title, after: after) }
-            }
-        }
-        return true
+        return river.moveDropped(info, to: CardDrop(title: title, after: info.location.y > height / 2))
     }
 
     private func aim(_ info: DropInfo) {
         let aimed = CardDrop(title: title, after: info.location.y > height / 2)
         if drop != aimed { drop = aimed }
+    }
+}
+
+extension River {
+    /// The card a drop carries, moved to where it was dropped.
+    func moveDropped(_ info: DropInfo, to place: CardDrop) -> Bool {
+        guard let provider = info.itemProviders(for: [.weftCard]).first else { return false }
+        _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.weftCard.identifier) { [self] data, _ in
+            guard let data, let dragged = String(data: data, encoding: .utf8) else { return }
+            Task { @MainActor in
+                withAnimation(.snappy(duration: 0.28)) { move(dragged, to: place.title, after: place.after) }
+            }
+        }
+        return true
     }
 }

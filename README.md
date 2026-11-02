@@ -59,8 +59,11 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   close (×), and
   are dragged by their titles to elsewhere in the river — on the phone,
   held first — a line in the gap saying where; one dragged from another
-  window's river is opened there. On the iPhone, the sidebar and the
-  river take turns.
+  window's river is opened there. On the Mac, with the sidebar shut, the
+  river's right edge is a map of it: a tick for each card, under the
+  pointer their titles; one clicked is scrolled to, one dragged is moved,
+  and a card dragged from the river over it is put where it is let go. On
+  the iPhone, the sidebar and the river take turns.
 - **Rivers**: more than one river can be open. On the Mac each is a tab in
   the window's title bar, as Safari's are, filling what the toolbar's
   buttons leave of it from the sidebar's button on — the one shown standing
