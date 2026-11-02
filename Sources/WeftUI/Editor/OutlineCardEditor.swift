@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import ReflectCore
 import ReflectUI
 import SwiftUI
 import WeftCore
@@ -28,16 +29,23 @@ struct OutlineCardEditor: NSViewRepresentable {
         /// The text last looked at, and whether it asks the graph anything.
         var checked: String?
         var asks = false
+        /// The folds the river had for it, last looked: a change is from elsewhere.
+        var folds: [OutlineFolds.Mark] = []
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> PageOutlineEditor {
         let editor = PageOutlineEditor(text: "", fontSize: TextSettings.size + 1, root: store.root)
-        // Folded as it was left.
-        editor.load(text, folds: store.folds(of: title))
+        // Folded as it was left in this river.
+        let coordinator = context.coordinator
+        coordinator.folds = river.rowFolds(of: title)
+        editor.load(text, folds: coordinator.folds)
         editor.onChange = { text = $0 }
-        editor.onFoldsChange = { [store, title] in store.setFolds($0, of: title) }
+        editor.onFoldsChange = { [river, title] in
+            coordinator.folds = $0
+            river.setRowFolds($0, of: title)
+        }
         editor.onOpenTitle = { [river] title in
             withAnimation(.snappy(duration: 0.28)) { river.open(title) }
         }
@@ -50,7 +58,13 @@ struct OutlineCardEditor: NSViewRepresentable {
 
     func updateNSView(_ editor: PageOutlineEditor, context: Context) {
         context.coordinator.onFocusChange = onFocusChange
-        editor.load(text, folds: store.folds(of: title))
+        let folds = river.rowFolds(of: title)
+        editor.load(text, folds: folds)
+        // Folded elsewhere — a sync brought the river's file — and not being written in here.
+        if folds != context.coordinator.folds {
+            context.coordinator.folds = folds
+            if !editor.isFocused { editor.refold(folds) }
+        }
         if wantsCaret {
             DispatchQueue.main.async { [onCaretTaken] in
                 if !editor.isFocused { editor.focus() }

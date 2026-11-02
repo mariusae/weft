@@ -24,7 +24,7 @@ public final class River: Identifiable {
     public private(set) var cards: [String] = [] {
         didSet {
             guard cards != oldValue else { return }
-            if let name { store.keepSavedRiver(name, cards) }
+            keep()
             onChange()
         }
     }
@@ -53,8 +53,44 @@ public final class River: Identifiable {
             let changed = folded.symmetricDifference(oldValue)
             for title in changed { cardChanged(title) }
             // Kept with the river, as its cards are.
-            if !changed.isEmpty { foldsVersion += 1; onChange() }
+            if !changed.isEmpty { foldsVersion += 1; keep(); onChange() }
         }
+    }
+    /// The rows folded in each card, as it was left in this river — a card
+    /// closed and opened again comes back folded so. A card it has none
+    /// for opens as the page was folded last on this device.
+    @ObservationIgnored private var rows: [String: [OutlineFolds.Mark]] = [:]
+    /// Set while what was kept is put back: nothing written of it meanwhile.
+    @ObservationIgnored private var holding = false
+
+    /// A saved river's file, as the river stands: written whenever its
+    /// cards change, or what is folded of them.
+    private func keep() {
+        guard !holding, let name else { return }
+        store.keepSavedRiver(name, saved)
+    }
+
+    /// What its saved file has of it: its cards, and what is folded of them.
+    var saved: SavedRiver {
+        SavedRiver(cards: cards, folded: folded.intersection(cards),
+                   rows: rows.filter { cards.contains($0.key) && !$0.value.isEmpty })
+    }
+
+    /// The rows folded in a card, as this river has them.
+    public func rowFolds(of title: String) -> [OutlineFolds.Mark] {
+        watch(title)
+        return rows[title] ?? store.folds(of: title)
+    }
+
+    /// A card's rows folded or unfolded: kept with the river — and, for the
+    /// pages opened next, on this device.
+    public func setRowFolds(_ marks: [OutlineFolds.Mark], of title: String) {
+        store.setFolds(marks, of: title)
+        guard rows[title] != marks else { return }
+        rows[title] = marks
+        guard cards.contains(title) else { return }
+        keep()
+        onChange()
     }
 
     public func isFolded(_ title: String) -> Bool {
@@ -91,31 +127,44 @@ public final class River: Identifiable {
         public var cards: [String]
         /// The cards showing only their titles; none, in what was kept before.
         public var folded: [String]?
+        /// The rows folded in each card; none, in what was kept before.
+        public var rows: [String: [OutlineFolds.Mark]]?
 
-        public init(graph: String, name: String? = nil, cards: [String], folded: [String]? = nil) {
+        public init(graph: String, name: String? = nil, cards: [String], folded: [String]? = nil,
+                    rows: [String: [OutlineFolds.Mark]]? = nil) {
             self.graph = graph
             self.name = name
             self.cards = cards
             self.folded = folded
+            self.rows = rows
         }
     }
 
     /// What is kept of it — of the graph read, once it is.
     public var state: State {
-        State(graph: store.loadedRoot?.path ?? "", name: name, cards: cards, folded: folded.isEmpty ? nil : cards.filter(folded.contains))
+        let kept = rows.filter { cards.contains($0.key) }
+        return State(graph: store.loadedRoot?.path ?? "", name: name, cards: cards, folded: folded.isEmpty ? nil : cards.filter(folded.contains),
+                     rows: kept.isEmpty ? nil : kept)
     }
 
     /// Shows what was kept: a saved river as its file has it now, which
-    /// another device may have changed; one of this device's as it was.
+    /// another device may have changed — folded as it says; one of this
+    /// device's as it was.
     public func restore(_ state: State) {
+        holding = true
         if let saved = state.name, let kept = store.savedRiver(saved), !store.rivers.contains(where: { $0 !== self && $0.name == saved }) {
             name = saved
-            cards = kept
+            cards = kept.cards
+            folded = kept.folded.intersection(cards)
+            rows = Dictionary(uniqueKeysWithValues: cards.map { ($0, kept.rows[$0] ?? []) })
         } else {
             name = nil
             cards = state.cards
+            folded = Set(state.folded ?? []).intersection(cards)
+            rows = state.rows ?? [:]
         }
-        folded = Set(state.folded ?? []).intersection(cards)
+        holding = false
+        for title in cards { cardChanged(title) }
         focus = nil
     }
 
@@ -125,6 +174,7 @@ public final class River: Identifiable {
         name = nil
         cards = []
         folded = []
+        rows = [:]
         focus = nil
         writing = nil
         caretWanted = nil
@@ -347,9 +397,13 @@ public final class River: Identifiable {
 
     /// A page took another title: its card does too.
     func renamed(_ title: String, to new: String) {
+        if let marks = rows.removeValue(forKey: title) { rows[new] = marks }
         guard let index = cards.firstIndex(of: title) else { return }
+        holding = true
         cards[index] = new
         if folded.remove(title) != nil { folded.insert(new) }
+        holding = false
+        keep()
         if focus == title { focus = new }
         if writing == title { writing = new }
         backward = backward.map { $0 == title ? new : $0 }
@@ -363,9 +417,18 @@ public final class River: Identifiable {
         if writing == title { writing = nil }
     }
 
-    /// A sync brought in another device's saved river of this name.
-    func savedChanged(_ kept: [String]) {
-        if kept != cards { cards = kept }
+    /// A sync brought in another device's saved river of this name: its
+    /// cards, and what is folded of them — the cards open refolded.
+    func savedChanged(_ kept: SavedRiver) {
+        holding = true
+        if kept.cards != cards { cards = kept.cards }
+        let shut = kept.folded.intersection(kept.cards)
+        if shut != folded { folded = shut }
+        for card in kept.cards where rows[card] != (kept.rows[card] ?? []) {
+            rows[card] = kept.rows[card] ?? []
+            cardChanged(card)
+        }
+        holding = false
     }
 
     // MARK: The caret
@@ -497,7 +560,7 @@ public final class River: Identifiable {
             guard let new = store.renameSavedRiver(before, to: name) else { return }
             self.name = new
         } else {
-            guard let new = store.addSavedRiver(name, cards) else { return }
+            guard let new = store.addSavedRiver(name, saved) else { return }
             self.name = new
         }
     }

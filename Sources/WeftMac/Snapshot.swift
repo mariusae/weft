@@ -64,6 +64,19 @@ enum Snapshot {
         if environment["WEFT_QUICK_OPEN"] != nil { river.quickOpenShown = true }
         if let search = environment["WEFT_SEARCH"] { river.search = search }
         if let name = environment["WEFT_SAVE_RIVER"] { river.save(as: name) }
+        // `WEFT_RECALL`: a saved river brought back, folded as its file says;
+        // `WEFT_PULL=<file>`, a moment later its file as a sync would bring it.
+        if let name = environment["WEFT_RECALL"] {
+            river.closeAll()
+            river.restore(River.State(graph: store.root?.path ?? "", name: name, cards: []))
+            if let pulled = environment["WEFT_PULL"], let root = store.root {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    try? FileManager.default.removeItem(at: root.appendingPathComponent("rivers/\(name).md"))
+                    try? FileManager.default.copyItem(at: URL(fileURLWithPath: pulled), to: root.appendingPathComponent("rivers/\(name).md"))
+                    store.pulled(["rivers/\(name).md"])
+                }
+            }
+        }
         for tab in environment["WEFT_TABS"]?.split(separator: ";") ?? [] {
             rivers?.add(River.State(graph: store.root?.path ?? "", cards: tab.split(separator: "|").map(String.init)))
         }

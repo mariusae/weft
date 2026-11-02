@@ -200,6 +200,62 @@ import ReflectCore
         #expect(store.summary(of: "Delta").more == 2)
     }
 
+    @Test func rowFoldsAreTheRiversOwn() {
+        let one = river(["Alpha"]), two = river(["Alpha"])
+        let marks = [OutlineFolds.Mark(index: 0, text: "About Alpha.")]
+        one.setRowFolds(marks, of: "Alpha")
+        #expect(one.rowFolds(of: "Alpha") == marks)
+        // Another river keeps its own: unfolded, once told so.
+        two.setRowFolds([], of: "Alpha")
+        #expect(two.rowFolds(of: "Alpha").isEmpty && one.rowFolds(of: "Alpha") == marks)
+        // Closed and opened again, as it was; kept with the river.
+        one.close("Alpha")
+        one.open("Alpha")
+        #expect(one.rowFolds(of: "Alpha") == marks)
+        let three = river()
+        three.restore(one.state)
+        #expect(three.rowFolds(of: "Alpha") == marks)
+        // A river new to the page opens it as it was folded last here.
+        #expect(river(["Alpha"]).rowFolds(of: "Alpha").isEmpty)
+    }
+
+    @Test func aSavedRiversFileKeepsWhatIsFolded() {
+        let text = "---\nfolded:\n  - \"Beta: two\"\n---\n- [[Alpha]]\n  - 4: Projects \\\\ more\\nnext\n  - 9: - [[Link]]\n- [[Beta: two]]\n"
+        let saved = SavedRiver(text: text)
+        #expect(saved.cards == ["Alpha", "Beta: two"])
+        #expect(saved.folded == ["Beta: two"])
+        #expect(saved.rows["Alpha"] == [OutlineFolds.Mark(index: 4, text: "Projects \\ more\nnext"), OutlineFolds.Mark(index: 9, text: "- [[Link]]")])
+        #expect(saved.text == text)
+        #expect(SavedRiver(text: "- [[Alpha]]\n- [[Beta]]\n") == SavedRiver(cards: ["Alpha", "Beta"]))
+        let renamed = saved.renaming("Alpha", to: "Aleph")
+        #expect(renamed.cards.first == "Aleph" && renamed.rows["Aleph"]?.count == 2)
+        #expect(saved.removing("Beta: two").text == "- [[Alpha]]\n  - 4: Projects \\\\ more\\nnext\n  - 9: - [[Link]]\n")
+    }
+
+    @Test func foldsSyncWithASavedRiver() throws {
+        let one = river(["Alpha", "Beta"])
+        one.save(as: "Work")
+        one.toggleFold("Beta")
+        one.setRowFolds([OutlineFolds.Mark(index: 0, text: "About Alpha.")], of: "Alpha")
+        #expect(file("Work") == "---\nfolded:\n  - Beta\n---\n- [[Alpha]]\n  - 0: About Alpha.\n- [[Beta]]\n")
+        // Another device opens it folded so.
+        let state = one.state
+        store.release(one)
+        let again = river()
+        again.restore(River.State(graph: state.graph, name: "Work", cards: []))
+        #expect(again.isFolded("Beta") && again.rowFolds(of: "Alpha").count == 1)
+        // A sync unfolds it there: here too.
+        try "- [[Alpha]]\n- [[Beta]]\n".write(to: root.appendingPathComponent("rivers/Work.md"), atomically: true, encoding: .utf8)
+        store.pulled(["rivers/Work.md"])
+        #expect(!again.isFolded("Beta") && again.rowFolds(of: "Alpha").isEmpty)
+        // Renaming a page keeps what is folded of it in a river not open.
+        again.setRowFolds([OutlineFolds.Mark(index: 0, text: "About Alpha.")], of: "Alpha")
+        store.release(again)
+        store.change("Alpha") { $0.title = "Aleph" }
+        store.finishEditing("Alpha")
+        #expect(store.savedRiver("Work")?.rows["Aleph"]?.count == 1)
+    }
+
     @Test func quickOpenListsTodayOnce() {
         write(Day.today.description, "- written today\n")
         let titles = store.quickOpen("").map(\.title)
@@ -227,7 +283,7 @@ import ReflectCore
         one.save(as: "Work")
         store.cloneSavedRiver("Work", as: store.cloneName("Work"))
         #expect(store.savedRivers() == ["Work", "Work copy"])
-        #expect(store.savedRiver("Work copy") == ["Alpha"])
+        #expect(store.savedCards("Work copy") == ["Alpha"])
         // The copy is not opened.
         #expect(store.river(named: "Work copy") == nil)
         store.renameSavedRiver("Work", to: "Project")
@@ -268,11 +324,11 @@ import ReflectCore
         store.change("Alpha") { $0.title = "Aleph" }
         store.finishEditing("Alpha")
         #expect(one.cards == ["Aleph", "Beta"] && two.cards == ["Aleph"])
-        #expect(store.savedRiver("Saved") == ["Aleph", "Gamma"])
+        #expect(store.savedCards("Saved") == ["Aleph", "Gamma"])
         store.delete("Beta")
         #expect(one.cards == ["Aleph"])
         store.delete("Gamma")
-        #expect(store.savedRiver("Saved") == ["Aleph"])
+        #expect(store.savedCards("Saved") == ["Aleph"])
     }
 
     @Test func aRiverKeptIsPutBack() {

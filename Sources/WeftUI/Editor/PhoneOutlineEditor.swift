@@ -31,18 +31,30 @@ struct OutlineCardEditor: UIViewRepresentable {
         var loaded: String?
         var write: (String) -> Void = { _ in }
         var onFocusChange: (Bool) -> Void = { _ in }
-        /// The rows folded, as kept for the page, and keeping them.
+        /// The rows folded, as the river keeps them for the card, and keeping them.
         var folds: () -> [OutlineFolds.Mark] = { [] }
         var keepFolds: ([OutlineFolds.Mark]) -> Void = { _ in }
         private var shownFolds: [OutlineFolds.Mark] = []
+        /// The folds the river had, last looked: a change is from elsewhere.
+        private(set) var asked: [OutlineFolds.Mark] = []
 
         func load(_ text: String, into editor: OutlineEditor) {
             loaded = text
             shell = OutlineMarkdown.parse(text)
             // Folded as it was left.
             let marks = folds()
+            asked = marks
             editor.load(shell.rows.isEmpty ? [.blank] : marks.isEmpty ? shell.rows : OutlineFolds.apply(marks, to: shell.rows))
             shownFolds = OutlineFolds.marks(editor.rows)
+        }
+
+        /// Its rows folded as the river now says, the words left as they are.
+        func refold(_ marks: [OutlineFolds.Mark], in editor: OutlineEditor) {
+            asked = marks
+            guard marks != shownFolds else { return }
+            editor.load(OutlineFolds.apply(marks, to: Row.unfold(editor.rows)))
+            shownFolds = OutlineFolds.marks(editor.rows)
+            editor.invalidateIntrinsicContentSize()
         }
 
         /// The rows written back as Markdown, around what is not rows — and
@@ -51,6 +63,7 @@ struct OutlineCardEditor: UIViewRepresentable {
             let marks = OutlineFolds.marks(editor.rows)
             if marks != shownFolds {
                 shownFolds = marks
+                asked = marks
                 keepFolds(marks)
             }
             var outline = shell
@@ -72,8 +85,8 @@ struct OutlineCardEditor: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.write = { text = $0 }
         coordinator.onFocusChange = onFocusChange
-        coordinator.folds = { [store, title] in store.folds(of: title) }
-        coordinator.keepFolds = { [store, title] in store.setFolds($0, of: title) }
+        coordinator.folds = { [river, title] in river.rowFolds(of: title) }
+        coordinator.keepFolds = { [river, title] in river.setRowFolds($0, of: title) }
         editor.onChange = { [weak editor] in
             guard let editor else { return }
             coordinator.save(editor)
@@ -107,6 +120,11 @@ struct OutlineCardEditor: UIViewRepresentable {
         // Changed elsewhere — another river, a sync — and not being written in here.
         if text != coordinator.loaded, !editor.isFirstResponder {
             coordinator.load(text, into: editor)
+        }
+        // Folded elsewhere — a sync brought the river's file.
+        let folds = river.rowFolds(of: title)
+        if folds != coordinator.asked, !editor.isFirstResponder {
+            coordinator.refold(folds, in: editor)
         }
         if wantsCaret {
             DispatchQueue.main.async { [onCaretTaken] in

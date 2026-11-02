@@ -80,10 +80,17 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   A river is this device's alone, remembered per graph, until it is saved
   under a name (Story ▸ Save River…, or the stack button above the river):
   then it is a file in the graph's `rivers/` folder — a link to each card a
-  line — synced with the rest and kept as its cards change. A saved river
-  is not opened anywhere until it is brought back from **Saved Rivers**
-  (⇧⌘R, or the bar's menu on the phone), which also duplicates, renames
-  and deletes them; deleting one leaves its cards open where they are.
+  line — synced with the rest and kept as its cards change. What is folded
+  goes with it: the cards folded to their titles in its frontmatter
+  `folded:`, and the rows folded in each card under its link (`  - 4: Row
+  text`, the row's place and words), so a river folded on the Mac opens
+  folded so on the phone, and refolds as a sync brings the change. Each
+  river keeps its own folds — a page open in two folds in each as it was
+  left there — and one new to a page opens it as it was folded last on
+  this device. A saved river is not opened anywhere until it is brought
+  back from **Saved Rivers** (⇧⌘R, or the bar's menu on the phone), which
+  also duplicates, renames and deletes them; deleting one leaves its cards
+  open where they are.
 - **A card** is written in where it stands — there is no Edit and no
   Preview. Its body reads as what it says, and is edited as it reads: as
   an **Outline** (Prism's outline editor, the Mac's and the phone's) where

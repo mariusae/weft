@@ -322,7 +322,7 @@ public final class WikiStore {
 
     /// A sync wrote files: the pages among them are read again. Drafts
     /// stay as they are, to be put together with them when saved.
-    private func pulled(_ paths: [String]) {
+    public func pulled(_ paths: [String]) {
         guard let wiki else { return }
         for path in paths where PageFolder.isPage(path) { wiki.reload(path: path) }
         refreshLinkNotes(paths.filter { $0.hasSuffix(".md") })
@@ -331,7 +331,7 @@ public final class WikiStore {
         savedVersion += 1
         for river in rivers {
             guard let name = river.name, saved.contains(Self.riverPath(name)) else { continue }
-            if let cards = savedRiver(name) { river.savedChanged(cards) } else { river.forget() }
+            if let saved = savedRiver(name) { river.savedChanged(saved) } else { river.forget() }
         }
     }
 
@@ -500,9 +500,9 @@ public final class WikiStore {
 
     // MARK: Folds
 
-    /// Which rows of a page's outline are folded, kept on this device — as
-    /// Prism keeps a note's — so a card closed and opened again comes back
-    /// folded as it was left.
+    /// Which rows of a page's outline were folded last on this device — as
+    /// Prism keeps a note's: how a card opens in a river that has no folds
+    /// of its own for it. A river keeps its own, as it keeps its cards.
     public func folds(of title: String) -> [OutlineFolds.Mark] {
         guard let key = foldsKey(title), let data = UserDefaults.standard.data(forKey: key) else { return [] }
         return (try? JSONDecoder().decode([OutlineFolds.Mark].self, from: data)) ?? []
@@ -862,20 +862,18 @@ public final class WikiStore {
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
-    /// A saved river's cards, as its file has them.
-    public func savedRiver(_ name: String) -> [String]? {
+    /// A saved river — its cards, and what is folded of them — as its file has it.
+    func savedRiver(_ name: String) -> SavedRiver? {
         guard let file = riverFile(name), let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
-        return text.components(separatedBy: .newlines).compactMap { line in
-            let line = line.trimmingCharacters(in: .whitespaces)
-            guard let start = line.range(of: "[["), let end = line.range(of: "]]", range: start.upperBound..<line.endIndex) else { return nil }
-            let title = String(line[start.upperBound..<end.lowerBound])
-            return title.isEmpty ? nil : title
-        }
+        return SavedRiver(text: text)
     }
 
-    private func writeSavedRiver(_ name: String, _ cards: [String]) -> Bool {
+    /// A saved river's cards, as its file has them.
+    public func savedCards(_ name: String) -> [String]? { savedRiver(name)?.cards }
+
+    private func writeSavedRiver(_ name: String, _ river: SavedRiver) -> Bool {
         guard let file = riverFile(name) else { return false }
-        let text = cards.map { "- [[\($0)]]\n" }.joined()
+        let text = river.text
         if (try? String(contentsOf: file, encoding: .utf8)) == text { return true }
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -888,27 +886,27 @@ public final class WikiStore {
         return true
     }
 
-    /// A river's cards changed: its file says so.
-    func keepSavedRiver(_ name: String, _ cards: [String]) {
-        _ = writeSavedRiver(name, cards)
+    /// A river's cards changed, or what is folded of them: its file says so.
+    func keepSavedRiver(_ name: String, _ river: SavedRiver) {
+        _ = writeSavedRiver(name, river)
     }
 
     /// A river saved under a name no other has. The name it was saved under.
-    func addSavedRiver(_ name: String, _ cards: [String]) -> String? {
+    func addSavedRiver(_ name: String, _ river: SavedRiver) -> String? {
         guard let name = Self.riverName(name) else { return nil }
         guard !savedRivers().contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else {
             error = "There is already a river called “\(name)”."
             return nil
         }
-        guard writeSavedRiver(name, cards) else { return nil }
+        guard writeSavedRiver(name, river) else { return nil }
         savedVersion += 1
         return name
     }
 
     /// A copy of a saved river, under a new name — not opened.
     public func cloneSavedRiver(_ name: String, as new: String) {
-        guard let cards = savedRiver(name) else { return }
-        _ = addSavedRiver(new, cards)
+        guard let river = savedRiver(name) else { return }
+        _ = addSavedRiver(new, river)
     }
 
     /// A name for a copy of a saved river: “Work copy”, “Work copy 2”…
@@ -967,11 +965,11 @@ public final class WikiStore {
 
     /// Changes the cards of the saved rivers no river shows — the ones
     /// shown change with their river.
-    private func reviseSavedRivers(_ change: ([String]) -> [String]) {
+    private func reviseSavedRivers(_ change: (SavedRiver) -> SavedRiver) {
         for name in savedRivers() where river(named: name) == nil {
-            guard let cards = savedRiver(name) else { continue }
-            let revised = change(cards)
-            if revised != cards { _ = writeSavedRiver(name, revised) }
+            guard let saved = savedRiver(name) else { continue }
+            let revised = change(saved)
+            if revised != saved { _ = writeSavedRiver(name, revised) }
         }
     }
 
@@ -1195,7 +1193,7 @@ public final class WikiStore {
         createdWhileEditing.remove(title)
         if tiddler.title != title {
             for river in rivers { river.renamed(title, to: tiddler.title) }
-            reviseSavedRivers { $0.map { $0 == title ? tiddler.title : $0 } }
+            reviseSavedRivers { $0.renaming(title, to: tiddler.title) }
         }
     }
 
@@ -1302,7 +1300,7 @@ public final class WikiStore {
         }
         for river in rivers { river.removed(title) }
         dropDraft(title)
-        reviseSavedRivers { $0.filter { $0 != title } }
+        reviseSavedRivers { $0.removing(title) }
         sync?.noteChanged()
     }
 

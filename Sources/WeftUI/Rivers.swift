@@ -305,7 +305,7 @@ struct RiversPanel: View {
     }
 
     private func row(_ name: String) -> some View {
-        let count = store.savedRiver(name)?.count ?? 0
+        let count = store.savedCards(name)?.count ?? 0
         let open = store.river(named: name) != nil
         return Button {
             river.riversShown = false
