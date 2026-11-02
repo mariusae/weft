@@ -590,7 +590,7 @@ public final class River: Identifiable {
 
     /// A link to a saved river followed: the river brought back — to the
     /// front where it shows, else beside this one.
-    func follow(river name: String) {
+    public func follow(river name: String) {
         guard let saved = store.savedRiverName(name) else {
             store.error = "No saved river is called “\(name)”. Save a river under that name, and the link leads to it."
             return

@@ -109,6 +109,7 @@ struct RiverTabs: View {
         }
         if let name = river.name {
             Button("Copy Link to River") { Platform.copy(RiverLink.link(name)) }
+            Button("Copy River Address") { Platform.copy(RiverLink.url(name).absoluteString) }
         }
         Divider()
         Button("Move Tab to New Window") { moveToWindow(river) }

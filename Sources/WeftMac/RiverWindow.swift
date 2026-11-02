@@ -64,6 +64,10 @@ struct RiverWindow: View {
                 for river in rivers.rivers { store.release(river) }
             }
             .onChange(of: store.loadedRoot) { restore() }
+            // An address opened — `weft://river/…` — comes to a window open,
+            // not one opened for it.
+            .followingRiverAddresses(rivers)
+            .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
     }
 
     /// The window's rivers, once the graph is read: as kept under its name;

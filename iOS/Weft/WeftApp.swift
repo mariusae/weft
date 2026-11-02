@@ -83,6 +83,7 @@ private struct WindowRivers: View {
             }
             .onDisappear { Self.open.remove(scene) }
             .onChange(of: store.loadedRoot) { rivers.load() }
+            .followingRiverAddresses(rivers)
     }
 }
 

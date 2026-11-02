@@ -38,6 +38,7 @@ struct InRiversRow: View {
                         .help("Bring back the river “\(name)”")
                         .contextMenu {
                             Button("Copy Link to River", systemImage: "link") { Platform.copy(RiverLink.link(name)) }
+                            Button("Copy River Address", systemImage: "safari") { Platform.copy(RiverLink.url(name).absoluteString) }
                         }
                     }
                 }

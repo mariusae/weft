@@ -163,6 +163,7 @@ struct RiverSetMenu: View {
             }
             if let name = current.name {
                 Button("Copy Link to River", systemImage: "link") { Platform.copy(RiverLink.link(name)) }
+                Button("Copy River Address", systemImage: "safari") { Platform.copy(RiverLink.url(name).absoluteString) }
             }
             Button("Saved Rivers…", systemImage: "tray.full") { current.riversShown = true }
         }
@@ -342,6 +343,7 @@ struct RiversPanel: View {
                 river.recall(name)
             }
             Button("Copy Link", systemImage: "link") { Platform.copy(RiverLink.link(name)) }
+            Button("Copy Address", systemImage: "safari") { Platform.copy(RiverLink.url(name).absoluteString) }
             if !linking.isEmpty {
                 Menu("Linked From", systemImage: "arrow.turn.down.left") {
                     ForEach(linking, id: \.self) { page in
@@ -463,5 +465,41 @@ private struct RiverNaming: ViewModifier {
         case .clone(let name): store.cloneSavedRiver(name, as: text)
         case nil: break
         }
+    }
+}
+
+/// `weft://river/Name`, opened from anywhere: that saved river brought back
+/// from this window's rivers — once the graph is read, for an address that
+/// opened Weft.
+struct RiverAddresses: ViewModifier {
+    @Environment(WikiStore.self) private var store
+    let rivers: RiverSet
+    @State private var waiting: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onOpenURL { url in
+                guard let name = RiverLink.name(from: url) else { return }
+                waiting = name
+                follow()
+            }
+            .onChange(of: store.loadedRoot) { follow() }
+    }
+
+    private func follow() {
+        guard waiting != nil, store.loadedRoot != nil else { return }
+        // After the window's rivers are put back, which the graph read also asks.
+        DispatchQueue.main.async {
+            guard let name = waiting else { return }
+            waiting = nil
+            rivers.current.follow(river: name)
+        }
+    }
+}
+
+extension View {
+    /// Brings back the saved river a `weft://river/…` address names.
+    public func followingRiverAddresses(_ rivers: RiverSet) -> some View {
+        modifier(RiverAddresses(rivers: rivers))
     }
 }

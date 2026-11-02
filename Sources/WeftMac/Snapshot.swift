@@ -80,6 +80,17 @@ enum Snapshot {
                 }
             }
         }
+        // `WEFT_ADDRESS=weft://…`: the address opened, as a click on it
+        // elsewhere would — sent to this process alone, not any Weft.
+        if let address = environment["WEFT_ADDRESS"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                let event = NSAppleEventDescriptor(eventClass: AEEventClass(kInternetEventClass), eventID: AEEventID(kAEGetURL),
+                                                   targetDescriptor: NSAppleEventDescriptor(processIdentifier: getpid()),
+                                                   returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
+                event.setParam(NSAppleEventDescriptor(string: address), forKeyword: keyDirectObject)
+                _ = try? event.sendEvent(options: [.noReply], timeout: 5)
+            }
+        }
         for tab in environment["WEFT_TABS"]?.split(separator: ";") ?? [] {
             rivers?.add(River.State(graph: store.root?.path ?? "", cards: tab.split(separator: "|").map(String.init)))
         }
