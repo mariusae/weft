@@ -108,6 +108,15 @@ enum Snapshot {
                     view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
                     view.insertText(typed, replacementRange: view.selectedRange())
                 }
+                // `WEFT_MARKED`: words being dictated, not yet taken, at the end.
+                if let marked = environment["WEFT_MARKED"], let view = NSApp.windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first {
+                    view.setSelectedRange(NSRange(location: (view.string as NSString).length - 1, length: 0))
+                    view.setMarkedText(marked, selectedRange: NSRange(location: (marked as NSString).length, length: 0), replacementRange: view.selectedRange())
+                    // `WEFT_COMMIT`: then taken, as dictation takes its words when done.
+                    if environment["WEFT_COMMIT"] != nil {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { view.insertText(marked, replacementRange: view.markedRange()) }
+                    }
+                }
             }
         }
         let delay = Double(environment["WEFT_DELAY"] ?? "") ?? 2.5
