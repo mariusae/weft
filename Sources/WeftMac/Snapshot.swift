@@ -70,7 +70,9 @@ enum Snapshot {
         // `WEFT_RECALL`: a saved river brought back, folded as its file says;
         // `WEFT_PULL=<file>`, a moment later its file as a sync would bring it.
         if let name = environment["WEFT_RECALL"] {
-            river.closeAll()
+            // Emptied without writing: were it that river already, closing
+            // its cards would empty its file.
+            river.restore(River.State(graph: store.root?.path ?? "", cards: []))
             river.restore(River.State(graph: store.root?.path ?? "", name: name, cards: []))
             if let pulled = environment["WEFT_PULL"], let root = store.root {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
@@ -108,6 +110,14 @@ enum Snapshot {
                     view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
                     view.insertText(typed, replacementRange: view.selectedRange())
                 }
+                // `WEFT_KEY=cmd-return`: what ⌘↩, Format ▸ Checklist Item, sends
+                // the card being written in — sent it straight, the window
+                // not being key in a snapshot.
+                if environment["WEFT_KEY"] == "cmd-return", let view = NSApp.windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first {
+                    _ = view.tryToPerform(Selector(("cycleChecklist:")), with: nil)
+                }
+                // `WEFT_SWITCH`: the card being written in switched to text, or outline.
+                if environment["WEFT_SWITCH"] != nil { river.toggleEditorMode() }
                 // `WEFT_MARKED`: words being dictated, not yet taken, at the end.
                 if let marked = environment["WEFT_MARKED"], let view = NSApp.windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first {
                     view.setSelectedRange(NSRange(location: (view.string as NSString).length - 1, length: 0))

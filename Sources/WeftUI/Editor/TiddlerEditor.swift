@@ -80,21 +80,26 @@ final class EditorController {
 
     /// A line to check off: a list item becomes one, an open one done, a
     /// done one a plain item again.
-    func cycleChecklist() {
+    func cycleChecklist() { cycleBox("-") }
+
+    /// A task, as Reflect writes them — `+ [ ]` — the same way round.
+    func cycleTask() { cycleBox("+") }
+
+    private func cycleBox(_ marker: String) {
         guard let (range, lines) = selectedLines() else { return }
         var shift = 0
         let changed = lines.enumerated().map { index, line -> String in
             let indent = line.prefix { $0 == " " || $0 == "\t" }
             let body = line.dropFirst(indent.count)
             let next: String
-            if body.hasPrefix("- [ ] ") {
-                next = indent + "- [x] " + body.dropFirst(6)
-            } else if body.hasPrefix("- [x] ") || body.hasPrefix("- [X] ") {
+            if body.hasPrefix("\(marker) [ ] ") {
+                next = indent + "\(marker) [x] " + body.dropFirst(6)
+            } else if body.hasPrefix("\(marker) [x] ") || body.hasPrefix("\(marker) [X] ") {
                 next = indent + "- " + body.dropFirst(6)
-            } else if body.hasPrefix("- ") {
-                next = indent + "- [ ] " + body.dropFirst(2)
+            } else if let item = ["- [ ] ", "- [x] ", "- [X] ", "+ [ ] ", "+ [x] ", "+ [X] ", "- ", "* ", "+ "].first(where: body.hasPrefix) {
+                next = indent + "\(marker) [ ] " + body.dropFirst(item.count)
             } else {
-                next = indent + "- [ ] " + body
+                next = indent + "\(marker) [ ] " + body
             }
             if index == 0 { shift = (next as NSString).length - (line as NSString).length }
             return next
@@ -442,6 +447,10 @@ final class TiddlerTextView: NSTextView {
         menu.addItem(ActionItem(title: "Copy Link") { Platform.copy(title.map { "[[\($0)]]" } ?? url.absoluteString) })
         return menu
     }
+
+    /// Format ▸ Checklist Item and Task, ⌘↩ and ⇧⌘↩: as the outline's.
+    @objc func cycleChecklist(_ sender: Any?) { controller?.cycleChecklist() }
+    @objc func cycleTask(_ sender: Any?) { controller?.cycleTask() }
 
     /// ⌘B, ⌘I, ⌘K: bold, italic, a link — there being no bar of buttons.
     override func keyDown(with event: NSEvent) {

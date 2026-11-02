@@ -195,6 +195,18 @@ struct RiverCommands: Commands {
                 .keyboardShortcut("r")
                 .disabled(store.sync == nil)
         }
+        // As Prism's: the row, or line, the caret is on made one to check
+        // off, then checked, then a plain item again — the outline's own
+        // command, or the text editor's.
+        CommandMenu("Format") {
+            Button("Checklist Item") { NSApp.sendAction(Selector(("cycleChecklist:")), to: nil, from: nil) }
+                .keyboardShortcut(.return, modifiers: .command)
+                // Quick Open's ⌘↩ while it shows: a new tab.
+                .disabled(river?.isWritingAny != true || river?.quickOpenShown == true)
+            Button("Task") { NSApp.sendAction(Selector(("cycleTask:")), to: nil, from: nil) }
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .disabled(river?.isWritingAny != true || river?.quickOpenShown == true)
+        }
         CommandMenu("Story") {
             Button("Today") { river?.openToday() }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
@@ -202,9 +214,7 @@ struct RiverCommands: Commands {
             Button("Write in Selected Card") { river?.toggleEditing() }
                 .disabled(river?.cards.isEmpty ?? true)
             Button("Switch Between Outline and Text") { river?.toggleEditorMode() }
-                .keyboardShortcut(.return, modifiers: .command)
-                // Quick Open's ⌘↩ while it shows: a new tab.
-                .disabled(river?.cards.isEmpty ?? true || river?.quickOpenShown == true)
+                .disabled(river?.cards.isEmpty ?? true)
             Button("Close All Cards") { river?.closeAll() }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
             Divider()

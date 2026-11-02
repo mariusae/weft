@@ -1092,6 +1092,14 @@ public final class WikiStore {
     /// asked for.
     public enum EditorMode: String, CaseIterable, Sendable {
         case text = "Text", outline = "Outline"
+
+        /// What the switch in a card's header shows for it.
+        public var symbol: String {
+            switch self {
+            case .text: "text.alignleft"
+            case .outline: "list.bullet.indent"
+            }
+        }
     }
 
     /// Cards switched from how they would be edited, by title: each card

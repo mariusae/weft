@@ -313,7 +313,9 @@ struct Card: View {
         return HStack(spacing: 8) {
             #if os(macOS)
             Picker("", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
-                ForEach(WikiStore.EditorMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                ForEach(WikiStore.EditorMode.allCases, id: \.self) { mode in
+                    Label(mode.rawValue, systemImage: mode.symbol).labelStyle(.iconOnly).tag(mode)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -321,7 +323,7 @@ struct Card: View {
             .controlSize(.small)
             .padding(3)
             .glassEffect(.regular.interactive(), in: .capsule)
-            .help("Write as Text, or as an Outline of rows")
+            .help("Write as text, or as an outline of rows")
             #else
             if writing {
                 // Writing on the phone: Done, the keyboard put away.
@@ -383,7 +385,7 @@ struct Card: View {
             #if os(iOS)
             // The Mac's switch in the header, on the phone in here: no room beside the title.
             Picker("Write As", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
-                ForEach(WikiStore.EditorMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                ForEach(WikiStore.EditorMode.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.symbol).tag($0) }
             }
             #endif
             Divider()

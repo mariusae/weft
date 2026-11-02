@@ -119,7 +119,7 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   an **Outline** (Prism's outline editor, the Mac's and the phone's) where
   the outline would write it back as it is, else as **Text** (Markdown,
   its markup showing only on the lines the caret is on) — the switch in
-  its header, ⌘↩ on the Mac, or on the phone in its menu. In both, links and tags are pills, as Slack draws them: an
+  its header (on the Mac, two icons: lines of text, and an indented list), or on the phone in its menu. In both, links and tags are pills, as Slack draws them: an
   icon for a page, a day or the web, an address shortened to its site and
   the ends of its path; a click (or tap) follows one, and on the Mac a
   right-click opens or copies it. What is written saves itself a moment
@@ -154,7 +154,9 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   (Text: a list, a checklist, a link, an embed, a callout; Outline:
   Prism's), Aa for bold, italic, struck, highlighted, code, a heading or a
   quote, and Done. ⌘B, ⌘I and ⌘K do bold,
-  italic and a link. Tags offer the ones already in use. Escape takes the
+  italic and a link; ⌘↩ makes the row or line a checklist item, then
+  checks it, then makes it a plain item again (Format ▸ Checklist Item), and
+  ⇧⌘↩ a task, as Prism's do. Tags offer the ones already in use. Escape takes the
   caret out. A save writes only what changed in the file.
 - **Quick Open** (⌘O): a tiddler, note or day by what is typed — today and
   the tiddlers written last, with nothing typed — opened in the river (⌘↩
