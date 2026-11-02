@@ -49,6 +49,11 @@ struct QuickOpen: View {
     /// open in the river already.
     private func detail(_ target: LinkTarget) -> String {
         if target.kind == .new { return "New page" }
+        if target.kind == .river, let name = RiverLink.name(target.title) {
+            let count = store.savedCards(name)?.count ?? 0
+            let showing = store.river(named: name) != nil
+            return (showing ? "Open · " : "") + "Saved river · \(count == 1 ? "1 card" : "\(count) cards")"
+        }
         let entry = store.pages?.entries[target.title]
         var words: [String] = []
         if river.cards.contains(target.title) { words.append("Open") }
@@ -70,7 +75,7 @@ struct QuickOpen: View {
 
     private func open(_ target: LinkTarget, inNewTab: Bool = false) {
         river.quickOpenShown = false
-        if inNewTab, target.kind != .new {
+        if inNewTab, target.kind != .new, target.kind != .river {
             river.openNew(River.State(graph: store.root?.path ?? "", cards: [target.title]))
             return
         }

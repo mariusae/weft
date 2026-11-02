@@ -296,6 +296,21 @@ import ReflectCore
         #expect(store.target("rivers/Weft work").kind == .river && store.shownTitle("rivers/Weft work") == "Weft work")
     }
 
+    @Test func riversAreFoundAndSayWhatTheyHoldAndWhatLinksThem() {
+        let one = river(["Alpha", "Beta"])
+        one.save(as: "Weft work")
+        let two = river(["Beta"])
+        two.save(as: "Taxes")
+        #expect(store.rivers(holding: "Beta") == ["Taxes", "Weft work"])
+        #expect(store.rivers(holding: "Gamma").isEmpty)
+        // As the rivers change, so does what they hold.
+        one.open("Gamma")
+        #expect(store.rivers(holding: "Gamma") == ["Weft work"])
+        #expect(store.quickOpen("weft").contains { $0.kind == .river && $0.shown == "Weft work" })
+        write("Plans", "See [[rivers/Taxes]].")
+        #expect(store.linking(toRiver: "Taxes") == ["Plans"])
+    }
+
     @Test func quickOpenListsTodayOnce() {
         write(Day.today.description, "- written today\n")
         let titles = store.quickOpen("").map(\.title)

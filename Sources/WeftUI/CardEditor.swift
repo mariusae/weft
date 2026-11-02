@@ -51,6 +51,8 @@ struct CardEditor: View {
             editor(page)
             // Related without a link: pages named in its frontmatter, or naming it.
             if page != nil || addingRelated { RelatedRow(title: title, adding: $addingRelated) }
+            // The saved rivers it is a card of, but this one.
+            if page != nil { InRiversRow(title: title) }
             if let page { foot(page, specs: specs) }
         }
         .onChange(of: focus) { _, now in

@@ -98,7 +98,10 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   `[[` offers the saved rivers its words name; a tab dragged into a card
   writes a link to its river there (an unsaved river's cards, a link a
   row); and **Copy Link to River** is in a tab's menu, the phone's river
-  menu, and each saved river's.
+  menu, and each saved river's. Quick Open finds saved rivers by name; a card shows,
+  under what it is related to, the other saved rivers it is a card of
+  (**In Rivers**); and Saved Rivers says how many pages link to each,
+  listed in its menu.
 - **A card** is written in where it stands — there is no Edit and no
   Preview. Its body reads as what it says, and is edited as it reads: as
   an **Outline** (Prism's outline editor, the Mac's and the phone's) where

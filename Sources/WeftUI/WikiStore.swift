@@ -840,7 +840,26 @@ public final class WikiStore {
     static func riverPath(_ name: String) -> String { RiverLink.path(name) }
 
     /// Bumped when a saved river comes, goes, or changes.
-    public private(set) var savedVersion = 0
+    public private(set) var savedVersion = 0 {
+        didSet { savedCardsKept = nil }
+    }
+    /// Each saved river's cards, read once and kept until a river changes.
+    @ObservationIgnored private var savedCardsKept: [String: [String]]?
+
+    /// The saved rivers a page is a card of, by name.
+    public func rivers(holding title: String) -> [String] {
+        _ = savedVersion
+        let kept = savedCardsKept ?? Dictionary(uniqueKeysWithValues: savedRivers().map { ($0, savedCards($0) ?? []) })
+        savedCardsKept = kept
+        return kept.filter { $0.value.contains(title) }.map(\.key)
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// The pages linking to a saved river.
+    public func linking(toRiver name: String) -> [String] {
+        _ = graphVersion
+        return wiki?.backlinks(to: RiverLink.target(name)) ?? []
+    }
 
     private func riverFile(_ name: String) -> URL? {
         root?.appendingPathComponent(Self.riverPath(name))
@@ -884,6 +903,7 @@ public final class WikiStore {
             self.error = "Couldn't save the river “\(name)”: \(error.localizedDescription)"
             return false
         }
+        savedVersion += 1
         sync?.noteChanged()
         return true
     }
@@ -1479,6 +1499,8 @@ extension WikiStore {
             return [today] + recent().map(target).filter { $0.title != today.title }.prefix(limit - 1)
         }
         var found = (wiki?.search(query, limit: limit) ?? []).map(target)
+        // Saved rivers the words name, among the best pages.
+        if let root { found.insert(contentsOf: RiverLink.matching(query, in: root, limit: 3).map(riverTarget), at: min(3, found.count)) }
         if let day = dayTarget(query), !found.contains(day) {
             found.insert(day, at: 0)
         } else if let day = DayQuery.day(query).map({ dayTarget($0.description)! }), !found.contains(day) {

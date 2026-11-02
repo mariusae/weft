@@ -311,6 +311,7 @@ struct RiversPanel: View {
     private func row(_ name: String) -> some View {
         let count = store.savedCards(name)?.count ?? 0
         let open = store.river(named: name) != nil
+        let linking = store.linking(toRiver: name)
         return Button {
             river.riversShown = false
             river.recall(name)
@@ -321,7 +322,7 @@ struct RiversPanel: View {
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(name).lineLimit(1)
-                    Text(count == 1 ? "1 card" : "\(count) cards")
+                    Text((count == 1 ? "1 card" : "\(count) cards") + (linking.isEmpty ? "" : " · linked from \(linking.count)"))
                         .font(.caption)
                         .foregroundStyle(Ink.secondary.color)
                 }
@@ -341,6 +342,16 @@ struct RiversPanel: View {
                 river.recall(name)
             }
             Button("Copy Link", systemImage: "link") { Platform.copy(RiverLink.link(name)) }
+            if !linking.isEmpty {
+                Menu("Linked From", systemImage: "arrow.turn.down.left") {
+                    ForEach(linking, id: \.self) { page in
+                        Button(store.shownTitle(page)) {
+                            river.riversShown = false
+                            river.open(page)
+                        }
+                    }
+                }
+            }
             Button("Duplicate…", systemImage: "plus.square.on.square") { ask(.clone(name)) }
             Button("Rename…", systemImage: "pencil") { ask(.rename(name)) }
             Divider()
