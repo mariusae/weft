@@ -95,7 +95,8 @@ struct OutlineCardEditor: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView editor: PageOutlineEditor, context: Context) -> CGSize? {
-        let width = proposal.width ?? 600
+        // Its ideal width the one it has: measured at another, it is laid out again twice.
+        let width = proposal.width ?? (editor.bounds.width > 0 ? editor.bounds.width : 600)
         return CGSize(width: width, height: editor.height(forWidth: width))
     }
 }

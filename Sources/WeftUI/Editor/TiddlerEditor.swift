@@ -709,16 +709,23 @@ private struct EditorRepresentable: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: TiddlerTextView, context: Context) -> CGSize? {
-        let width = proposal.width ?? 600
+        // Its ideal width the one it has: measured at another, it is laid out again twice.
+        let width = proposal.width ?? (view.bounds.width > 0 ? view.bounds.width : 600)
         guard let container = view.textContainer, let layout = view.layoutManager else { return nil }
-        let containerWidth = max(50, width - view.textContainerInset.width * 2)
-        if abs(container.containerSize.width - containerWidth) > 0.5 {
-            container.containerSize = NSSize(width: containerWidth, height: .greatestFiniteMagnitude)
-            context.coordinator.live?.attachments.place()
+        func fit(_ width: CGFloat) {
+            let containerWidth = max(50, width - view.textContainerInset.width * 2)
+            if abs(container.containerSize.width - containerWidth) > 0.5 {
+                container.containerSize = NSSize(width: containerWidth, height: .greatestFiniteMagnitude)
+                context.coordinator.live?.attachments.place()
+            }
         }
+        fit(width)
         layout.ensureLayout(for: container)
         var height = layout.usedRect(for: container).height
         height = max(height, context.coordinator.live?.attachments.bottom ?? 0, ceil(styler.size * 1.5))
+        // Asked of another width than it has, laid out again at its own:
+        // else it is drawn wrapped as it was asked, past its frame or short of it.
+        if view.bounds.width > 0, abs(view.bounds.width - width) > 0.5 { fit(view.bounds.width) }
         return CGSize(width: width, height: ceil(height) + view.textContainerInset.height * 2)
     }
 
