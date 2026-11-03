@@ -18,17 +18,52 @@ struct QuickOpen: View {
     @State private var selected = 0
     @FocusState private var focused: Bool
 
+    #if os(macOS)
+    /// The window it is in: what has the keys there — a card being written
+    /// in, whose text is in a view of the river's own — is made to let go.
+    @State private var window: NSWindow?
+    #endif
+
     var body: some View {
         content
             .onChange(of: query) { selected = 0 }
-            .task {
+            #if os(macOS)
+            .background(WindowReader { window = $0 })
+            #endif
+            // Each time it is asked for — shown already or not, in this tab or
+            // another's — its field takes the keys.
+            .task(id: "\(river.id) \(river.quickOpenAsked)") {
                 // Once it is on screen: on the phone, asked at once, the keys don't come.
                 #if os(iOS)
                 try? await Task.sleep(for: .milliseconds(100))
-                #endif
                 focused = true
+                #else
+                for _ in 0..<5 where window == nil { await Task.yield() }
+                // Asked again, should what had the keys keep them.
+                for _ in 0..<3 {
+                    takeKeys()
+                    try? await Task.sleep(for: .milliseconds(60))
+                    if hasKeys { break }
+                }
+                #endif
             }
     }
+
+    #if os(macOS)
+    /// Whether its field has the keys: the window's field editor is its.
+    private var hasKeys: Bool {
+        (window?.firstResponder as? NSTextView)?.isFieldEditor == true && focused
+    }
+
+    /// The keys to its field: what had them — a card being written in, in a
+    /// view of the river's own, which SwiftUI's focus would not move them
+    /// from — let go first.
+    private func takeKeys() {
+        if let window, (window.firstResponder as? NSTextView)?.isFieldEditor != true { window.makeFirstResponder(nil) }
+        focused = false
+        focused = true
+    }
+    #endif
 
     /// What is found, and a new tiddler of the name typed when none has it.
     private var found: [LinkTarget] {

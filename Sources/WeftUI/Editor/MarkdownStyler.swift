@@ -141,15 +141,23 @@ struct MarkdownStyler {
         let clamped = NSRange(location: min(selection.location, text.length), length: min(selection.length, text.length - min(selection.location, text.length)))
         var range = text.paragraphRange(for: clamped)
         var start: Int?
-        // The query blocks, found by their fences, that the range touches.
-        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: [.byParagraphs]) { line, _, enclosing, _ in
-            guard let line, line.hasPrefix("```") else { return }
+        // The query blocks, found by their fences, that the range touches —
+        // from fence to fence, not through every line.
+        var at = 0
+        while at < text.length {
+            let found = text.range(of: "```", options: .literal, range: NSRange(location: at, length: text.length - at))
+            guard found.location != NSNotFound else { break }
+            let enclosing = text.paragraphRange(for: NSRange(location: found.location, length: 0))
+            at = NSMaxRange(enclosing)
+            guard enclosing.location == found.location else { continue }
             if let opened = start {
                 let block = NSRange(location: opened, length: NSMaxRange(enclosing) - opened)
                 if NSIntersectionRange(block, range).length > 0 || NSLocationInRange(range.location, block) { range = NSUnionRange(range, block) }
                 start = nil
-            } else if line.dropFirst(3).trimmingCharacters(in: .whitespaces) == "query" {
-                start = enclosing.location
+            } else {
+                var line = enclosing
+                while line.length > 0, [10, 13].contains(text.character(at: NSMaxRange(line) - 1)) { line.length -= 1 }
+                if text.substring(with: line).dropFirst(3).trimmingCharacters(in: .whitespaces) == "query" { start = enclosing.location }
             }
         }
         return range
@@ -202,18 +210,45 @@ struct MarkdownStyler {
         // A list's item: set in by its depth — the spaces that say so taking
         // no room — its lines hanging after its bullet, which is faint, and
         // drawn as a bullet off the caret's line. What it says is after it.
+        // A task — `- [ ]`, Reflect's `+ [ ]` — is drawn off it as the
+        // outline draws one, a box or a ring in its marker's place, there to
+        // be checked; done, its words struck through.
         var content = line
-        if let match = Self.matches(#"^([ \t]*)([-*+]|\d+[.)])\s(?:\[[ xX]\]\s)?"#, in: line).first {
+        if let match = Self.matches(#"^([ \t]*)([-*+]|\d+[.)])\s(?:\[([ xX])\]\s)?"#, in: line).first {
             let lead = match.range(at: 1)
             let depth = CGFloat(nsLine.substring(with: lead).reduce(0) { $0 + ($1 == "\t" ? 2 : 1) } / 2)
             if lead.length > 0 { storage.addAttributes(Self.hidden, range: sub(lead)) }
             let marker = NSRange(location: lead.upperBound, length: match.range.upperBound - lead.upperBound)
             storage.addAttribute(.foregroundColor, value: Palette.faint, range: sub(marker))
             let bullet = match.range(at: 2)
-            if !shown, bullet.length == 1, "-*+".contains(nsLine.substring(with: bullet)) {
+            let check = match.range(at: 3)
+            let font = PlatformFont.systemFont(ofSize: size)
+            var width = (nsLine.substring(with: marker) as NSString).size(withAttributes: [.font: font]).width
+            if check.location != NSNotFound {
+                let open = nsLine.substring(with: check) == " "
+                if !open {
+                    storage.addAttributes([.foregroundColor: Palette.dim, .strikethroughStyle: NSUnderlineStyle.single.rawValue],
+                                          range: sub(NSRange(location: match.range.upperBound, length: nsLine.length - match.range.upperBound)))
+                }
+                if shown {
+                    // Open or done, the same room: its words don't move when it is checked.
+                    let x = ("x" as NSString).size(withAttributes: [.font: font]).width
+                    let space = (" " as NSString).size(withAttributes: [.font: font]).width
+                    if open { storage.addAttribute(.kern, value: x - space, range: sub(check)) }
+                    width += open ? x - space : 0
+                } else {
+                    // Its marker hidden, the room of its bullet the box's and a gap.
+                    storage.addAttributes(Self.hidden, range: sub(marker))
+                    let room = ceil(size * 1.5)
+                    let taken = (nsLine.substring(with: marker) as NSString).size(withAttributes: [.font: Self.hidden[.font]!]).width
+                    storage.addAttribute(.kern, value: room - taken, range: sub(bullet))
+                    let box = NSRange(location: bullet.location, length: NSMaxRange(check) + 1 - bullet.location)
+                    storage.addAttribute(.weftTask, value: TaskBox(done: !open, round: nsLine.substring(with: bullet) == "+", size: size), range: sub(box))
+                    width = room
+                }
+            } else if !shown, bullet.length == 1, "-*+".contains(nsLine.substring(with: bullet)) {
                 storage.addAttribute(.weftBullet, value: true, range: sub(bullet))
             }
-            let width = (nsLine.substring(with: marker) as NSString).size(withAttributes: [.font: PlatformFont.systemFont(ofSize: size)]).width
             look.firstIndent = depth * 20
             look.indent = depth * 20 + ceil(width)
             content = nsLine.substring(from: match.range.upperBound)
@@ -362,7 +397,7 @@ struct MarkdownStyler {
         }
         if look.hidden {
             // Nothing of a hidden line is drawn: its links' pills neither.
-            for key in [NSAttributedString.Key.weftPill, .weftEllipsis, .kern] { storage.removeAttribute(key, range: range) }
+            for key in [NSAttributedString.Key.weftPill, .weftEllipsis, .weftTask, .kern] { storage.removeAttribute(key, range: range) }
         } else {
             for local in concealed { storage.addAttributes(Self.hidden, range: sub(local)) }
         }

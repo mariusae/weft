@@ -6,8 +6,9 @@ import WeftCore
 
 /// How wide each tab is, in the room the title bar gives: all alike while
 /// each can show its name; past that, the others bunched to their icons —
-/// the one under the pointer opened out to its name, as Safari does — and
-/// the one shown taking what is left.
+/// the one under the pointer opened out to its name, as Safari does, and a
+/// saved river's always showing its name — and the one shown taking what
+/// is left.
 enum TabLayout {
     static let spacing: CGFloat = 4
     /// A bunched tab: its icon alone.
@@ -20,16 +21,27 @@ enum TabLayout {
     /// A bunched tab at its tightest.
     static let tightest: CGFloat = 24
 
-    static func widths(count: Int, current: Int, pointed hovered: Int?, in width: CGFloat) -> [CGFloat] {
+    /// A saved river's tab, at its widest: its name cut short past it.
+    static let namedMax: CGFloat = 170
+
+    /// `named`: for each tab, the room a saved river's name needs — nil for one not saved.
+    static func widths(count: Int, current: Int, pointed hovered: Int?, named: [CGFloat?] = [], in width: CGFloat) -> [CGFloat] {
         guard count > 0 else { return [] }
         let gaps = spacing * CGFloat(count - 1)
         let alike = (width - gaps) / CGFloat(count)
         if alike >= readable { return Array(repeating: alike, count: count) }
-        // Bunched tighter, down to an icon's width, before any scroll.
-        let fit = (width - gaps - shownMin - (hovered == nil ? 0 : pointed - bunched)) / CGFloat(max(1, count - 1))
+        // A saved river's name always shown, in the room it needs.
+        func name(_ index: Int) -> CGFloat? {
+            guard index != current, named.indices.contains(index), let needed = named[index] else { return nil }
+            return min(namedMax, max(needed, readable))
+        }
+        let names = (0..<count).compactMap(name)
+        let opened = hovered.flatMap { $0 != current && name($0) == nil ? pointed - bunched : nil } ?? 0
+        // The rest bunched tighter, down to an icon's width, before any scroll.
+        let fit = (width - gaps - shownMin - names.reduce(0, +) - opened) / CGFloat(max(1, count - 1 - names.count))
         let each = min(bunched, max(tightest, fit))
-        var widths = Array(repeating: each, count: count)
-        if let hovered, hovered != current, widths.indices.contains(hovered) { widths[hovered] = pointed }
+        var widths = (0..<count).map { name($0) ?? each }
+        if let hovered, hovered != current, widths.indices.contains(hovered), name(hovered) == nil { widths[hovered] = pointed }
         let others = widths.enumerated().filter { $0.offset != current }.reduce(0) { $0 + $1.element }
         widths[current] = max(shownMin, width - gaps - others)
         return widths
@@ -61,12 +73,13 @@ struct RiverTabs: View {
     var body: some View {
         let all = rivers.rivers
         let current = all.firstIndex { $0 === rivers.current } ?? 0
-        let widths = TabLayout.widths(count: all.count, current: current, pointed: pointed, in: width)
+        let widths = TabLayout.widths(count: all.count, current: current, pointed: pointed,
+                                      named: all.map { $0.name.map(RiverTab.nameWidth) }, in: width)
         let bunched = TabLayout.isBunched(count: all.count, in: width)
         let strip = HStack(spacing: TabLayout.spacing) {
             ForEach(Array(all.enumerated()), id: \.element.id) { index, river in
                 RiverTab(river: river, isCurrent: index == current, closable: all.count > 1,
-                         bunched: bunched && index != current && pointed != index, hovering: pointed == index) {
+                         bunched: bunched && index != current && pointed != index && river.name == nil, hovering: pointed == index) {
                     // At once: no animation to wait out.
                     if river === rivers.current { river.quickOpenShown = true } else { rivers.select(river) }
                 } close: {
@@ -147,6 +160,13 @@ private struct RiverTab: View {
     let hovering: Bool
     let choose: () -> Void
     let close: () -> Void
+
+    /// The room a saved river's tab needs to show its name whole: its
+    /// stack, the name, and the room kept for its ×.
+    static func nameWidth(_ name: String) -> CGFloat {
+        let text = (name as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
+        return ceil(text) + 12 + 6 + 2 * 20
+    }
 
     /// A saved river's stack; else what its top card is — a day, a wiki page, a note.
     private var symbol: String {

@@ -30,7 +30,18 @@ public final class RiverSet {
         rivers = [current]
         hook(current)
         store.adopt(current)
+        // What is waiting to be kept, kept before the app goes.
+        #if os(macOS)
+        let leaving = NSApplication.willTerminateNotification
+        #else
+        let leaving = UIApplication.didEnterBackgroundNotification
+        #endif
+        leavingObserver = NotificationCenter.default.addObserver(forName: leaving, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.keepNow() }
+        }
     }
+
+    @ObservationIgnored private var leavingObserver: Any?
 
     private var key: String { "Rivers:\(store.root?.path ?? "")" + (scene.isEmpty ? "" : ":\(scene)") }
     /// While the rivers kept are put back: not kept again half put back.
@@ -46,6 +57,8 @@ public final class RiverSet {
     public func load() {
         guard let root = store.loadedRoot else { return }
         loading = true
+        // Kept under this graph's, or this window's, name: written whatever was last.
+        kept = nil
         defer { loading = false; keep() }
         let kept = UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(Kept.self, from: $0) }
         let states = kept?.rivers.isEmpty == false ? kept!.rivers
@@ -128,11 +141,27 @@ public final class RiverSet {
         keep()
     }
 
+    /// Kept a moment after the last change, not as each is made: a tab
+    /// shown, a card scrolled to, are not held up writing every tab out.
     private func keep() {
+        guard !keepWaiting else { return }
+        keepWaiting = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.keepNow() }
+    }
+
+    @ObservationIgnored private var keepWaiting = false
+    /// What was last kept: not written again the same.
+    @ObservationIgnored private var kept: (data: Data?, cards: [String])?
+
+    private func keepNow() {
+        keepWaiting = false
         guard store.loadedRoot != nil, !loading else { return }
-        let kept = Kept(rivers: rivers.map(\.state), current: rivers.firstIndex { $0 === current } ?? 0)
-        UserDefaults.standard.set(try? JSONEncoder().encode(kept), forKey: key)
-        store.lastRiver = current.cards
+        let data = try? JSONEncoder().encode(Kept(rivers: rivers.map(\.state), current: rivers.firstIndex { $0 === current } ?? 0))
+        let cards = current.cards
+        guard kept?.data != data || kept?.cards != cards else { return }
+        if kept?.data != data { UserDefaults.standard.set(data, forKey: key) }
+        if kept?.cards != cards { store.lastRiver = cards }
+        kept = (data, cards)
     }
 }
 

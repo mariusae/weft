@@ -437,9 +437,16 @@ public final class WikiStore {
     /// Whether a page has anything to read: a link note's address, a link, a PDF.
     public func canRead(_ title: String) -> Bool {
         watch(title)
-        guard let root, let text = tiddler(title)?.text, text.contains("http") || text.contains(".pdf") else { return false }
-        return !ReaderSource.all(in: text, root: root).isEmpty
+        guard let root, let text = tiddler(title)?.text, text.containsText("http") || text.containsText(".pdf") else { return false }
+        // Asked each time its card is drawn: the page read once for each text it has.
+        if let known = readable[title], known.text == text { return known.can }
+        let can = !ReaderSource.all(in: text, root: root).isEmpty
+        readable[title] = (text, can)
+        return can
     }
+
+    /// Whether each page asked of could be read, and for what text.
+    @ObservationIgnored private var readable: [String: (text: String, can: Bool)] = [:]
 
     /// A passage highlighted in a page a card links to, written into the
     /// card as Prism writes it: under the link, or a link note's Highlights.
@@ -638,7 +645,7 @@ public final class WikiStore {
         if let cached = tasksCache, cached.version == listsVersion { return cached.groups }
         guard let wiki else { return [] }
         let tasks = wiki.entries.values.flatMap { entry -> [NoteTask] in
-            guard !entry.note.path.hasPrefix("templates/"), entry.page.text.contains("+ [") else { return [] }
+            guard !entry.note.path.hasPrefix("templates/"), entry.page.text.containsText("+ [") else { return [] }
             return Tasks.tasks(in: entry.page.text, path: entry.note.path, entry: entry.note).filter { !$0.done }
         }
         let groups = Tasks.group(tasks, today: .today)
@@ -897,13 +904,19 @@ public final class WikiStore {
 
     /// The saved rivers, by name.
     public func savedRivers() -> [String] {
-        _ = savedVersion
+        let version = savedVersion
         guard let root else { return [] }
+        // Asked by every card as it is drawn: the folder read again only once it changed.
+        if let known = savedRiversRead, known.version == version, known.root == root { return known.names }
         let folder = root.appendingPathComponent(Self.riversFolder)
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        return files.filter { $0.hasSuffix(".md") }.map { String($0.dropLast(3)) }
+        let names = files.filter { $0.hasSuffix(".md") }.map { String($0.dropLast(3)) }
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        savedRiversRead = (version, root, names)
+        return names
     }
+
+    @ObservationIgnored private var savedRiversRead: (version: Int, root: URL, names: [String])?
 
     /// A saved river — its cards, and what is folded of them — as its file has it.
     func savedRiver(_ name: String) -> SavedRiver? {
@@ -1192,7 +1205,8 @@ public final class WikiStore {
     public func updateDraft(_ title: String, _ tiddler: Tiddler) {
         let before = drafts[title]
         drafts[title] = tiddler
-        draftChanged(title, wordsOnly: before.map { Self.sameButWords($0, tiddler) } ?? false)
+        // Emptied, or no longer empty: what shows a placeholder is told.
+        draftChanged(title, wordsOnly: before.map { Self.sameButWords($0, tiddler) && $0.text.isEmpty == tiddler.text.isEmpty } ?? false)
         autosaves[title]?.cancel()
         // A big page takes a while to write and index: written after a
         // longer pause, so typing in it is not stopped short as often.

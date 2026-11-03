@@ -75,12 +75,10 @@ struct CardEditor: View {
         let taken = { river.caretTaken(title) }
         let focused: (Bool) -> Void = { $0 ? river.caretEntered(title) : river.caretLeft(title) }
         ZStack(alignment: .topLeading) {
-            if mode == .outline {
-                OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused)
-            } else {
-                textEditor(wants: wants, taken: taken, focused: focused)
-            }
-            if !river.isWriting(title), (store.isEditing(title) ? store.draft(title) : store.tiddler(title))?.text.isEmpty ?? true {
+            BodyEditor(title: title, mode: mode, controller: controller, wants: wants, taken: taken, focused: focused)
+            // Asked of its head, not its words: told when it comes to be
+            // empty or not, not for each key.
+            if !river.isWriting(title), (store.isEditing(title) ? store.draftHead(title) : store.tiddler(title))?.text.isEmpty ?? true {
                 Text(placeholder(page))
                     .foregroundStyle(Ink.faint.color)
                     .padding(.top, 2)
@@ -93,28 +91,12 @@ struct CardEditor: View {
         .id("\(textSize) \(face)")
     }
 
-    private func textEditor(wants: Bool, taken: @escaping () -> Void, focused: @escaping (Bool) -> Void) -> some View {
-        TiddlerEditor(text: text, controller: controller, card: title,
-                      suggest: { store.linkSuggestions($0) }, exists: { store.linkExists($0) },
-                      onEscape: { Platform.endEditing() },
-                      wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused)
-    }
-
     private func placeholder(_ page: Tiddler?) -> String {
         if store.kind(title) == .day { return "Nothing written on this day yet." }
         if page == nil { return "No tiddler has this title yet. Write here to make it." }
         return "Write here."
     }
 
-    /// The body: as the draft has it, else as saved; a change to it begins the draft.
-    private var text: Binding<String> {
-        Binding {
-            (store.draft(title) ?? store.tiddler(title))?.text ?? ""
-        } set: { value in
-            guard value != (store.draft(title) ?? store.tiddler(title))?.text else { return }
-            store.change(title) { $0.text = value }
-        }
-    }
 
     // MARK: Tags
 
@@ -302,6 +284,41 @@ struct CardEditor: View {
         guard !name.isEmpty, !Tiddler.reservedFields.contains(name), page?[field: name] == nil else { return }
         store.change(title) { $0[field: name] = .text("") }
         store.fieldsShown.insert(title)
+    }
+}
+
+/// A card's body, as text or as an outline: a view of its own, the one
+/// drawn again for each key — its binding reads the words as it is made,
+/// and what reads them is told when they change.
+private struct BodyEditor: View {
+    @Environment(WikiStore.self) private var store
+    let title: String
+    let mode: WikiStore.EditorMode
+    let controller: EditorController
+    let wants: Bool
+    let taken: () -> Void
+    let focused: (Bool) -> Void
+
+    var body: some View {
+        if mode == .outline {
+            OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused)
+        } else {
+            TiddlerEditor(text: text, controller: controller, card: title,
+                          suggest: { store.linkSuggestions($0) }, exists: { store.linkExists($0) },
+                          onEscape: { Platform.endEditing() },
+                          wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused)
+        }
+    }
+
+    /// The body: as the draft has it, else as saved; a change to it begins the draft.
+    private var text: Binding<String> {
+        Binding {
+            (store.draft(title) ?? store.tiddler(title))?.text ?? ""
+        } set: { value in
+            let current = (store.draft(title) ?? store.tiddler(title))?.text
+            guard current.map({ !value.isSameText(as: $0) }) ?? true else { return }
+            store.change(title) { $0.text = value }
+        }
     }
 }
 

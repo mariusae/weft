@@ -104,28 +104,6 @@ extension FocusedValues {
     @Entry var moveTabToWindow: MoveTab?
 }
 
-/// The window a view is in, once it is in one.
-private struct WindowReader: NSViewRepresentable {
-    let found: (NSWindow) -> Void
-
-    func makeNSView(context: Context) -> Reader {
-        let view = Reader()
-        view.found = found
-        return view
-    }
-
-    func updateNSView(_ view: Reader, context: Context) {}
-
-    final class Reader: NSView {
-        var found: (NSWindow) -> Void = { _ in }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            if let window { found(window) }
-        }
-    }
-}
-
 /// The menus' river commands, for the river of the window in front.
 struct RiverCommands: Commands {
     let store: WikiStore

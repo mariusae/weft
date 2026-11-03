@@ -101,7 +101,12 @@ public final class River: Identifiable {
     public var search = ""
     public var searchFocusRequest = 0
     /// Whether ⌘O's Quick Open is showing.
-    public var quickOpenShown = false
+    public var quickOpenShown = false {
+        didSet { if quickOpenShown { quickOpenAsked += 1 } }
+    }
+    /// Bumped each time Quick Open is asked for, shown already or not: its
+    /// field takes the keys again.
+    public private(set) var quickOpenAsked = 0
     /// The card whose pages are being read, beside the river or over it.
     public var reading: String?
     /// Whether the pages deleted lately are showing, to bring back.

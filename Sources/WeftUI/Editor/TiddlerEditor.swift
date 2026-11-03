@@ -1,3 +1,4 @@
+import ReflectCore
 import SwiftUI
 import WeftCore
 #if os(macOS)
@@ -298,6 +299,16 @@ struct SuggestionList: View {
     }
 }
 
+extension TiddlerTextView {
+    /// A task's box clicked: checked, or unchecked — the caret left where it was.
+    func toggleTask(_ check: NSRange) {
+        let selection = self.selection
+        let open = (text as NSString).substring(with: check) == " "
+        replace(check, with: open ? "x" : " ")
+        self.selection = selection
+    }
+}
+
 #if os(macOS)
 
 /// The Mac's text view: a link being typed is finished inline — the rest
@@ -407,30 +418,38 @@ final class TiddlerTextView: NSTextView {
                                        owner: self, userInfo: ["links": true]))
     }
 
-    /// Over a link, the pointer is a hand: it is to be clicked.
+    /// Over a link or a task's box, the pointer is a hand: it is to be clicked.
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        if link(at: convert(event.locationInWindow, from: nil)) != nil { NSCursor.pointingHand.set() }
+        if isClickable(at: convert(event.locationInWindow, from: nil)) { NSCursor.pointingHand.set() }
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        if link(at: convert(event.locationInWindow, from: nil)) != nil {
+        if isClickable(at: convert(event.locationInWindow, from: nil)) {
             NSCursor.pointingHand.set()
         } else {
             super.cursorUpdate(with: event)
         }
     }
 
-    /// A click on a link follows it — once the button comes up without the
-    /// pointer having moved off to drag.
+    /// A click on a link follows it, on a task's box checks it — once the
+    /// button comes up without the pointer having moved off to drag.
     override func mouseDown(with event: NSEvent) {
-        guard event.clickCount == 1, !event.modifierFlags.contains(.shift),
-              let url = link(at: convert(event.locationInWindow, from: nil)) else { return super.mouseDown(with: event) }
+        let point = convert(event.locationInWindow, from: nil)
+        guard event.clickCount == 1, !event.modifierFlags.contains(.shift) else { return super.mouseDown(with: event) }
+        let click: () -> Void
+        if let check = task(at: point) {
+            click = { [weak self] in self?.toggleTask(check) }
+        } else if let url = link(at: point) {
+            click = { [weak self] in self?.onOpenLink(url) }
+        } else {
+            return super.mouseDown(with: event)
+        }
         let start = event.locationInWindow
         while let next = window?.nextEvent(matching: [.leftMouseUp, .leftMouseDragged]) {
             let moved = hypot(next.locationInWindow.x - start.x, next.locationInWindow.y - start.y)
             if next.type == .leftMouseUp {
-                if moved < 4 { onOpenLink(url) }
+                if moved < 4 { click() }
                 return
             }
             if moved >= 4 { return }
@@ -692,10 +711,12 @@ private struct EditorRepresentable: NSViewRepresentable {
         view.suggest = suggest
         view.onEscape = onEscape
         controller.textView = view
-        if view.string != text {
+        // What it was last given or told, the same: not looked at again.
+        if !text.isSameText(as: context.coordinator.shown), !(view.string as NSString).isEqual(to: text) {
             view.string = text
             context.coordinator.live?.changed()
         }
+        context.coordinator.shown = text
         if wantsCaret {
             DispatchQueue.main.async { [onCaretTaken] in
                 guard let window = view.window else { return }
@@ -732,6 +753,8 @@ private struct EditorRepresentable: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: EditorRepresentable
         var live: LiveMarkdown?
+        /// The text the view was last given, or told it has.
+        var shown = ""
 
         init(_ parent: EditorRepresentable) {
             self.parent = parent
@@ -739,7 +762,12 @@ private struct EditorRepresentable: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }
-            parent.text = view.string
+            // Swift's own, once: an NSString's words, bridged, are slow to
+            // go through for all that reads them after — the store, the index.
+            var text = view.string
+            text.makeContiguousUTF8()
+            shown = text
+            parent.text = text
             live?.changed()
         }
 
@@ -883,14 +911,15 @@ final class TiddlerTextView: UITextView {
     }
 }
 
-/// Taps on a text view's links: recognized only on one, and before the
-/// text view's own taps — which would put the caret there — so those wait.
+/// Taps on a text view's links and tasks' boxes: recognized only on one,
+/// and before the text view's own taps — which would put the caret there —
+/// so those wait.
 private final class LinkTap: NSObject, UIGestureRecognizerDelegate {
     let recognizer = UITapGestureRecognizer()
-    private weak var view: UITextView?
+    private weak var view: TiddlerTextView?
     private let open: (URL) -> Void
 
-    init(view: UITextView, open: @escaping (URL) -> Void) {
+    init(view: TiddlerTextView, open: @escaping (URL) -> Void) {
         self.view = view
         self.open = open
         super.init()
@@ -899,13 +928,19 @@ private final class LinkTap: NSObject, UIGestureRecognizerDelegate {
     }
 
     @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
-        guard let view, let url = view.link(at: recognizer.location(in: view)) else { return }
-        open(url)
+        guard let view else { return }
+        let point = recognizer.location(in: view)
+        if let check = view.task(at: point) {
+            view.toggleTask(check)
+        } else if let url = view.link(at: point) {
+            open(url)
+        }
     }
 
     func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
         guard let view else { return false }
-        return view.link(at: recognizer.location(in: view)) != nil
+        let point = recognizer.location(in: view)
+        return view.task(at: point) != nil || view.link(at: point) != nil
     }
 
     func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
@@ -967,10 +1002,12 @@ private struct EditorRepresentable: UIViewRepresentable {
         context.coordinator.parent = self
         view.suggest = suggest
         controller.textView = view
-        if view.text != text {
+        // What it was last given or told, the same: not looked at again.
+        if !text.isSameText(as: context.coordinator.shown), !(view.text as NSString).isEqual(to: text) {
             view.text = text
             context.coordinator.live?.changed()
         }
+        context.coordinator.shown = text
         if wantsCaret {
             DispatchQueue.main.async { [onCaretTaken] in
                 if !view.isFirstResponder {
@@ -992,13 +1029,18 @@ private struct EditorRepresentable: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate, NSTextStorageDelegate {
         var parent: EditorRepresentable
         var live: LiveMarkdown?
+        /// The text the view was last given, or told it has.
+        var shown = ""
 
         init(_ parent: EditorRepresentable) {
             self.parent = parent
         }
 
         func textViewDidChange(_ view: UITextView) {
-            parent.text = view.text
+            var text = view.text ?? ""
+            text.makeContiguousUTF8()
+            shown = text
+            parent.text = text
             live?.changed()
             (view as? TiddlerTextView)?.offerCompletions()
             (view as? TiddlerTextView)?.showUndoState()

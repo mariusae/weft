@@ -9,7 +9,7 @@ import WeftUI
 ///
 /// opens the cards named (the first at the top), edits one, shows Quick Open
 /// with `WEFT_QUICK_OPEN=1`, searches for `WEFT_SEARCH`, opens a tab for each
-/// of `WEFT_TABS="A|B;C"`, saves the river as `WEFT_SAVE_RIVER`, shows the
+/// of `WEFT_TABS="A|B;C;@Saved"`, saves the river as `WEFT_SAVE_RIVER`, shows the
 /// saved rivers with `WEFT_RIVERS=1`, draws the window into the file, and quits.
 @MainActor
 enum Snapshot {
@@ -38,7 +38,10 @@ enum Snapshot {
             }
         }
         // Once the window has put back its river.
-        store.whenLoaded { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { take(store: store) } }
+        store.whenLoaded {
+            if Bench.isAsked { Bench.loaded() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { take(store: store) }
+        }
     }
 
     /// A key like `cmd-shift-k` or `cmd-ctrl-up`, pressed as the app
@@ -60,7 +63,7 @@ enum Snapshot {
             }
         }
         if named[last] != nil, last != "return" { flags.insert([.numericPad, .function]) }
-        let codes: [String: UInt16] = ["return": 36, "up": 126, "down": 125, "left": 123, "right": 124, "k": 40, "d": 2, "b": 11, "l": 37, "9": 25, "0": 29, "8": 28]
+        let codes: [String: UInt16] = ["return": 36, "up": 126, "down": 125, "left": 123, "right": 124, "k": 40, "o": 31, "d": 2, "b": 11, "l": 37, "9": 25, "0": 29, "8": 28]
         guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                                            windowNumber: window.windowNumber, context: nil,
                                            characters: flags.contains(.shift) ? character.uppercased() : character,
@@ -121,8 +124,13 @@ enum Snapshot {
                 _ = try? event.sendEvent(options: [.noReply], timeout: 5)
             }
         }
+        // `@Name`: a saved river, recalled into a tab of its own.
         for tab in environment["WEFT_TABS"]?.split(separator: ";") ?? [] {
-            rivers?.add(River.State(graph: store.root?.path ?? "", cards: tab.split(separator: "|").map(String.init)))
+            if tab.hasPrefix("@") {
+                rivers?.add(River.State(graph: store.root?.path ?? "", name: String(tab.dropFirst()), cards: []))
+            } else {
+                rivers?.add(River.State(graph: store.root?.path ?? "", cards: tab.split(separator: "|").map(String.init)))
+            }
         }
         // `WEFT_TIMING=<n>`: the first two tabs shown in turn n times, each
         // switch's time printed — laid out and drawn — as a click would.
@@ -182,10 +190,19 @@ enum Snapshot {
                 if let click = environment["WEFT_CLICK"]?.split(separator: ",").compactMap({ Double($0) }), click.count == 2,
                    let window = NSApp.windows.first(where: { $0.isVisible }) {
                     let point = NSPoint(x: click[0], y: window.frame.height - click[1])
-                    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                        if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                                          windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
-                            window.sendEvent(event)
+                    let events = [NSEvent.EventType.leftMouseDown, .leftMouseUp].compactMap {
+                        NSEvent.mouseEvent(with: $0, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                    }
+                    // The button's coming up waiting, for a view that follows the
+                    // click itself; the click given to the view under it — the
+                    // window not being key, it would only be made so.
+                    if events.count == 2 {
+                        NSApp.postEvent(events[1], atStart: false)
+                        if let view = window.contentView?.superview?.hitTest(point), !view.acceptsFirstMouse(for: events[0]) {
+                            view.mouseDown(with: events[0])
+                        } else {
+                            window.sendEvent(events[0])
                         }
                     }
                 }
@@ -194,6 +211,10 @@ enum Snapshot {
                 // key in a snapshot, given to it and then the menus straight.
                 if let key = environment["WEFT_KEY"], let window = NSApp.windows.first(where: { $0.firstResponder is NSTextView }) {
                     press(key, in: window)
+                }
+                // `WEFT_QUICK_OPEN_LATER`: Quick Open asked for once the caret is in a card, as ⌘O would.
+                if environment["WEFT_QUICK_OPEN_LATER"] != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { river.quickOpenShown = true }
                 }
                 // `WEFT_SWITCH`: the card being written in switched to text, or outline.
                 if environment["WEFT_SWITCH"] != nil { river.toggleEditorMode() }
@@ -208,6 +229,11 @@ enum Snapshot {
                 }
             }
         }
+        // `WEFT_BENCH`: timed, once all is settled, instead of drawn.
+        if Bench.isAsked {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { Bench.run(river: river, rivers: rivers) }
+            return
+        }
         let delay = Double(environment["WEFT_DELAY"] ?? "") ?? 2.5
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }), let view = window.contentView?.superview ?? window.contentView,
@@ -216,6 +242,12 @@ enum Snapshot {
                 exit(1)
             }
             view.cacheDisplay(in: view.bounds, to: bitmap)
+            // `WEFT_RESPONDER`: what has the keys, printed.
+            if environment["WEFT_RESPONDER"] != nil {
+                let responder = window.firstResponder
+                print("RESPONDER", responder.map { String(describing: type(of: $0)) } ?? "none",
+                      ((responder as? NSTextView)?.delegate as? NSTextField).map { "field editor of \($0.placeholderString ?? "?")" } ?? "")
+            }
             try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: output))
             // Panels over it — the list of titles for a link — beside it.
             for (index, panel) in NSApp.windows.filter({ $0 !== window && $0.isVisible && ($0 is NSPanel || $0.className.contains("Popover")) }).enumerated() {

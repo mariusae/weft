@@ -432,6 +432,11 @@ struct Card: View {
                 Button("History…", systemImage: "clock.arrow.circlepath") { historyShown = true }
             }
             Button("Copy Link") { Platform.copy("[[\(title)]]") }
+            // What it says, as written — the draft, while it is being written.
+            Button("Copy Contents", systemImage: "doc.on.doc") {
+                Platform.copy((store.draft(title) ?? store.tiddler(title))?.text ?? "")
+            }
+            .disabled(store.tiddler(title) == nil && !store.isEditing(title))
             if Platform.canReveal, let path = store.path(of: title) {
                 Button("Show in Finder") { Platform.reveal(path) }
             }

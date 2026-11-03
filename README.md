@@ -69,7 +69,7 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   buttons leave of it from the sidebar's button on — the one shown standing
   as the title, a click on it Quick Open; the others named, a slanted name
   for a river not saved. When they would not show their names, the others
-  bunch to their icons, the one under the pointer opening out to its name. ⌘T opens one, with Quick Open showing; ⌘W closes
+  bunch to their icons, the one under the pointer opening out to its name — a saved river's always showing its name. ⌘T opens one, with Quick Open showing; ⌘W closes
   it (⌥⌘W the window); ⇧⌘[ ⇧⌘] and ⌘1–9 go between them, each shown at
   once as it was left, scrolled where it was; a tab is dragged
   to another place, and from its menu saved, closed with the others, or
@@ -127,7 +127,7 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   after typing pauses; when the caret leaves the card, a new title takes
   effect. Beside the
   switch, in a glass capsule, its menu (Rename, Fold, Close Others, Add
-  Tag, Add Field, Insert Query, Copy Link, Show in Finder, Delete) and its
+  Tag, Add Field, Insert Query, Copy Link, Copy Contents, Show in Finder, Delete) and its
   close button. Story ▸ Write in Selected Card puts the caret in the
   selected card, or takes it out.
 - **On a card**: its title (double-click to rename), tag pills (click one to
@@ -145,8 +145,9 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   tiddler it's in. The importer turns TiddlyWiki's `<<list-links>>`,
   `<<toc>>`, `<$list>` and `{{{ }}}` into queries where their filters allow.
 - **Writing**: click into a card. Off the caret's lines, Markdown is drawn
-  as what it means: headings, emphasis, code, quotes, bullets, links as
-  tokens (a missing tiddler slanted) — the markup hidden. Typing `[[`
+  as what it means: headings, emphasis, code, quotes, bullets, tasks as
+  the outline draws them (a click checks one off), links as tokens (a
+  missing tiddler slanted) — the markup hidden. Typing `[[`
   finishes the title inline — the rest of the best one faint after the
   caret, Tab or → taking it — and lists tiddlers, notes, days and a new
   tiddler under the caret (↑↓, Return; Escape puts it away); on the phone,

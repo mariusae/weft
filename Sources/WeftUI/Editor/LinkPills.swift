@@ -84,15 +84,52 @@ extension NSAttributedString.Key {
     static let weftLink = NSAttributedString.Key("WeftLink")
     /// Over a quote's line: a bar drawn down its left.
     static let weftQuote = NSAttributedString.Key("WeftQuote")
+    /// Over a task's marker, `- [ ]` to its `]`: its `TaskBox`, drawn there.
+    static let weftTask = NSAttributedString.Key("WeftTask")
 }
 
-/// Draws a card's links as pills, under its words, and its quotes' bars.
+/// A task's box, as the outline draws it: a ring for Reflect's `+`, else a
+/// square — checked, done.
+final class TaskBox: NSObject {
+    let done: Bool
+    let round: Bool
+    /// The size of the words it is beside: its marker, hidden, has none.
+    let size: CGFloat
+    init(done: Bool, round: Bool, size: CGFloat) {
+        self.done = done
+        self.round = round
+        self.size = size
+    }
+}
+
+/// Draws a card's links as pills, under its words, its quotes' bars, and
+/// its tasks' boxes.
 final class LiveLayoutManager: NSLayoutManager {
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
         drawQuoteBars(in: characters, origin: origin)
         drawPills(in: characters, origin: origin)
+        drawTasks(in: characters, origin: origin)
+    }
+
+    /// Each task's box at the start of its marker, on the capitals of its line.
+    private func drawTasks(in characters: NSRange, origin: CGPoint) {
+        guard let storage = textStorage, characters.length > 0 else { return }
+        storage.enumerateAttribute(.weftTask, in: characters) { value, range, _ in
+            guard let task = value as? TaskBox else { return }
+            let font = PlatformFont.systemFont(ofSize: task.size)
+            let glyph = glyphIndexForCharacter(at: range.location)
+            guard glyph < numberOfGlyphs else { return }
+            let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            let point = location(forGlyphAt: glyph)
+            let middle = line.minY + point.y - font.capHeight / 2 + origin.y
+            let side = (font.pointSize * 0.95).rounded()
+            let name = task.round ? (task.done ? "checkmark.circle.fill" : "circle") : (task.done ? "checkmark.square.fill" : "square")
+            // Checked: a white tick on the accent colour.
+            Graphics.symbol(name, pointSize: side, colors: task.done ? [.white, Palette.accent] : [Palette.dim], weight: .regular,
+                            centeredIn: CGRect(x: line.minX + point.x + origin.x, y: middle - side / 2, width: side, height: side))
+        }
     }
 
     /// Each quote's line a bar down its left, from its first line to its
@@ -195,7 +232,24 @@ final class LiveLayoutManager: NSLayoutManager {
 }
 
 /// Drawing, the Mac's way and the phone's.
+@MainActor
 private enum Graphics {
+    #if os(macOS)
+    private static var symbols: [String: NSImage?] = [:]
+    #else
+    private static var symbols: [String: UIImage?] = [:]
+    #endif
+
+    /// A colour as it shows now.
+    private static func colorKey(_ color: PlatformColor) -> String {
+        #if os(macOS)
+        guard let rgb = color.usingColorSpace(.sRGB) else { return color.description }
+        return "\(rgb.redComponent) \(rgb.greenComponent) \(rgb.blueComponent) \(rgb.alphaComponent)"
+        #else
+        return (color.cgColor.components ?? []).map { "\($0)" }.joined(separator: " ")
+        #endif
+    }
+
     static func fill(_ rects: [CGRect], color: PlatformColor, radius: CGFloat) {
         color.setFill()
         for rect in rects {
@@ -208,15 +262,34 @@ private enum Graphics {
     }
 
     static func symbol(_ name: String, pointSize: CGFloat, color: PlatformColor, centeredIn box: CGRect) {
+        symbol(name, pointSize: pointSize, colors: [color], weight: .medium, centeredIn: box)
+    }
+
+    static func symbol(_ name: String, pointSize: CGFloat, colors: [PlatformColor], weight: PlatformFont.Weight, centeredIn box: CGRect) {
+        // Made once for each look — the colours as they are now, light or
+        // dark — and kept: looked up for each one drawn, they took longer
+        // than the drawing.
+        let key = "\(name)|\(pointSize)|\(weight.rawValue)|" + colors.map(Self.colorKey).joined(separator: ",")
         #if os(macOS)
-        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium).applying(.init(paletteColors: [color]))
-        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration) else { return }
+        let image = symbols[key] ?? {
+            let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight).applying(.init(paletteColors: colors))
+            let made = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+            symbols[key] = made
+            return made
+        }()
+        guard let image else { return }
         let size = image.size
         image.draw(in: CGRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height),
                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         #else
-        let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)
-        guard let image = UIImage(systemName: name, withConfiguration: configuration)?.withTintColor(color, renderingMode: .alwaysOriginal) else { return }
+        let image = symbols[key] ?? {
+            let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: weight.symbolWeight)
+                .applying(UIImage.SymbolConfiguration(paletteColors: colors))
+            let made = UIImage(systemName: name, withConfiguration: configuration)
+            symbols[key] = made
+            return made
+        }()
+        guard let image else { return }
         let size = image.size
         image.draw(in: CGRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height))
         #endif
@@ -227,19 +300,49 @@ extension PlatformTextView {
     /// The link under a point in the view, when the point is on it: its
     /// words, or the room made for its icon.
     func link(at point: CGPoint) -> URL? {
+        guard let (storage, character) = character(at: point) else { return nil }
+        return storage.attribute(.weftLink, at: character, effectiveRange: nil) as? URL
+    }
+
+    /// The task whose box is under a point, when it can be checked: where
+    /// its `[ ]` or `[x]` says which it is.
+    func task(at point: CGPoint) -> NSRange? {
+        guard isEditable, let (storage, character) = character(at: point) else { return nil }
+        var box = NSRange()
+        guard storage.attribute(.weftTask, at: character, longestEffectiveRange: &box,
+                                in: NSRange(location: 0, length: storage.length)) is TaskBox else { return nil }
+        return NSRange(location: NSMaxRange(box) - 2, length: 1)
+    }
+
+    /// Whether a click at a point would follow a link or check a task: what
+    /// the pointer, moved, asks — one look at the text, not one for each.
+    func isClickable(at point: CGPoint) -> Bool {
+        guard let (storage, character) = character(at: point) else { return false }
+        return storage.attribute(.weftLink, at: character, effectiveRange: nil) != nil
+            || isEditable && storage.attribute(.weftTask, at: character, effectiveRange: nil) != nil
+    }
+
+    /// The character under a point in the view — on its glyph, not in the
+    /// space beyond a line's end.
+    private func character(at point: CGPoint) -> (NSTextStorage, Int)? {
         guard let layout = layoutManagerForAttachments, let container = textContainerForAttachments,
               let storage = layout.textStorage, storage.length > 0 else { return nil }
         let inContainer = CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y)
         let glyph = layout.glyphIndex(for: inContainer, in: container)
         guard glyph < layout.numberOfGlyphs else { return nil }
-        // Only on the glyph itself, not in the space beyond a line's end.
         let bounds = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
         guard bounds.insetBy(dx: -2, dy: -3).contains(inContainer) else { return nil }
         let character = layout.characterIndexForGlyph(at: glyph)
         guard character < storage.length else { return nil }
-        return storage.attribute(.weftLink, at: character, effectiveRange: nil) as? URL
+        return (storage, character)
     }
 }
+
+#if os(iOS)
+private extension UIFont.Weight {
+    var symbolWeight: UIImage.SymbolWeight { self == .medium ? .medium : .regular }
+}
+#endif
 
 /// Following a link from a card: a page opened in the river after it, an
 /// address in the browser.

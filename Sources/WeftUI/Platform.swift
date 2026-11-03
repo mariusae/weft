@@ -128,3 +128,29 @@ struct Ink {
         #endif
     }
 }
+
+#if os(macOS)
+/// The window a view is in, once it is in one.
+public struct WindowReader: NSViewRepresentable {
+    let found: (NSWindow) -> Void
+
+    public init(found: @escaping (NSWindow) -> Void) { self.found = found }
+
+    public func makeNSView(context: Context) -> Reader {
+        let view = Reader()
+        view.found = found
+        return view
+    }
+
+    public func updateNSView(_ view: Reader, context: Context) {}
+
+    public final class Reader: NSView {
+        var found: (NSWindow) -> Void = { _ in }
+
+        override public func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { found(window) }
+        }
+    }
+}
+#endif

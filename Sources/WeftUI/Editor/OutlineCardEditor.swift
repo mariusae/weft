@@ -75,9 +75,9 @@ struct OutlineCardEditor: NSViewRepresentable {
         }
         // Looked at again only when it changed: this runs for each key.
         let coordinator = context.coordinator
-        if text != coordinator.checked {
+        if !text.isSameText(as: coordinator.checked ?? "") || coordinator.checked == nil {
             coordinator.checked = text
-            coordinator.asks = text.contains("```query") || text.contains("![[")
+            coordinator.asks = text.containsText("```query") || text.containsText("![[")
         }
         // The graph again when it changed, for a card that asks it — what a
         // query finds, or an embed shows, may have. Other cards don't hear
