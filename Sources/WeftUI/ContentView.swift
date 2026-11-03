@@ -75,9 +75,7 @@ public struct ContentView: View {
                         }
                         #endif
                 } detail: {
-                    RiverColumn(showSidebar: sizeClass == .compact ? { compactColumn = .sidebar } : nil)
-                        // Its scroll and the card in view, each river's own.
-                        .id(river.id)
+                    KeptRivers(showSidebar: sizeClass == .compact ? { compactColumn = .sidebar } : nil)
                         #if os(macOS)
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
                         #endif
@@ -625,6 +623,71 @@ private struct Sidebar: View {
 }
 
 // MARK: The river
+
+/// Every tab's river kept as it was: a tab shows at once, scrolled as it
+/// was left. On the phone, the one river.
+private struct KeptRivers: View {
+    @Environment(WikiStore.self) private var store
+    @Environment(River.self) private var river
+    @Environment(RiverSet.self) private var riverSet: RiverSet?
+    var showSidebar: (() -> Void)?
+
+    var body: some View {
+        #if os(macOS)
+        KeptRiverViews(store: store, rivers: riverSet?.rivers ?? [river], shown: river, riverSet: riverSet)
+        #else
+        RiverColumn(showSidebar: showSidebar)
+            // Its scroll and the card in view, each river's own.
+            .id(river.id)
+        #endif
+    }
+}
+
+#if os(macOS)
+/// Each tab's river in a view of its own, kept as it was, and only the one
+/// shown in the window: what changes over the rivers as another is shown
+/// is not looked through by every card in them, nor are hidden ones laid out.
+private struct KeptRiverViews: NSViewRepresentable {
+    let store: WikiStore
+    let rivers: [River]
+    let shown: River
+    let riverSet: RiverSet?
+
+    final class Host: NSView {
+        var kept: [UUID: NSHostingView<AnyView>] = [:]
+        var current: NSHostingView<AnyView>?
+    }
+
+    func makeNSView(context: Context) -> Host { Host() }
+
+    func updateNSView(_ host: Host, context: Context) {
+        let open = Set(rivers.map(\.id))
+        for (id, view) in host.kept where !open.contains(id) {
+            view.removeFromSuperview()
+            host.kept[id] = nil
+        }
+        let view = host.kept[shown.id] ?? {
+            let view = NSHostingView(rootView: AnyView(RiverColumn().environment(store).environment(shown).environment(riverSet)))
+            // As big as it is given.
+            view.sizingOptions = []
+            view.autoresizingMask = [.width, .height]
+            host.kept[shown.id] = view
+            return view
+        }()
+        guard view !== host.current else { return }
+        if let left = host.current {
+            // The caret out of the tab left, as it was when its river was made anew.
+            if let window = host.window, let responder = window.firstResponder as? NSView, responder.isDescendant(of: left) {
+                window.makeFirstResponder(nil)
+            }
+            left.removeFromSuperview()
+        }
+        view.frame = host.bounds
+        host.addSubview(view)
+        host.current = view
+    }
+}
+#endif
 
 private struct RiverColumn: View {
     @Environment(WikiStore.self) private var store

@@ -70,7 +70,8 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   as the title, a click on it Quick Open; the others named, a slanted name
   for a river not saved. When they would not show their names, the others
   bunch to their icons, the one under the pointer opening out to its name. ⌘T opens one, with Quick Open showing; ⌘W closes
-  it (⌥⌘W the window); ⇧⌘[ ⇧⌘] and ⌘1–9 go between them; a tab is dragged
+  it (⌥⌘W the window); ⇧⌘[ ⇧⌘] and ⌘1–9 go between them, each shown at
+  once as it was left, scrolled where it was; a tab is dragged
   to another place, and from its menu saved, closed with the others, or
   moved to a window of its own (⇧⌘N opens a new window). With one river,
   the title is its name, the graph under it. A page open in two tabs is

@@ -67,7 +67,8 @@ struct RiverTabs: View {
             ForEach(Array(all.enumerated()), id: \.element.id) { index, river in
                 RiverTab(river: river, isCurrent: index == current, closable: all.count > 1,
                          bunched: bunched && index != current && pointed != index) {
-                    if river === rivers.current { river.quickOpenShown = true } else { withAnimation(.snappy(duration: 0.2)) { rivers.select(river) } }
+                    // At once: no animation to wait out.
+                    if river === rivers.current { river.quickOpenShown = true } else { rivers.select(river) }
                 } close: {
                     withAnimation(.snappy(duration: 0.2)) { rivers.close(river) }
                 } hover: { inside in

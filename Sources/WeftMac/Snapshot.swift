@@ -124,6 +124,21 @@ enum Snapshot {
         for tab in environment["WEFT_TABS"]?.split(separator: ";") ?? [] {
             rivers?.add(River.State(graph: store.root?.path ?? "", cards: tab.split(separator: "|").map(String.init)))
         }
+        // `WEFT_TIMING=<n>`: the first two tabs shown in turn n times, each
+        // switch's time printed — laid out and drawn — as a click would.
+        if let rounds = environment["WEFT_TIMING"].flatMap(Int.init), let rivers, rivers.rivers.count > 1 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                guard let window = NSApp.windows.first(where: { $0.isVisible }) else { return }
+                for round in 0..<rounds {
+                    let next = rivers.rivers[(round + 1) % 2]
+                    let start = CACurrentMediaTime()
+                    rivers.select(next)
+                    window.contentView?.layoutSubtreeIfNeeded()
+                    window.displayIfNeeded()
+                    print("SWITCH", round, next.title, Int((CACurrentMediaTime() - start) * 1000), "ms")
+                }
+            }
+        }
         if environment["WEFT_RIVERS"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { river.riversShown = true }
         }
