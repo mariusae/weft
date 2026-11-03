@@ -312,15 +312,24 @@ struct Card: View {
         let writing = river.isWriting(title)
         return HStack(spacing: 8) {
             #if os(macOS)
-            Picker("", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
+            // Two buttons, not a segmented picker: AppKit's segmented
+            // control, with icons, threw as a card was readied off screen.
+            let shown = store.editorMode(title)
+            HStack(spacing: 2) {
                 ForEach(WikiStore.EditorMode.allCases, id: \.self) { mode in
-                    Label(mode.rawValue, systemImage: mode.symbol).labelStyle(.iconOnly).tag(mode)
+                    Button { store.setEditorMode(mode, for: title) } label: {
+                        Image(systemName: mode.symbol)
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(width: 26, height: 18)
+                            .background(mode == shown ? Color.primary.opacity(0.12) : .clear, in: .capsule)
+                            .contentShape(.capsule)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(mode == shown ? .primary : .secondary)
+                    .accessibilityLabel(mode.rawValue)
+                    .accessibilityAddTraits(mode == shown ? .isSelected : [])
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .controlSize(.small)
             .padding(3)
             .glassEffect(.regular.interactive(), in: .capsule)
             .help("Write as text, or as an outline of rows")
