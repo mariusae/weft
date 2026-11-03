@@ -253,12 +253,14 @@ struct Card: View {
         // runs on under the controls and is cut off at the card's edge.
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 30, alignment: .leading)
         .clipped()
-        #if os(macOS)
-        // In the margin before the title: fold or unfold — ⌥, every card.
-        .overlay(alignment: .leading) { foldChevron.offset(x: -23) }
-        #endif
         // Dragged by its title to elsewhere in the river; on the phone, held first.
         .draggingCard(title, shown: shown, enabled: !renaming)
+        #if os(macOS)
+        // In the margin before the title: fold or unfold — ⌥, every card.
+        // Over the drag, not in it: its shape, the title's, would take the
+        // chevron's clicks from it, outside it as it is.
+        .overlay(alignment: .leading) { foldChevron.offset(x: -23) }
+        #endif
         .overlay(alignment: .trailing) {
             controls
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { controlsWidth = $0 }

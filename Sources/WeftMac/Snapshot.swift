@@ -153,6 +153,18 @@ enum Snapshot {
                     view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
                     view.insertText(typed, replacementRange: view.selectedRange())
                 }
+                // `WEFT_CLICK=x,y`: a click there, in points from the window's
+                // top left, as the pointer would make it.
+                if let click = environment["WEFT_CLICK"]?.split(separator: ",").compactMap({ Double($0) }), click.count == 2,
+                   let window = NSApp.windows.first(where: { $0.isVisible }) {
+                    let point = NSPoint(x: click[0], y: window.frame.height - click[1])
+                    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                        if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                          windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                            window.sendEvent(event)
+                        }
+                    }
+                }
                 // `WEFT_KEY=cmd-shift-k`: the key pressed in the card being
                 // written in, as the app would take it — the window not being
                 // key in a snapshot, given to it and then the menus straight.
