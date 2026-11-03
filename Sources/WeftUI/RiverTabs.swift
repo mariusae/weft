@@ -66,13 +66,11 @@ struct RiverTabs: View {
         let strip = HStack(spacing: TabLayout.spacing) {
             ForEach(Array(all.enumerated()), id: \.element.id) { index, river in
                 RiverTab(river: river, isCurrent: index == current, closable: all.count > 1,
-                         bunched: bunched && index != current && pointed != index) {
+                         bunched: bunched && index != current && pointed != index, hovering: pointed == index) {
                     // At once: no animation to wait out.
                     if river === rivers.current { river.quickOpenShown = true } else { rivers.select(river) }
                 } close: {
                     withAnimation(.snappy(duration: 0.2)) { rivers.close(river) }
-                } hover: { inside in
-                    if inside { pointed = index } else if pointed == index { pointed = nil }
                 }
                 .frame(width: widths.indices.contains(index) ? widths[index] : TabLayout.bunched)
                 .id(river.id)
@@ -84,6 +82,20 @@ struct RiverTabs: View {
                 }
                 .onDrop(of: [.text], delegate: TabDrop(target: river, rivers: rivers, dragged: $dragged))
             }
+        }
+        // The tab under the pointer, as it is run along them: opened out to
+        // its name, there to be clicked.
+        .overlay {
+            PointerTracker { x in
+                pointed = x.flatMap { x in
+                    var start: CGFloat = 0
+                    return widths.indices.first { index in
+                        defer { start += widths[index] + TabLayout.spacing }
+                        return x < start + widths[index] + TabLayout.spacing / 2
+                    }
+                }
+            }
+            .allowsHitTesting(false)
         }
         .animation(.snappy(duration: 0.18), value: pointed)
         .animation(.snappy(duration: 0.2), value: all.map(\.id))
@@ -131,10 +143,10 @@ private struct RiverTab: View {
     let closable: Bool
     /// Bunched up with the others: its icon alone.
     let bunched: Bool
+    /// Under the pointer.
+    let hovering: Bool
     let choose: () -> Void
     let close: () -> Void
-    let hover: (Bool) -> Void
-    @State private var hovering = false
 
     /// A saved river's stack; else what its top card is — a day, a wiki page, a note.
     private var symbol: String {
@@ -184,12 +196,38 @@ private struct RiverTab: View {
             }
         }
         .background(Capsule().fill(isCurrent ? Ink.text.color.opacity(0.09) : (hovering ? Ink.text.color.opacity(0.05) : .clear)))
-        .onHover {
-            hovering = $0
-            hover($0)
-        }
         .animation(.easeOut(duration: 0.12), value: hovering)
     }
+}
+
+/// Where the pointer is over a view, followed by AppKit — SwiftUI's hover
+/// is not told of it in the title bar — and clicks let through to what is
+/// under it.
+private struct PointerTracker: NSViewRepresentable {
+    /// Its x, or nil once it has left.
+    let moved: (CGFloat?) -> Void
+
+    final class Tracker: NSView {
+        var moved: (CGFloat?) -> Void = { _ in }
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            // Once: `.inVisibleRect` keeps it as big as the view, whatever its size.
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self))
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func mouseEntered(with event: NSEvent) { moved(convert(event.locationInWindow, from: nil).x) }
+        override func mouseMoved(with event: NSEvent) { moved(convert(event.locationInWindow, from: nil).x) }
+        override func mouseExited(with event: NSEvent) { moved(nil) }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> Tracker { Tracker() }
+
+    func updateNSView(_ view: Tracker, context: Context) { view.moved = moved }
 }
 
 /// A tab dropped on another: put where that one is.

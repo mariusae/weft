@@ -153,6 +153,30 @@ enum Snapshot {
                     view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
                     view.insertText(typed, replacementRange: view.selectedRange())
                 }
+                // `WEFT_HOVER=x,y`: the pointer moved there, in points from the
+                // window's top left.
+                if let hover = environment["WEFT_HOVER"]?.split(separator: ",").compactMap({ Double($0) }), hover.count == 2,
+                   let window = NSApp.windows.first(where: { $0.isVisible }) {
+                    window.acceptsMouseMovedEvents = true
+                    for step in 0...4 {
+                        let point = NSPoint(x: hover[0] - Double(4 - step) * 3, y: window.frame.height - hover[1])
+                        if let event = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                          windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) {
+                            window.sendEvent(event)
+                            // In the title bar the window server tells tracking
+                            // areas of the pointer, not the window: told here.
+                            func tell(_ view: NSView) {
+                                let inView = view.convert(point, from: nil)
+                                if view.visibleRect.contains(inView),
+                                   view.trackingAreas.contains(where: { $0.owner === view && $0.options.contains(.mouseMoved) }) {
+                                    view.mouseMoved(with: event)
+                                }
+                                view.subviews.forEach(tell)
+                            }
+                            if let frame = window.contentView?.superview { tell(frame) }
+                        }
+                    }
+                }
                 // `WEFT_CLICK=x,y`: a click there, in points from the window's
                 // top left, as the pointer would make it.
                 if let click = environment["WEFT_CLICK"]?.split(separator: ",").compactMap({ Double($0) }), click.count == 2,
