@@ -57,7 +57,7 @@ struct CardEditor: View {
             if let page { foot(page, specs: specs) }
         }
         .onChange(of: focus) { _, now in
-            if now != nil { river.caretEntered(title) } else { river.caretLeft(title) }
+            if now != nil { river.caretEntered(title, in: .fields) } else { river.caretLeft(title, from: .fields) }
             if now != .tag { addingTag = false }
             if now != .field { addingField = false }
         }
@@ -73,7 +73,7 @@ struct CardEditor: View {
     @ViewBuilder private func editor(_ page: Tiddler?) -> some View {
         let wants = river.wantsCaret(title) == .body
         let taken = { river.caretTaken(title) }
-        let focused: (Bool) -> Void = { $0 ? river.caretEntered(title) : river.caretLeft(title) }
+        let focused: (Bool) -> Void = { $0 ? river.caretEntered(title, in: .body) : river.caretLeft(title, from: .body) }
         ZStack(alignment: .topLeading) {
             BodyEditor(title: title, mode: mode, controller: controller, wants: wants, taken: taken, focused: focused)
             // Asked of its head, not its words: told when it comes to be
@@ -226,7 +226,9 @@ struct CardEditor: View {
         let fields = page.fields.filter { field in
             // `wiki` is the badge by the title; `list` and the fields a tag
             // gives are shown as what they are.
-            field.value.text != nil && !["list", "wiki", "related", RiverLink.homeKey, FieldSpec.field].contains(field.name) && !typed.contains(field.name)
+            // `task` and `done`, the ring by the title.
+            field.value.text != nil && !["list", "wiki", "related", "task", "done", RiverLink.homeKey, FieldSpec.field].contains(field.name)
+                && !typed.contains(field.name)
         }
         if !fields.isEmpty || addingField {
             DisclosureGroup(isExpanded: Binding(get: { addingField || store.fieldsShown.contains(title) },

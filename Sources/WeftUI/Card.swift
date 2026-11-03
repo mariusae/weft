@@ -85,10 +85,10 @@ struct Card: View {
         }
         .onChange(of: titleFocused) { _, focused in
             if focused {
-                river.caretEntered(title)
+                river.caretEntered(title, in: .title)
             } else {
                 renaming = false
-                river.caretLeft(title)
+                river.caretLeft(title, from: .title)
             }
         }
     }
@@ -165,10 +165,17 @@ struct Card: View {
         guard canRename else { return }
         renaming = true
         titleFocused = true
-        // A new tiddler's made-up name, all selected: typed over at once.
-        guard !store.exists(title) else { return }
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(60))
+            // Asked again until the field has the keys: a card just opened
+            // out of view is laid out only as the river scrolls to it.
+            for _ in 0..<20 where !titleFocused {
+                try? await Task.sleep(for: .milliseconds(50))
+                if renaming, !titleFocused { titleFocused = true }
+            }
+            // A new tiddler's made-up name, all selected: typed over at once —
+            // once the field has taken the keys, which puts the caret at its end.
+            guard titleFocused, !store.exists(title) else { return }
+            try? await Task.sleep(for: .milliseconds(30))
             let name = store.draftHead(title)?.title ?? title
             titleSelection = TextSelection(range: name.startIndex..<name.endIndex)
         }
@@ -180,11 +187,27 @@ struct Card: View {
     private var header: some View {
         let kind = store.kind(title)
         let shown = store.draftHead(title).map(\.title) ?? store.shownTitle(title)
+        let task = store.taskState(title)
         return HStack(alignment: .center, spacing: 10) {
             if kind == .day {
                 Image(systemName: "calendar")
                     .foregroundStyle(Ink.secondary.color)
                     .help("A day")
+            }
+            // A page that is a thing to do: its ring, to check it off.
+            if let task {
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
+                } label: {
+                    Image(systemName: task == .done ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 21, weight: .regular))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(task == .done ? Color.white : Ink.secondary.color, Ink.accent.color)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(.plain)
+                .help(task == .done ? "Done — click to open again" : "To do — click when done")
+                .accessibilityLabel(task == .done ? "Done" : "To do")
             }
             if renaming {
                 TextField("Title", text: Binding {
@@ -206,7 +229,9 @@ struct Card: View {
                 Text(shown)
                     .font(.system(size: 22, weight: .semibold))
                     .italic(!store.exists(title) && !store.isEditing(title))
-                    .foregroundStyle(store.exists(title) || store.isEditing(title) ? Ink.text.color : Ink.secondary.color)
+                    // Done: struck through, quieter.
+                    .strikethrough(task == .done, color: Ink.secondary.color)
+                    .foregroundStyle((store.exists(title) || store.isEditing(title)) && task != .done ? Ink.text.color : Ink.secondary.color)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     #if os(macOS)
@@ -425,6 +450,19 @@ struct Card: View {
             }
             if store.canRead(title) {
                 Button("Read", systemImage: "doc.richtext") { river.reading = title }
+            }
+            if store.kind(title) != .day, !store.isShadow(title) {
+                // The page itself a thing to do: checked off on its card, listed in Tasks.
+                switch store.taskState(title) {
+                case nil:
+                    Button("Make a To-Do", systemImage: "circle") { store.setTaskState(title, .todo) }
+                case .todo:
+                    Button("Mark Done", systemImage: "checkmark.circle") { store.setTaskState(title, .done) }
+                    Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
+                case .done:
+                    Button("Mark Not Done", systemImage: "circle") { store.setTaskState(title, .todo) }
+                    Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
+                }
             }
             Divider()
             Button("Find in Card", systemImage: "text.magnifyingglass") { river.find(in: title) }

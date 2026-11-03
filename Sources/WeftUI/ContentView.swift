@@ -229,7 +229,32 @@ private struct TaskList: View {
 
     var body: some View {
         let groups = store.taskGroups()
+        let pages = store.todoPages()
         List {
+            // Pages that are things to do, whole: first.
+            if !pages.isEmpty {
+                Section {
+                    ForEach(pages, id: \.self) { title in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Button { withAnimation { store.setTaskState(title, .done) } } label: {
+                                Image(systemName: "circle")
+                                    .foregroundStyle(Ink.secondary.color)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Done")
+                            Button { river.open(title) } label: {
+                                Text(store.shownTitle(title))
+                                    .lineLimit(2)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } header: {
+                    Text("To-Do Pages")
+                }
+            }
             ForEach(groups, id: \.label) { group in
                 Section {
                     ForEach(group.tasks, id: \.ordinalKey) { task in
@@ -262,7 +287,7 @@ private struct TaskList: View {
             }
         }
         .overlay {
-            if groups.isEmpty { Text("No open tasks").foregroundStyle(.secondary) }
+            if groups.isEmpty && pages.isEmpty { Text("No open tasks").foregroundStyle(.secondary) }
         }
     }
 }
@@ -813,7 +838,11 @@ private struct RiverColumn: View {
             }
             .onChange(of: river.focusRequest) {
                 guard let focus = river.focus else { return }
-                withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(focus, anchor: .top) }
+                // Once a card just opened is among the stack's: scrolled to in
+                // the change that put it there, it is not found to scroll to.
+                DispatchQueue.main.async {
+                    withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(focus, anchor: .top) }
+                }
             }
         }
     }
@@ -888,6 +917,7 @@ private struct RiverControls: View {
                 control("Today", "calendar") { river.openToday() }
                 Menu {
                     Button("New Tiddler", systemImage: "plus") { river.newTiddler() }
+                    Button("New Tiddler from Pasteboard", systemImage: "doc.on.clipboard") { river.newTiddlerFromPasteboard() }
                     Button("Close All", systemImage: "rectangle.stack.badge.minus") { river.closeAll() }
                     if river.allFolded {
                         Button("Unfold All", systemImage: "rectangle.expand.vertical") { withAnimation(.snappy) { river.unfoldAll() } }

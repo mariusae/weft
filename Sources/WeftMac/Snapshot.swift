@@ -96,6 +96,45 @@ enum Snapshot {
         if environment["WEFT_QUICK_OPEN"] != nil { river.quickOpenShown = true }
         // `WEFT_NEW`: a new tiddler, its title being typed.
         if environment["WEFT_NEW"] != nil { river.newTiddler() }
+        // `WEFT_PASTEBOARD_TEXT=words` or `WEFT_PASTEBOARD_PICTURE=file`: a new
+        // tiddler of a pasteboard of the snapshot's own holding them, and
+        // a moment later, and again later, its title and what it says.
+        let pastedText = environment["WEFT_PASTEBOARD_TEXT"], pastedPicture = environment["WEFT_PASTEBOARD_PICTURE"]
+        if pastedText != nil || pastedPicture != nil {
+            let board = NSPasteboard(name: .init("weft-snapshot"))
+            board.clearContents()
+            if let pastedText { board.setString(pastedText.replacingOccurrences(of: "\\n", with: "\n"), forType: .string) }
+            if let pastedPicture, let data = try? Data(contentsOf: URL(fileURLWithPath: pastedPicture)) { board.setData(data, forType: .png) }
+            PastedTiddler.pasteboardName = "weft-snapshot"
+            river.newTiddlerFromPasteboard()
+            let title = river.cards.first ?? ""
+            for wait in [0.5, 6.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+                    print("PASTED after \(wait)s: card", title.debugDescription, "titled", (store.draftHead(title)?.title ?? "none").debugDescription,
+                          "says", (store.draft(title)?.text ?? "none").debugDescription)
+                }
+            }
+        }
+        // `WEFT_NEW_PASTE=words`: a new tiddler, Return in its title — on to
+        // its body — the words put there, and a moment later what its draft
+        // says, and what has the keys, printed.
+        if let words = environment["WEFT_NEW_PASTE"] {
+            river.newTiddler()
+            let title = river.cards.first ?? ""
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                river.edit(title)
+                let delay = Double(environment["WEFT_PASTE_DELAY"] ?? "") ?? 0.1
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    let view = NSApp.windows.lazy.compactMap { $0.firstResponder as? NSTextView }.first
+                    print("PASTE into", view.map { String(describing: type(of: $0)) } ?? "nothing", view?.isFieldEditor == true ? "(a field)" : "")
+                    view?.insertText(words, replacementRange: view?.selectedRange() ?? NSRange())
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        print("PASTE draft:", store.draft(title)?.text.debugDescription ?? "none",
+                              "| editing:", store.isEditing(title))
+                    }
+                }
+            }
+        }
         if let search = environment["WEFT_SEARCH"] { river.search = search }
         if let name = environment["WEFT_SAVE_RIVER"] { river.save(as: name) }
         // `WEFT_RECALL`: a saved river brought back, folded as its file says;
@@ -212,6 +251,10 @@ enum Snapshot {
                 if let key = environment["WEFT_KEY"], let window = NSApp.windows.first(where: { $0.firstResponder is NSTextView }) {
                     press(key, in: window)
                 }
+                // `WEFT_NEW_LATER`: a new tiddler, once the caret is in a card or the river scrolled, as ⌘N would.
+                if environment["WEFT_NEW_LATER"] != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { river.newTiddler() }
+                }
                 // `WEFT_QUICK_OPEN_LATER`: Quick Open asked for once the caret is in a card, as ⌘O would.
                 if environment["WEFT_QUICK_OPEN_LATER"] != nil {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { river.quickOpenShown = true }
@@ -245,6 +288,7 @@ enum Snapshot {
             // `WEFT_RESPONDER`: what has the keys, printed.
             if environment["WEFT_RESPONDER"] != nil {
                 let responder = window.firstResponder
+                if let field = responder as? NSTextView { print("RESPONDER selection", field.selectedRange(), "of", (field.string as NSString).length) }
                 print("RESPONDER", responder.map { String(describing: type(of: $0)) } ?? "none",
                       ((responder as? NSTextView)?.delegate as? NSTextField).map { "field editor of \($0.placeholderString ?? "?")" } ?? "")
             }

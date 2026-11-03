@@ -117,6 +117,9 @@ struct RiverCommands: Commands {
             Button("New Tiddler") { river?.newTiddler() }
                 .keyboardShortcut("n")
                 .disabled(river == nil || store.root == nil)
+            Button("New Tiddler from Pasteboard") { river?.newTiddlerFromPasteboard() }
+                .keyboardShortcut("n", modifiers: [.command, .option])
+                .disabled(river == nil || store.root == nil)
             Button("New Tab") { rivers?.add() }
                 .keyboardShortcut("t")
                 .disabled(rivers == nil || store.root == nil)

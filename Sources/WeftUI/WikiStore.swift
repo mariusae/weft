@@ -677,6 +677,31 @@ public final class WikiStore {
         if !river(writing: title) { finishEditing(title) }
     }
 
+    /// Whether a page is itself a thing to do, and whether done: as it is
+    /// being written, else as saved.
+    public func taskState(_ title: String) -> Tiddler.TaskState? {
+        (draftHead(title) ?? tiddler(title))?.taskState
+    }
+
+    /// A page made a thing to do, checked off — the day in `done:` — opened
+    /// again, or made no longer one.
+    public func setTaskState(_ title: String, _ state: Tiddler.TaskState?) {
+        change(title) { page in
+            page.taskState = state
+            if state == .done { page[field: "done"] = .text(FieldSpec.value(of: Date())) }
+        }
+        if !river(writing: title) { finishEditing(title) }
+    }
+
+    /// The pages that are things still to do, the latest written first.
+    public func todoPages() -> [String] {
+        _ = listsVersion
+        guard let wiki else { return [] }
+        return wiki.pages(flagged: .todo).sorted {
+            (wiki.entries[$0]?.note.modified ?? .distantPast) > (wiki.entries[$1]?.note.modified ?? .distantPast)
+        }
+    }
+
     /// A page pinned — after those pinned already — or not: Prism's `pinned:`.
     public func isPinned(_ title: String) -> Bool {
         watch(title)
@@ -1398,17 +1423,18 @@ public final class WikiStore {
     }
 
     /// A new tiddler's draft — tagged with `tag`, when there is one, and
-    /// given its fields — under a title no page and no card has. Its title.
-    func makeTiddler(taggedWith tag: String? = nil) -> String? {
+    /// given its fields; called `name`, and saying `text`, when it is
+    /// made of something — under a title no page and no card has. Its title.
+    func makeTiddler(taggedWith tag: String? = nil, named name: String? = nil, text: String = "") -> String? {
         guard wiki != nil else { return nil }
-        var title = tag.map { "New \($0)" } ?? "New Tiddler"
+        var title = name ?? tag.map { "New \($0)" } ?? "New Tiddler"
         let base = title
         var number = 1
         while exists(title) || rivers.contains(where: { $0.cards.contains(title) }) {
             title = "\(base) \(number)"
             number += 1
         }
-        var tiddler = Tiddler(title: title, tags: tag.map { [$0] } ?? [])
+        var tiddler = Tiddler(title: title, tags: tag.map { [$0] } ?? [], text: text)
         // What Weft makes is the wiki's.
         tiddler.isWiki = true
         for spec in schema(for: tiddler) { tiddler[field: spec.name] = .text("") }

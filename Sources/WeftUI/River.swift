@@ -340,6 +340,7 @@ public final class River: Identifiable {
     private func shut(_ title: String) {
         cards.removeAll { $0 == title }
         folded.remove(title)
+        caretParts[title] = nil
         if writing == title { writing = nil }
         store.cardClosed(title)
     }
@@ -413,6 +414,7 @@ public final class River: Identifiable {
         keep()
         if focus == title { focus = new }
         if writing == title { writing = new }
+        if let parts = caretParts.removeValue(forKey: title) { caretParts[new] = parts }
         backward = backward.map { $0 == title ? new : $0 }
         forward = forward.map { $0 == title ? new : $0 }
     }
@@ -447,6 +449,14 @@ public final class River: Identifiable {
     /// Whether the caret is in any card: what is over the keys is the editor's.
     public private(set) var isWritingAny = false
     @ObservationIgnored private var leaving: [String: Task<Void, Never>] = [:]
+    /// The parts of each card the caret is in, as each says: the caret
+    /// going from one to another — from a new tiddler's title to its body —
+    /// may be told of in either order, and the card is not left while any
+    /// part has it.
+    @ObservationIgnored private var caretParts: [String: Set<CaretPart>] = [:]
+
+    /// A part of a card the caret can be in.
+    public enum CaretPart: Hashable { case title, body, fields }
     /// The card asked to take the caret, and whether in its title — taken
     /// by the card's editor once it is there to take it.
     @ObservationIgnored private var caretWanted: (title: String, inTitle: Bool)?
@@ -456,8 +466,9 @@ public final class River: Identifiable {
         return writing == title
     }
 
-    /// The caret came into a card: in its body, or its title.
-    public func caretEntered(_ title: String) {
+    /// The caret came into a card: in its body, its title, or its fields.
+    public func caretEntered(_ title: String, in part: CaretPart) {
+        caretParts[title, default: []].insert(part)
         leaving[title]?.cancel()
         leaving[title] = nil
         guard writing != title else { return }
@@ -468,14 +479,21 @@ public final class River: Identifiable {
         select(title)
     }
 
-    /// The caret left part of a card: unless it comes back into another part
-    /// in a moment — from the title to the body — the card is done with,
-    /// unless another river is writing in it.
-    public func caretLeft(_ title: String) {
+    /// The caret left part of a card — or, `part` nil, the card is done with
+    /// unless the caret is in it: unless it is in another part, or comes back
+    /// into one in a moment, the card is done with, unless another river is
+    /// writing in it.
+    public func caretLeft(_ title: String, from part: CaretPart? = nil) {
+        if let part {
+            caretParts[title]?.remove(part)
+            if caretParts[title]?.isEmpty == true { caretParts[title] = nil }
+        }
+        // Still in another part: told late that it left this one.
+        guard caretParts[title] == nil else { return }
         leaving[title]?.cancel()
         leaving[title] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(0.25))
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self, caretParts[title] == nil else { return }
             leaving[title] = nil
             if writing == title {
                 writing = nil
@@ -556,6 +574,29 @@ public final class River: Identifiable {
     public func newTiddler(taggedWith tag: String? = nil) {
         guard let title = store.makeTiddler(taggedWith: tag) else { return }
         edit(title, inTitle: true)
+    }
+
+    /// A new tiddler of what the pasteboard holds, its title selected to
+    /// be typed over — and, should a better one come while it still has the
+    /// one it was given, given that.
+    public func newTiddlerFromPasteboard() {
+        guard let content = PastedTiddler.read(), let made = PastedTiddler.draft(of: content),
+              let title = store.makeTiddler(named: made.title, text: made.text) else { return }
+        edit(title, inTitle: true)
+        let asked = Date()
+        Task {
+            // Only soon after: later — the first picture read on a Mac takes
+            // its model a while to make ready — the title is the person's.
+            guard let better = await PastedTiddler.better(for: content), Date().timeIntervalSince(asked) < 8, better.title != made.title,
+                  store.isEditing(title), store.draftHead(title)?.title == title, !store.exists(better.title) else { return }
+            store.change(title) {
+                $0.title = better.title
+                // What it says, too, while it says what it was made saying.
+                if let text = better.text, $0.text == made.text { $0.text = text }
+            }
+            // Still being named: the new name selected, to be typed over in turn.
+            if caretParts[title]?.contains(.title) == true { edit(title, inTitle: true) }
+        }
     }
 
     // MARK: Saving

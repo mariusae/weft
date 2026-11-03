@@ -140,7 +140,7 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   and what a query finds.
 - **Queries**: a ```` ```query ```` block lists the tiddlers it finds —
   tagged with something, linking to something, listed in a tiddler's `list`,
-  with words in them — as a list, a line of links, a table, cards, a count,
+  with words in them, to-do or done (`is: todo`) — as a list, a line of links, a table, cards, a count,
   or a table-of-contents tree. **Insert Query…** in a card's menu makes one with a form. `{this}` stands for the
   tiddler it's in. The importer turns TiddlyWiki's `<<list-links>>`,
   `<<toc>>`, `<$list>` and `{{{ }}}` into queries where their filters allow.
@@ -233,7 +233,12 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   page has it written.
 - **Prism's lenses** in the sidebar: the **Inbox**, **Tasks** (every
   open `+ [ ]`, grouped as Prism groups them, each ticked off where it
-  stands) and **Pinned**; a card's menu puts it in the inbox, or pins it.
+  stands — and before them the pages that are to-dos) and **Pinned**; a
+  card's menu puts it in the inbox, or pins it.
+- **A page as a to-do**: **Make a To-Do** in a card's menu gives it a ring
+  by its title (`task: todo` in its frontmatter); a click checks it off —
+  `task: done`, the day in `done:` — its title struck through, a click
+  again opens it again. Queries ask `is: todo` or `is: done`.
 - **Reading**, as Prism reads: **Read** in a card's menu shows the pages it
   links to — a link note's own first, ‹ › to the rest — its words alone,
   set in Chronicle, or the site; where it was read to is kept. A passage
@@ -247,6 +252,12 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   Deleted…** (the File menu, or ⋯ on the phone) brings back pages deleted.
 - ⌘N makes a new tiddler, its made-up title selected to type over; ⇧⌘W
   closes every card not being edited.
+- ⌥⌘N, **New Tiddler from Pasteboard** (in ⋯ on the phone): a tiddler of
+  what was copied — words, a link, pictures (kept in `assets/`). Titled at
+  once by a heading, the first line, the page's address or the time, its
+  title selected to type over; then, if it is still untouched a few
+  seconds on, a better one: the page's own title, or one the device's
+  model writes of the words — or of the words in a picture.
 
 WikiText the importer couldn't convert shows as a dashed placeholder, the
 WikiText a click away.
