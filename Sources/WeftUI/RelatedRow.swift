@@ -66,7 +66,7 @@ struct RelatedRow: View {
                     FlowLayout(spacing: 4) {
                         ForEach(offered, id: \.title) { target in
                             Button { relate(target.title) } label: {
-                                Label(target.shown, systemImage: target.kind.symbol)
+                                Label(target.shown, systemImage: target.symbol)
                                     .font(.caption)
                                     .padding(.horizontal, 7)
                                     .padding(.vertical, 2)

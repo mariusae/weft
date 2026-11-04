@@ -240,6 +240,7 @@ struct QueryBuilder: View {
                     TextField("Title has", text: $query.titleContains)
                     TextField("Text has", text: $query.textContains)
                     TextField("Has fields", text: list(\.hasFields), prompt: Text("Fields, separated by commas"))
+                    EditedSincePicker(days: $query.editedSinceDaysAgo)
                 } header: {
                     Text("Find")
                 } footer: {

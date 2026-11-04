@@ -25,6 +25,7 @@ struct Card: View {
     @State private var definingFields = false
     @State private var historyShown = false
     @State private var addingRelated = false
+    @State private var choosingIcon = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     private var compact: Bool { sizeClass == .compact }
 
@@ -67,6 +68,12 @@ struct Card: View {
             if !peeking, !showsHeader { foldChevron.offset(x: -23, y: -3) }
         }
         #endif
+        .popover(isPresented: $choosingIcon) {
+            IconPicker(current: store.icon(of: title)) { symbol in
+                store.setIcon(symbol, of: title)
+                choosingIcon = false
+            }
+        }
         .popover(isPresented: $insertingQuery) {
             QueryBuilder(query: Self.starterQuery, card: title) { query in
                 insert(query)
@@ -133,8 +140,8 @@ struct Card: View {
         let peek = store.peek(of: title)
         let task = store.taskState(title)
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if store.kind(title) == .day {
-                Image(systemName: "calendar").foregroundStyle(Ink.secondary.color)
+            if let symbol = shownSymbol {
+                Image(systemName: symbol).foregroundStyle(Ink.secondary.color)
             }
             if let task {
                 Button {
@@ -218,6 +225,13 @@ struct Card: View {
         }
     }
 
+    /// What it shows before its title: its own icon, else a day's calendar.
+    private var shownSymbol: String? {
+        store.icon(of: title) ?? (store.kind(title) == .day ? "calendar" : nil)
+    }
+
+    private var canChooseIcon: Bool { !store.isShadow(title) }
+
     private var canRename: Bool { store.kind(title) != .day && !store.isShadow(title) }
 
     /// Whether it has no title yet — as it is being written, too.
@@ -297,10 +311,16 @@ struct Card: View {
         let task = store.taskState(title)
         let peeking = river.isFolded(title)
         return HStack(alignment: .center, spacing: peeking ? 8 : 10) {
-            if kind == .day {
-                Image(systemName: "calendar")
-                    .foregroundStyle(Ink.secondary.color)
-                    .help("A day")
+            // Its icon — a day's calendar, or its own — a click away from another.
+            if let symbol = shownSymbol {
+                Button { if canChooseIcon { choosingIcon = true } } label: {
+                    Image(systemName: symbol)
+                        .foregroundStyle(Ink.secondary.color)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(kind == .day && store.icon(of: title) == nil ? "A day" : "Its icon: \(PageIcon.name(of: symbol)) — click to choose another")
+                .accessibilityLabel(PageIcon.name(of: symbol))
             }
             // A page that is a thing to do: its ring, to check it off.
             if let task {
@@ -376,7 +396,7 @@ struct Card: View {
             // Its home river, a tap away — but in it already.
             if let home = homeElsewhere {
                 Button { river.follow(river: home) } label: {
-                    Label(home, systemImage: RiverLink.symbol)
+                    Label(home, systemImage: store.savedRiverIcon(home) ?? RiverLink.symbol)
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
                         .padding(.horizontal, 8)
@@ -594,6 +614,12 @@ struct Card: View {
         }
         #endif
         Divider()
+        if canChooseIcon {
+            Button("Choose Icon…", systemImage: store.icon(of: title) ?? "square.grid.3x3") { choosingIcon = true }
+            if store.icon(of: title) != nil {
+                Button("Remove Icon", systemImage: "minus.circle") { store.setIcon(nil, of: title) }
+            }
+        }
         Button("Add Tag", systemImage: "tag") { addingTag = true }
         Button("Relate To…", systemImage: "link") { addingRelated = true }
         homeRiverMenu

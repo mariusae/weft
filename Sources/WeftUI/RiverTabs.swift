@@ -158,6 +158,10 @@ struct RiverTabs: View {
             river.naming = river.name.map { .rename($0) } ?? .save
         }
         if let name = river.name {
+            Button("Choose River Icon…") {
+                rivers.select(river)
+                river.choosingIcon = true
+            }
             Button("Copy Link to River") { Platform.copy(RiverLink.link(name)) }
             Button("Copy River Address") { Platform.copy(RiverLink.url(name).absoluteString) }
         }
@@ -196,7 +200,7 @@ private struct RiverTab: View {
     private var symbol: String {
         if let icon = river.icon { return icon }
         if river.name != nil { return "square.stack" }
-        return river.cards.first.map { store.kind($0).symbol } ?? "rectangle.stack"
+        return river.cards.first.map { store.symbol(of: $0) } ?? "rectangle.stack"
     }
 
     var body: some View {

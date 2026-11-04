@@ -250,6 +250,7 @@ public final class WikiStore {
     public func activated() {
         guard Date().timeIntervalSince(lastActivation) > 1.5 else { return }
         lastActivation = Date()
+        for river in rivers { river.timePassed() }
         syncNow(announcing: false)
     }
 
@@ -665,6 +666,33 @@ public final class WikiStore {
         change(title) { $0[field: RiverLink.homeKey] = name.map { .text($0) } }
         if !river(writing: title) { finishEditing(title) }
         undoable(name == nil ? "Remove Home River" : "Set Home River") { [weak self] in self?.setHomeRiver(before, of: title) }
+    }
+
+    /// A page's own icon — frontmatter `icon:`, an SF Symbol's name — as
+    /// its draft has it; nil for none. A link's target, by any of its names.
+    public func icon(of title: String) -> String? {
+        let page = drafts[title] ?? tiddler(title) ?? wiki?.title(for: title).flatMap { drafts[$0] ?? tiddler($0) }
+        return page.flatMap(PageIcon.symbol(of:))
+    }
+
+    /// What a link leads to's own icon: a saved river's, or a page's.
+    public func linkIcon(_ name: String) -> String? {
+        if let river = RiverLink.name(name) { return savedRiverIcon(river) }
+        return icon(of: name)
+    }
+
+    /// What a page is shown with: its own icon, else its kind's.
+    public func symbol(of title: String) -> String {
+        icon(of: title) ?? kind(title).symbol
+    }
+
+    /// A page's icon set — or taken off, for nil.
+    public func setIcon(_ symbol: String?, of title: String) {
+        let before = icon(of: title)
+        guard symbol != before else { return }
+        change(title) { $0[field: PageIcon.key] = symbol.map { .text($0) } }
+        if !river(writing: title) { finishEditing(title) }
+        undoable(symbol == nil ? "Remove Icon" : "Set Icon") { [weak self] in self?.setIcon(before, of: title) }
     }
 
     /// The names a page's own frontmatter relates it to, as its draft has them.
@@ -1092,6 +1120,34 @@ public final class WikiStore {
         guard writeSavedRiver(name, river) else { return nil }
         savedVersion += 1
         return name
+    }
+
+    /// A saved river's icon, as its file has it: nil for none. Read once
+    /// for each change to the saved rivers, as links to them are drawn.
+    public func savedRiverIcon(_ name: String) -> String? {
+        let version = savedVersion &+ riverIconsVersion
+        if riverIcons.version != version { riverIcons = (version, [:]) }
+        if let known = riverIcons.icons[name] { return known }
+        let icon = savedRiver(name)?.icon
+        riverIcons.icons[name] = .some(icon)
+        return icon
+    }
+
+    @ObservationIgnored private var riverIcons: (version: Int, icons: [String: String?]) = (-1, [:])
+    /// Bumped as a river's icon is chosen: what shows it, drawn again.
+    private var riverIconsVersion = 0
+
+    func savedRiverIconChanged() { riverIconsVersion += 1 }
+
+    /// A saved river's icon set, whether or not it is open.
+    public func setSavedRiverIcon(_ name: String, _ symbol: String?) {
+        if let open = river(named: name) { open.setIcon(symbol); return }
+        guard var saved = savedRiver(name), saved.icon != symbol else { return }
+        let before = saved.icon
+        saved.icon = symbol
+        keepSavedRiver(name, saved)
+        savedRiverIconChanged()
+        undoable(symbol == nil ? "Remove River Icon" : "Set River Icon") { [weak self] in self?.setSavedRiverIcon(name, before) }
     }
 
     /// A query river saved under a name no other has: what it finds, and
@@ -1592,6 +1648,11 @@ public struct LinkTarget: Hashable, Sendable {
     /// What it is shown as: a day's date in words, else its title.
     public var shown: String
     public var kind: Kind
+    /// Its page's own icon, when it has one.
+    public var icon: String? = nil
+
+    /// What it is shown with: its page's own icon, else its kind's.
+    public var symbol: String { icon ?? kind.symbol }
 
     public enum Kind: Sendable {
         case wiki, note, day, river, new
@@ -1622,7 +1683,7 @@ extension WikiStore {
     /// What a title leads to, as a link to it would.
     public func target(_ title: String) -> LinkTarget {
         let title = wiki?.title(for: title) ?? title
-        return LinkTarget(title: title, shown: shownTitle(title), kind: kind(title))
+        return LinkTarget(title: title, shown: shownTitle(title), kind: kind(title), icon: icon(of: title))
     }
 
     /// What links to a card: wiki pages first, then notes and days, by title.
@@ -1720,7 +1781,7 @@ extension WikiStore {
 
     /// A saved river, as a link leads to it: `rivers/Work`, shown as Work.
     func riverTarget(_ name: String) -> LinkTarget {
-        LinkTarget(title: RiverLink.target(name), shown: name, kind: .river)
+        LinkTarget(title: RiverLink.target(name), shown: name, kind: .river, icon: savedRiverIcon(name))
     }
 
     /// A day, by its date or as today, yesterday or tomorrow.
@@ -1734,6 +1795,6 @@ extension WikiStore {
         } else {
             return nil
         }
-        return LinkTarget(title: title, shown: shownTitle(title), kind: .day)
+        return LinkTarget(title: title, shown: shownTitle(title), kind: .day, icon: icon(of: title))
     }
 }

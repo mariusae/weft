@@ -264,7 +264,7 @@ struct QuickOpen: View {
     private func row(_ target: LinkTarget, first: Bool) -> some View {
         let detail = detail(target)
         return HStack(spacing: 14) {
-            Image(systemName: target.kind.symbol)
+            Image(systemName: target.symbol)
                 .font(.system(size: 17))
                 .foregroundStyle(Ink.secondary.color)
                 .frame(width: 32, height: 32)

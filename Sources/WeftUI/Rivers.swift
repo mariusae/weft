@@ -220,6 +220,7 @@ struct RiverSetMenu: View {
                 current.naming = current.name.map { .rename($0) } ?? .save
             }
             if let name = current.name {
+                Button("Choose River Icon…", systemImage: current.icon ?? "square.grid.3x3") { current.choosingIcon = true }
                 Button("Copy Link to River", systemImage: "link") { Platform.copy(RiverLink.link(name)) }
                 Button("Copy River Address", systemImage: "safari") { Platform.copy(RiverLink.url(name).absoluteString) }
             }
@@ -328,6 +329,8 @@ struct RiversPanel: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
     @State private var deleting: String?
+    /// The saved river whose icon is being chosen.
+    @State private var choosingIcon: String?
 
     var body: some View {
         let saved = store.savedRivers()
@@ -362,6 +365,13 @@ struct RiversPanel: View {
         // As tall as its rows, up to a point.
         .frame(height: min(130 + CGFloat(max(saved.count, 1)) * 40, 460))
         #endif
+        .sheet(isPresented: Binding(get: { choosingIcon != nil }, set: { if !$0 { choosingIcon = nil } })) {
+            if let name = choosingIcon {
+                RiverIconSheet(name: name, current: store.savedRiverIcon(name), color: store.savedRiver(name)?.color) { symbol in
+                    store.setSavedRiverIcon(name, symbol)
+                }
+            }
+        }
         .confirmationDialog("Delete the river “\(deleting ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("Delete", role: .destructive) {
                 if let deleting { store.deleteSavedRiver(deleting) }
@@ -380,7 +390,7 @@ struct RiversPanel: View {
             river.recall(name)
         } label: {
             HStack {
-                Image(systemName: "square.stack.3d.up")
+                Image(systemName: store.savedRiverIcon(name) ?? "square.stack.3d.up")
                     .foregroundStyle(Ink.accent.color)
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {
@@ -418,6 +428,7 @@ struct RiversPanel: View {
             }
             Button("Duplicate…", systemImage: "plus.square.on.square") { ask(.clone(name)) }
             Button("Rename…", systemImage: "pencil") { ask(.rename(name)) }
+            Button("Choose Icon…", systemImage: store.savedRiverIcon(name) ?? "square.grid.3x3") { choosingIcon = name }
             Divider()
             Button("Delete…", systemImage: "trash", role: .destructive) { deleting = name }
         }

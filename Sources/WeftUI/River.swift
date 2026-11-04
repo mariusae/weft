@@ -92,7 +92,12 @@ public final class River: Identifiable {
     /// Whether the river is the one in front in its window: then what it
     /// finds anew waits to be asked for, not moving what is read.
     @ObservationIgnored public var isShown = false {
-        didSet { if isShown, !oldValue { applyUpdates() } }
+        didSet {
+            guard isShown, !oldValue else { return }
+            // What it finds by how lately pages were edited has changed with
+            // the time, though nothing else did.
+            if query?.editedSinceDaysAgo != nil { refind(now: true) } else { applyUpdates() }
+        }
     }
     /// The query's editor, asked for: for a new query river, or this one.
     public var queryEditor: QueryEditorAsk?
@@ -108,7 +113,7 @@ public final class River: Identifiable {
     var saved: SavedRiver {
         guard let query else {
             return SavedRiver(cards: cards, folded: folded.intersection(cards),
-                              rows: rows.filter { cards.contains($0.key) && !$0.value.isEmpty })
+                              rows: rows.filter { cards.contains($0.key) && !$0.value.isEmpty }, icon: icon, color: color)
         }
         let own = ownCards
         let hand = placed.sorted { query.precedes($0.value, $1.value) || (!query.precedes($1.value, $0.value) && $0.key < $1.key) }
@@ -758,6 +763,19 @@ public final class River: Identifiable {
     }
 
     public var naming: Naming?
+    /// Its icon being chosen: a saved river's.
+    public var choosingIcon = false
+
+    /// A saved river's icon set — or taken off, for nil — kept in its file.
+    public func setIcon(_ symbol: String?) {
+        guard name != nil, symbol != icon else { return }
+        let before = icon
+        icon = symbol
+        keep()
+        store.savedRiverIconChanged()
+        onChange()
+        store.undoable(symbol == nil ? "Remove River Icon" : "Set River Icon") { [weak self] in self?.setIcon(before) }
+    }
     /// Whether the saved rivers are showing: the Mac's popover, the phone's sheet.
     public var riversShown = false
     /// Opens a river beside this one: a new tab on the Mac, another of the

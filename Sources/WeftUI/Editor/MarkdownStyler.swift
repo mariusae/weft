@@ -23,6 +23,8 @@ struct MarkdownStyler {
     var describe: (String) -> String? = { _ in nil }
     /// What an untitled page is shown as, for a link to it by its name.
     var untitledName: (String) -> String? = { _ in nil }
+    /// A link's target's own icon — a page's, a saved river's — if it has one.
+    var icon: (String) -> String? = { _ in nil }
 
     /// The size cards are set in, as Settings has it.
     static var defaultSize: CGFloat { TextSettings.size }
@@ -377,7 +379,8 @@ struct MarkdownStyler {
                 storage.addAttributes([.weftLabel: label, .kern: max(0, width - letter), .font: font, .foregroundColor: PlatformColor.clear],
                                       range: sub(first))
             }
-            let pill = LinkPill(kind, hasLead: lead != nil, missing: missing)
+            let pill = LinkPill(kind, hasLead: lead != nil, missing: missing,
+                                icon: kind == .web || kind == .tag ? nil : page.flatMap(icon))
             storage.addAttribute(.weftPill, value: pill, range: sub(span.range))
             if let lead, pill.hasLead {
                 storage.addAttribute(.kern, value: pill.leadWidth(for: PlatformFont.systemFont(ofSize: size)), range: sub(NSRange(location: lead, length: 1)))

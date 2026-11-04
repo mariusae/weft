@@ -240,7 +240,7 @@ struct TiddlerEditor: View {
     var body: some View {
         EditorRepresentable(text: $text, controller: controller, store: store, river: river, card: card, suggest: suggest,
                             styler: MarkdownStyler(size: MarkdownStyler.defaultSize, exists: exists, describe: { store.riverNote($0) },
-                                                   untitledName: { store.untitledName($0) }),
+                                                   untitledName: { store.untitledName($0) }, icon: { store.linkIcon($0) }),
                             onEscape: onEscape, wantsCaret: wantsCaret, onCaretTaken: onCaretTaken,
                             onFocusChange: onFocusChange)
     }
@@ -272,7 +272,7 @@ struct SuggestionList: View {
             ForEach(Array(model.items.enumerated()), id: \.element) { index, item in
                 Button { model.pick(item) } label: {
                     HStack(spacing: 9) {
-                        Image(systemName: item.kind.symbol)
+                        Image(systemName: item.symbol)
                             .font(.system(size: 12, weight: .medium))
                             .frame(width: 18)
                             .foregroundStyle(index == model.selected ? .white : Ink.accent.color)
@@ -893,7 +893,7 @@ final class TiddlerTextView: UITextView {
         }
         let found = suggest((text as NSString).substring(with: range))
         controller?.suggestions = found
-        toolbar?.show(chips: found.map { ($0.kind == .new ? "New “\($0.title)”" : $0.shown, $0.kind.symbol) }) { [weak self] index in
+        toolbar?.show(chips: found.map { ($0.kind == .new ? "New “\($0.title)”" : $0.shown, $0.symbol) }) { [weak self] index in
             guard found.indices.contains(index) else { return }
             self?.complete(with: found[index].title)
         }

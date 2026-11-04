@@ -227,7 +227,7 @@ struct CardEditor: View {
             // `wiki` is the badge by the title; `list` and the fields a tag
             // gives are shown as what they are.
             // `task` and `done`, the ring by the title.
-            field.value.text != nil && !["list", "wiki", "related", "task", "done", RiverLink.homeKey, FieldSpec.field].contains(field.name)
+            field.value.text != nil && !["list", "wiki", "related", "task", "done", RiverLink.homeKey, PageIcon.key, FieldSpec.field].contains(field.name)
                 && !typed.contains(field.name)
         }
         if !fields.isEmpty || addingField {

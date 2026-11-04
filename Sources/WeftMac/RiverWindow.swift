@@ -247,6 +247,8 @@ struct RiverCommands: Commands {
                 river.naming = river.name.map { .rename($0) } ?? .save
             }
             .disabled(river == nil || store.root == nil)
+            Button("Choose River Icon…") { river?.choosingIcon = true }
+                .disabled(river?.name == nil)
             Button("Saved Rivers…") { river?.riversShown = true }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(river == nil || store.root == nil)

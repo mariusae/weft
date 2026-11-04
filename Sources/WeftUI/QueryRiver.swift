@@ -120,6 +120,13 @@ extension River {
         compose()
     }
 
+    /// Time has passed — the app come back to the front: what it finds by
+    /// how lately pages were edited, found again; pages grown too old leave.
+    func timePassed() {
+        guard query?.editedSinceDaysAgo != nil else { return }
+        refind(now: false)
+    }
+
     /// A page changed: what it finds is found again, a moment later — once
     /// for a run of changes, as typing saves.
     func pageChanged(_ title: String) {

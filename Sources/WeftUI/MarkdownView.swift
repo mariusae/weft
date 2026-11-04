@@ -343,7 +343,7 @@ private struct RiverEmbed: View {
             }
             ForEach(cards, id: \.self) { card in
                 Link(destination: InlineMarkdown.url(for: card)) {
-                    Label(store.shownTitle(card), systemImage: store.kind(card).symbol)
+                    Label(store.shownTitle(card), systemImage: store.symbol(of: card))
                         .font(.callout)
                         .italic(!store.exists(card))
                 }

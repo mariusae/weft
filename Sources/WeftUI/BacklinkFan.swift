@@ -44,7 +44,7 @@ struct BacklinkFan: View {
                 if overflow > 0 {
                     Menu {
                         ForEach(links.suffix(overflow), id: \.self) { link in
-                            Button { river.open(link.title, from: card) } label: { Label(link.shown, systemImage: link.kind.symbol) }
+                            Button { river.open(link.title, from: card) } label: { Label(link.shown, systemImage: link.symbol) }
                         }
                     } label: {
                         Text("+\(overflow)")
@@ -119,7 +119,7 @@ struct BacklinkFan: View {
         let highlighted: Bool
 
         var body: some View {
-            Image(systemName: target.kind.symbol)
+            Image(systemName: target.symbol)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(depth == 0 ? Ink.accent.color : .clear)
                 .frame(width: 26, height: 26)
@@ -140,7 +140,7 @@ struct BacklinkFan: View {
 
         var body: some View {
             VStack(alignment: .leading, spacing: 4) {
-                Label(target.shown, systemImage: target.kind.symbol)
+                Label(target.shown, systemImage: target.symbol)
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Text(target.kind.label)

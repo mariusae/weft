@@ -82,6 +82,8 @@ struct OutlineCardEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> OutlineEditor {
         // Pictures shown from the graph's `assets/`, and pasted ones kept there.
         PhoneImages.root = store.root
+        // Links shown with their pages' and rivers' own icons.
+        PhoneLayoutManager.targetIcon = { [store] name in store.linkIcon(name) }
         let editor = OutlineEditor(metrics: PhoneMetrics(face: TextSettings.face, size: TextSettings.size))
         editor.isFindInteractionEnabled = true
         let coordinator = context.coordinator

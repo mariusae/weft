@@ -24,15 +24,19 @@ final class LinkPill: NSObject {
     let hasLead: Bool
     /// A link to no tiddler: quieter.
     let missing: Bool
+    /// What it is to's own icon, shown instead of its kind's.
+    let icon: String?
 
-    init(_ kind: Kind, hasLead: Bool, missing: Bool = false) {
+    init(_ kind: Kind, hasLead: Bool, missing: Bool = false, icon: String? = nil) {
         self.kind = kind
         self.hasLead = hasLead && kind != .tag
         self.missing = missing
+        self.icon = icon
     }
 
     var symbol: String? {
         guard hasLead else { return nil }
+        if let icon { return icon }
         switch kind {
         case .web: return "link"
         case .page: return "doc.text"

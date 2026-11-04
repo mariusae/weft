@@ -157,6 +157,11 @@ public struct ContentView: View {
         .sheet(isPresented: Binding(get: { river.deletedShown }, set: { river.deletedShown = $0 })) {
             DeletedPagesSheet().environment(store).environment(river)
         }
+        .sheet(isPresented: Binding(get: { river.choosingIcon }, set: { river.choosingIcon = $0 })) {
+            RiverIconSheet(name: river.name ?? river.title, current: river.icon, color: river.color) { symbol in
+                river.setIcon(symbol)
+            }
+        }
         #if os(iOS)
         .riverNaming(river, asking: !river.riversShown)
         .sheet(isPresented: Binding(get: { river.riversShown }, set: { river.riversShown = $0 })) {
@@ -552,7 +557,7 @@ private struct Sidebar: View {
         return List(found, id: \.self) { title in
             Button { river.open(title) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Image(systemName: store.kind(title).symbol)
+                    Image(systemName: store.symbol(of: title))
                         .font(.caption)
                         .foregroundStyle(Ink.secondary.color)
                         .frame(width: 16)
@@ -620,7 +625,7 @@ private struct Sidebar: View {
                 Button { river.open(title) } label: {
                     HStack(spacing: 7) {
                         if kinds {
-                            Image(systemName: store.kind(title).symbol)
+                            Image(systemName: store.symbol(of: title))
                                 .font(.caption)
                                 .foregroundStyle(Ink.secondary.color)
                                 .frame(width: 16)

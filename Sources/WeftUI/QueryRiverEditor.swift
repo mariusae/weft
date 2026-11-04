@@ -54,6 +54,7 @@ struct QueryRiverEditor: View {
                     NavigationLink { TagsChooser(title: "Excluding Tags", tags: $query.excludedTags, ordered: false) } label: {
                         LabeledContent("Excluding Tags", value: listed(query.excludedTags, none: "None"))
                     }
+                    EditedSincePicker(days: $query.editedSinceDaysAgo)
                 } footer: {
                     if from == .linking { Text("Pages linking to it, and pages related to it either way.") }
                 }
@@ -224,16 +225,54 @@ struct QueryRiverEditor: View {
     }
 }
 
-/// Symbols a river can show as.
+/// How lately a page was edited, for a query to find it: since the
+/// start of a day, by the calendar — the usual days back, and the query's
+/// own if it is another.
+struct EditedSincePicker: View {
+    @Binding var days: Int?
+    static let usual = [0, 1, 2, 3, 7, 14, 30, 90, 365]
+
+    var body: some View {
+        Picker("Edited", selection: $days) {
+            Text("Any Time").tag(Int?.none)
+            ForEach(choices, id: \.self) { Text(Self.label($0)).tag(Int?.some($0)) }
+        }
+    }
+
+    private var choices: [Int] {
+        guard let days, !Self.usual.contains(days) else { return Self.usual }
+        return (Self.usual + [days]).sorted()
+    }
+
+    static func label(_ days: Int) -> String {
+        switch days {
+        case 0: "Today"
+        case 1: "Since Yesterday"
+        case 7: "Since a Week Ago"
+        case 14: "Since 2 Weeks Ago"
+        case 30: "Since a Month Ago"
+        case 90: "Since 3 Months Ago"
+        case 365: "Since a Year Ago"
+        default: "Since \(days) Days Ago"
+        }
+    }
+}
+
+/// Symbols a river can show as: a few at hand — and its own, if another —
+/// and the rest, by name, a step away.
 private struct IconGrid: View {
     @Binding var icon: String
     let color: String
     static let icons = ["clock", "star", "flag", "bolt", "book", "lightbulb", "tray", "checkmark.circle",
                         "calendar", "folder", "tag", "heart", "briefcase", "house", "leaf", "sparkles"]
 
+    private var shown: [String] {
+        Self.icons.contains(icon) ? Self.icons : Array(Self.icons.dropLast()) + [icon]
+    }
+
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 8) {
-            ForEach(Self.icons, id: \.self) { name in
+            ForEach(shown, id: \.self) { name in
                 Button { icon = name } label: {
                     Image(systemName: name)
                         .font(.system(size: 15, weight: .medium))
@@ -242,10 +281,29 @@ private struct IconGrid: View {
                         .background(icon == name ? RiverColor.color(color) : RiverColor.color(color).opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(name)
+                .help(PageIcon.name(of: name))
+                .accessibilityLabel(PageIcon.name(of: name))
             }
         }
         .padding(.vertical, 4)
+        NavigationLink { MoreIcons(icon: $icon, color: color) } label: {
+            LabeledContent("More Icons", value: PageIcon.name(of: icon))
+        }
+    }
+}
+
+/// Every icon on offer, by name, for a query river.
+private struct MoreIcons: View {
+    @Binding var icon: String
+    let color: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        IconPicker(current: icon, tint: RiverColor.color(color), chosenFill: RiverColor.color(color), allowsNone: false) { symbol in
+            if let symbol { icon = symbol }
+            dismiss()
+        }
+        .navigationTitle("Icon")
     }
 }
 
@@ -414,7 +472,7 @@ private struct PageChooser: View {
                     dismiss()
                 } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: target.kind.symbol)
+                        Image(systemName: target.symbol)
                             .foregroundStyle(Ink.accent.color)
                             .frame(width: 20)
                         Text(target.shown)

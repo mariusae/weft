@@ -99,6 +99,10 @@ enum Snapshot {
             if let rivers { rivers.closeOthers(river) }
             river.restore(River.State(graph: store.root?.path ?? "", name: name, cards: []))
         }
+        // `WEFT_RIVER_ICON=1`: the river's icon being chosen.
+        if environment["WEFT_RIVER_ICON"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { river.choosingIcon = true }
+        }
         // `WEFT_QUERY_EDITOR=new|edit`: the query river's editor.
         if let ask = environment["WEFT_QUERY_EDITOR"].flatMap(QueryEditorAsk.init(rawValue:)) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { river.queryEditor = ask }
