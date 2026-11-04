@@ -702,6 +702,19 @@ public final class WikiStore {
         }
     }
 
+    /// A page's file, by a title a link gives it — an alias, another case —
+    /// and what it says: for a link's card. Nil, a page not written yet.
+    public func noteFile(_ title: String) -> (path: String, source: String)? {
+        guard let entry = wiki?.entries[canonicalTitle(title)] else { return nil }
+        return (entry.path, entry.source)
+    }
+
+    /// Whether a page is private, `private: true`: its links not looked up on the web.
+    public func isPrivate(_ title: String) -> Bool {
+        watch(title)
+        return wiki?.entries[title]?.note.isPrivate ?? false
+    }
+
     /// A page pinned — after those pinned already — or not: Prism's `pinned:`.
     public func isPinned(_ title: String) -> Bool {
         watch(title)

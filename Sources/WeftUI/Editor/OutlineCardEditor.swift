@@ -48,10 +48,28 @@ struct OutlineCardEditor: NSViewRepresentable {
             coordinator.folds = $0
             river.setRowFolds($0, of: title)
         }
-        editor.onOpenTitle = { [river] title in
-            withAnimation(.snappy(duration: 0.28)) { river.open(title) }
+        // A link followed: its card opened after this one, as the text editor's are.
+        editor.onOpenTitle = { [river, title] linked in
+            withAnimation(.snappy(duration: 0.28)) { river.open(linked, from: title) }
         }
-        editor.onOpenURL = { NSWorkspace.shared.open($0) }
+        // A file in the graph — a picture double-clicked, a PDF's pill — by
+        // its place in it; any other address, as it says.
+        editor.onOpenURL = { [store] url in
+            guard url.scheme?.isEmpty ?? true else {
+                NSWorkspace.shared.open(url)
+                return
+            }
+            let path = url.path.removingPercentEncoding ?? url.path
+            guard path.hasPrefix("assets/"), !path.contains(".."), let root = store.root else { return NSSound.beep() }
+            NSWorkspace.shared.open(root.appendingPathComponent(path))
+        }
+        // A `[[link]]`'s card: the page it is to, as the graph has it.
+        PageOutlineEditor.findNotes { [store] linked in store.noteFile(linked) }
+        // A day's card: today's shows the time now among its blocks; its
+        // tasks offered Do Today and Later — moved into that day's page.
+        editor.day = Day(title)
+        editor.dayName = { [store] day in store.shownTitle(day.description) }
+        editor.onMoveToDay = { [store] rows, day, undo in store.add(rows, toDay: day, undo: undo ?? UndoManager()) }
         editor.onHeightChange = { [weak editor] in editor?.invalidateIntrinsicContentSize() }
         editor.onFocusChange = { [coordinator = context.coordinator] in coordinator.onFocusChange($0) }
         store.prepareLinkNotes { PageOutlineEditor.completeLinks(from: $0) }
@@ -60,6 +78,8 @@ struct OutlineCardEditor: NSViewRepresentable {
 
     func updateNSView(_ editor: PageOutlineEditor, context: Context) {
         context.coordinator.onFocusChange = onFocusChange
+        // A private page's links are not looked up on the web.
+        editor.isPrivate = store.isPrivate(title)
         let folds = river.rowFolds(of: title)
         editor.load(text, folds: folds)
         // Folded elsewhere — a sync brought the river's file — and not being written in here.
@@ -101,6 +121,24 @@ struct OutlineCardEditor: NSViewRepresentable {
         let width = proposal.width ?? (editor.bounds.width > 0 ? editor.bounds.width : 600)
         return CGSize(width: width, height: editor.height(forWidth: width))
     }
+}
+
+/// What the outline editor keeps of how pages are shown — a picture's
+/// size, a PDF's page, a carousel's place — kept in Weft's own folder,
+/// not another app's: a snapshot's apart. Set as the app starts, before
+/// any card; written as it quits.
+@MainActor
+public enum OutlineState {
+    public static func prepare(snapshot: Bool) {
+        if snapshot {
+            PageOutlineEditor.keepState(in: "Weft/Snapshot State")
+        } else {
+            // Kept, until now, as Reflect Mac keeps its: taken from there, once.
+            PageOutlineEditor.keepState(in: "Weft", taking: "Reflect Mac")
+        }
+    }
+
+    public static func save() { PageOutlineEditor.saveState() }
 }
 
 enum OutlineEditing {

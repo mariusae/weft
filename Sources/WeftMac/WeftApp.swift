@@ -7,6 +7,8 @@ import WeftUI
 @main
 struct WeftApp: App {
     @State private var store: WikiStore = {
+        // Before any card: where how pages are shown is kept.
+        OutlineState.prepare(snapshot: Snapshot.isAsked)
         let store = WikiStore()
         store.chooseGraph = { [unowned store] in _ = GraphPanel.choose(for: store) }
         // A snapshot looks, and must not commit or push anything.
@@ -62,6 +64,7 @@ struct WeftApp: App {
             // Quitting: what is being edited is written first.
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                 store.saveEditing()
+                OutlineState.save()
             }
         }
         .defaultSize(width: 1240, height: 860)
