@@ -251,6 +251,11 @@ enum Snapshot {
                 if let key = environment["WEFT_KEY"], let window = NSApp.windows.first(where: { $0.firstResponder is NSTextView }) {
                     press(key, in: window)
                 }
+                // `WEFT_NEWLINE`: Return pressed at the end of the card being written in.
+                if environment["WEFT_NEWLINE"] != nil, let view = NSApp.windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first {
+                    view.moveToEndOfDocument(nil)
+                    view.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+                }
                 // `WEFT_NEW_LATER`: a new tiddler, once the caret is in a card or the river scrolled, as ⌘N would.
                 if environment["WEFT_NEW_LATER"] != nil {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { river.newTiddler() }

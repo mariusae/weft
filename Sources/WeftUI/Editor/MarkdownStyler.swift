@@ -96,6 +96,8 @@ struct MarkdownStyler {
         var firstIndent: CGFloat = 0
         var indent: CGFloat = 0
         var attachment: EditorAttachment?
+        /// At least a line's height: one kept for its bullet or box, its words hidden.
+        var minimumHeight: CGFloat = 0
     }
 
     private func apply(_ look: LineLook, to range: NSRange, in storage: NSTextStorage, room: (EditorAttachment) -> CGFloat) {
@@ -106,6 +108,7 @@ struct MarkdownStyler {
         if look.hidden { paragraph.maximumLineHeight = 0.5 }
         paragraph.firstLineHeadIndent = look.firstIndent
         paragraph.headIndent = look.indent
+        paragraph.minimumLineHeight = look.minimumHeight
         if let attachment = look.attachment {
             let height = room(attachment)
             paragraph.paragraphSpacing = height > 0 ? height + 10 : 0
@@ -214,7 +217,8 @@ struct MarkdownStyler {
         // outline draws one, a box or a ring in its marker's place, there to
         // be checked; done, its words struck through.
         var content = line
-        if let match = Self.matches(#"^([ \t]*)([-*+]|\d+[.)])\s(?:\[([ xX])\]\s)?"#, in: line).first {
+        let item = Self.matches(#"^([ \t]*)([-*+]|\d+[.)])\s(?:\[([ xX])\]\s)?"#, in: line).first
+        if let match = item {
             let lead = match.range(at: 1)
             let depth = CGFloat(nsLine.substring(with: lead).reduce(0) { $0 + ($1 == "\t" ? 2 : 1) } / 2)
             if lead.length > 0 { storage.addAttributes(Self.hidden, range: sub(lead)) }
@@ -383,17 +387,31 @@ struct MarkdownStyler {
         }
         let pieces = MarkdownCache.pieces(content)
         let trimmed = content.trimmingCharacters(in: .whitespaces)
+        // A list item's line is kept for its bullet or its box, what is
+        // drawn under it set in with its words; any other, hidden.
+        let hides = !shown && item == nil
         if let card = pieces.card {
             // A link alone in its line: its card, in its place.
             look.attachment = .card(card.source, card.text)
-            look.hidden = !shown
+            look.hidden = hides
         } else if !pieces.pictures.isEmpty {
             look.attachment = .pictures(pieces.pictures)
-            look.hidden = !shown && pieces.words.isEmpty
+            look.hidden = hides && pieces.words.isEmpty
         } else if trimmed.hasPrefix("![["), trimmed.hasSuffix("]]"), !trimmed.dropFirst(3).dropLast(2).contains("]") {
             // A tiddler embedded alone in its line: drawn there, live.
             look.attachment = .block(trimmed)
-            look.hidden = !shown
+            look.hidden = hides
+        }
+        // Kept for its marker, as tall as a line of words.
+        if item != nil, !shown, look.attachment != nil, pieces.words.isEmpty || pieces.card != nil {
+            let font = PlatformFont.systemFont(ofSize: size)
+            look.minimumHeight = ceil(font.ascender - font.descender + font.leading)
+        }
+        // Kept for its marker: its card's link, or its embed, markup.
+        if item != nil, !shown, look.attachment != nil, pieces.card != nil || trimmed.hasPrefix("![[") {
+            let words = NSRange(location: nsLine.length - (content as NSString).length, length: (content as NSString).length)
+            for key in [NSAttributedString.Key.weftPill, .weftEllipsis, .kern] { storage.removeAttribute(key, range: sub(words)) }
+            markup(words)
         }
         if look.hidden {
             // Nothing of a hidden line is drawn: its links' pills neither.

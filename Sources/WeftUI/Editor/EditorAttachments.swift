@@ -153,7 +153,10 @@ final class EditorAttachments {
             let glyph = layout.glyphIndexForCharacter(at: range.location)
             let line = layout.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
             let height = heights[attachment] ?? 0
-            let frame = CGRect(x: origin.x + padding, y: origin.y + line.maxY + 4, width: width, height: max(height, 1))
+            // In with its line's words: a list item's, past its bullet or box.
+            let indent = (storage.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)?.headIndent ?? 0
+            let width = max(40, width - indent)
+            let frame = CGRect(x: origin.x + padding + indent, y: origin.y + line.maxY + 4, width: width, height: max(height, 1))
             let host = self.host(key, attachment, width: width)
             #if os(macOS)
             if host.frame != frame { host.frame = frame }

@@ -6,9 +6,9 @@ import WeftCore
 
 /// How wide each tab is, in the room the title bar gives: all alike while
 /// each can show its name; past that, the others bunched to their icons —
-/// the one under the pointer opened out to its name, as Safari does, and a
-/// saved river's always showing its name — and the one shown taking what
-/// is left.
+/// the one under the pointer opened out to its name, as Safari does — but a
+/// saved river's showing its name while there is room for it, cut short
+/// before it too is bunched; and the one shown taking what is left.
 enum TabLayout {
     static let spacing: CGFloat = 4
     /// A bunched tab: its icon alone.
@@ -21,8 +21,10 @@ enum TabLayout {
     /// A bunched tab at its tightest.
     static let tightest: CGFloat = 24
 
-    /// A saved river's tab, at its widest: its name cut short past it.
+    /// A saved river's tab: at its widest, its name cut short past it; at
+    /// its narrowest still showing the start of it — narrower, bunched.
     static let namedMax: CGFloat = 170
+    static let namedMin: CGFloat = 96
 
     /// `named`: for each tab, the room a saved river's name needs — nil for one not saved.
     static func widths(count: Int, current: Int, pointed hovered: Int?, named: [CGFloat?] = [], in width: CGFloat) -> [CGFloat] {
@@ -30,18 +32,39 @@ enum TabLayout {
         let gaps = spacing * CGFloat(count - 1)
         let alike = (width - gaps) / CGFloat(count)
         if alike >= readable { return Array(repeating: alike, count: count) }
-        // A saved river's name always shown, in the room it needs.
-        func name(_ index: Int) -> CGFloat? {
-            guard index != current, named.indices.contains(index), let needed = named[index] else { return nil }
-            return min(namedMax, max(needed, readable))
+        // What a saved river's name would have, the others' room aside.
+        func wanted(_ index: Int) -> CGFloat? {
+            guard named.indices.contains(index), let needed = named[index] else { return nil }
+            return min(namedMax, max(needed, namedMin))
         }
-        let names = (0..<count).compactMap(name)
-        let opened = hovered.flatMap { $0 != current && name($0) == nil ? pointed - bunched : nil } ?? 0
-        // The rest bunched tighter, down to an icon's width, before any scroll.
-        let fit = (width - gaps - shownMin - names.reduce(0, +) - opened) / CGFloat(max(1, count - 1 - names.count))
-        let each = min(bunched, max(tightest, fit))
-        var widths = (0..<count).map { name($0) ?? each }
-        if let hovered, hovered != current, widths.indices.contains(hovered), name(hovered) == nil { widths[hovered] = pointed }
+        let hover = hovered.flatMap { $0 != current && (0..<count).contains($0) ? $0 : nil }
+        let rest = (0..<count).filter { $0 != current && $0 != hover }
+        // Left after the one shown and the one under the pointer.
+        let room = width - gaps - shownMin - (hover.map { max(pointed, wanted($0) ?? 0) } ?? 0)
+        // Saved rivers' names, nearest the one shown first, as many as there
+        // is room for at their narrowest with the rest bunched.
+        var names = rest.filter { wanted($0) != nil }.sorted { abs($0 - current) < abs($1 - current) }
+        let fits = max(0, Int(((room - CGFloat(rest.count) * bunched) / (namedMin - bunched)).rounded(.down)))
+        names = Array(names.prefix(fits))
+        var widths = [CGFloat](repeating: 0, count: count)
+        // Their room shared out: each as much as its name wants, none less than the narrowest.
+        var left = room - CGFloat(rest.count - names.count) * bunched
+        var unsettled = names
+        while !unsettled.isEmpty {
+            let share = left / CGFloat(unsettled.count)
+            let settled = unsettled.filter { wanted($0)! <= share }
+            if settled.isEmpty {
+                for index in unsettled { widths[index] = max(namedMin, share) }
+                break
+            }
+            for index in settled { widths[index] = wanted(index)!; left -= wanted(index)! }
+            unsettled.removeAll { settled.contains($0) }
+        }
+        // The rest bunched, tighter down to an icon's width before any scroll.
+        let bunchedOnes = rest.filter { !names.contains($0) }
+        let each = min(bunched, max(tightest, (room - names.reduce(0) { $0 + widths[$1] }) / CGFloat(max(1, bunchedOnes.count))))
+        for index in bunchedOnes { widths[index] = each }
+        if let hover { widths[hover] = max(pointed, wanted(hover) ?? 0) }
         let others = widths.enumerated().filter { $0.offset != current }.reduce(0) { $0 + $1.element }
         widths[current] = max(shownMin, width - gaps - others)
         return widths
@@ -79,7 +102,8 @@ struct RiverTabs: View {
         let strip = HStack(spacing: TabLayout.spacing) {
             ForEach(Array(all.enumerated()), id: \.element.id) { index, river in
                 RiverTab(river: river, isCurrent: index == current, closable: all.count > 1,
-                         bunched: bunched && index != current && pointed != index && river.name == nil, hovering: pointed == index) {
+                         bunched: bunched && index != current && pointed != index && (widths.indices.contains(index) ? widths[index] : 0) < TabLayout.namedMin,
+                         hovering: pointed == index) {
                     // At once: no animation to wait out.
                     if river === rivers.current { river.quickOpenShown = true } else { rivers.select(river) }
                 } close: {
