@@ -104,6 +104,8 @@ struct Ink {
     /// A row under the pointer, or chosen with the keys.
     static let hover = Ink(light: 0x2b2724, dark: 0xece6dc, alpha: 0.06)
     static let accent = Ink(light: 0x265cd1, dark: 0x85adff)
+    /// A card's drawer of controls: the accent, softened — white on it still clear.
+    static let drawer = Ink(light: 0x6189e0, dark: 0x4b6bb5)
 
     private static func make(_ value: UInt32, _ alpha: CGFloat) -> PlatformColor {
         PlatformColor(red: CGFloat((value >> 16) & 0xff) / 255, green: CGFloat((value >> 8) & 0xff) / 255,

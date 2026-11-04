@@ -53,10 +53,12 @@ struct Card: View {
             // Its controls, out under it: while it is written in, or asked for.
             if river.isDrawerOut(title) {
                 drawer
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    // Not dropping down: grown into place as the card opens to make room for it.
+                    .transition(.asymmetric(insertion: .modifier(active: DrawerMorph(shown: false), identity: DrawerMorph(shown: true)),
+                                            removal: .modifier(active: DrawerMorph(shown: false), identity: DrawerMorph(shown: true))))
             }
         }
-        .animation(.snappy(duration: 0.22), value: river.isDrawerOut(title))
+        .animation(Self.drawerSpring, value: river.isDrawerOut(title))
         .popover(isPresented: $insertingQuery) {
             QueryBuilder(query: Self.starterQuery, card: title) { query in
                 insert(query)
@@ -153,6 +155,9 @@ struct Card: View {
         .overlay(alignment: .topLeading) { foldChevron.offset(x: -23, y: -3) }
         #endif
     }
+
+    /// How the card opens for its drawer, and the drawer grows into it.
+    static let drawerSpring = Animation.spring(response: 0.34, dampingFraction: 0.82)
 
     #if os(macOS)
     static let peekLines = 2
@@ -429,7 +434,7 @@ struct Card: View {
     /// out, or in again.
     private var dots: some View {
         let out = river.isDrawerOut(title)
-        return Button { withAnimation(.snappy(duration: 0.22)) { river.toggleDrawer(title) } } label: {
+        return Button { withAnimation(Self.drawerSpring) { river.toggleDrawer(title) } } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 13, weight: .bold))
                 .frame(width: 30, height: 24)
@@ -493,7 +498,7 @@ struct Card: View {
         }
         .padding(.horizontal, 6)
         .frame(height: 46)
-        .background(Ink.accent.color, in: Capsule())
+        .background(Ink.drawer.color, in: Capsule())
         .padding(.top, 12)
     }
 
@@ -707,5 +712,18 @@ private struct DrawerIcon: View {
             .foregroundStyle(.white)
             .frame(width: 44, height: 40)
             .contentShape(Rectangle())
+    }
+}
+
+/// A drawer coming or going: a narrow, soft pill swelling to its full
+/// width and sharpening, its icons with it — morphing into place.
+private struct DrawerMorph: ViewModifier {
+    let shown: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(x: shown ? 1 : 0.35, y: shown ? 1 : 0.7, anchor: .center)
+            .opacity(shown ? 1 : 0)
+            .blur(radius: shown ? 0 : 6)
     }
 }
