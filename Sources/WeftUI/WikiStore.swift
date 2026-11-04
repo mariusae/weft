@@ -293,18 +293,22 @@ public final class WikiStore {
     private func syncFinished(_ result: Result<SyncReport, Error>) {
         let asked = announcing
         announcing = false
-        clearing?.cancel()
         switch result {
         case .failure(let error):
+            clearing?.cancel()
             syncNotice = .failed(error.localizedDescription)
             return
         case .success(let report):
             let brought = report.changed.filter(PageFolder.isPage).count
             let sent = report.parts.contains("pushed")
+            // A quiet sync says nothing — and leaves what was said to go
+            // as it was to.
             guard asked || brought > 0 else {
                 if case .failed = syncNotice { syncNotice = nil }
+                if syncNotice == .syncing { syncNotice = nil }
                 return
             }
+            clearing?.cancel()
             let pages = { (n: Int) in n == 1 ? "1 change" : "\(n) changes" }
             let said = switch (brought, sent) {
             case (0, false): "Up to date"

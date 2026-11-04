@@ -74,8 +74,10 @@ struct OutlineCardEditor: NSViewRepresentable {
         editor.dayName = { [store] day in store.shownTitle(day.description) }
         editor.onMoveToDay = { [store] rows, day, undo in store.add(rows, toDay: day, undo: undo ?? UndoManager()) }
         editor.onHeightChange = { [weak editor] in editor?.invalidateIntrinsicContentSize() }
-        // Untitled: its first row offered as its title, while the caret is on it.
+        // Untitled: its first row its title by More's Title, or ⌃⌘T — not
+        // offered in the row itself.
         editor.isUntitled = { [store, title] in Untitled.isName(store.draftHead(title)?.title ?? title) }
+        editor.offersTitleChip = false
         editor.onTitle = { [store, title] name in store.change(title) { $0.title = name } }
         editor.onAskTitle = { [river, title] in river.edit(title, inTitle: true) }
         editor.onFocusChange = { [coordinator = context.coordinator] in coordinator.onFocusChange($0) }

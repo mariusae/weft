@@ -13,8 +13,6 @@ struct Card: View {
     /// How many pages refer to it, counted when its deletion is asked for —
     /// not each time the card is drawn.
     @State private var referring = 0
-    /// How wide the controls over the title are.
-    @State private var controlsWidth: CGFloat = 0
     /// The title being typed in: renaming.
     @State private var renaming = false
     @FocusState private var titleFocused: Bool
@@ -36,7 +34,7 @@ struct Card: View {
             if peeking {
                 peekRow
             } else {
-                header
+                if showsHeader { header }
                 relinking
                 if store.needsReview(title) {
                     ConflictView(title: title)
@@ -50,15 +48,25 @@ struct Card: View {
                         .padding(.top, 4)
                 }
             }
-            // Its controls, out under it: while it is written in, or asked for.
-            if river.isDrawerOut(title) {
+            // Its controls, out under it: on the phone, while it is open,
+            // or asked for.
+            if drawerShown {
                 drawer
                     // Not dropping down: grown into place as the card opens to make room for it.
                     .transition(.asymmetric(insertion: .modifier(active: DrawerMorph(shown: false), identity: DrawerMorph(shown: true)),
                                             removal: .modifier(active: DrawerMorph(shown: false), identity: DrawerMorph(shown: true))))
             }
         }
-        .animation(Self.drawerSpring, value: river.isDrawerOut(title))
+        .animation(Self.drawerSpring, value: drawerShown)
+        #if os(macOS)
+        // No title: its controls and its fold in the corners, over its words.
+        .overlay(alignment: .topTrailing) {
+            if !peeking, !showsHeader { macControls.offset(y: -26) }
+        }
+        .overlay(alignment: .topLeading) {
+            if !peeking, !showsHeader { foldChevron.offset(x: -23, y: -3) }
+        }
+        #endif
         .popover(isPresented: $insertingQuery) {
             QueryBuilder(query: Self.starterQuery, card: title) { query in
                 insert(query)
@@ -70,14 +78,16 @@ struct Card: View {
         // Room round what it says: more at its foot, where the last line
         // would otherwise sit close against the edge.
         .padding(.horizontal, sizeClass == .compact ? 16 : 28)
-        .padding(.top, peeking ? 12 : (sizeClass == .compact ? 16 : 22))
+        .padding(.top, peeking ? 12 : (sizeClass == .compact ? 16 : headerlessTop))
         .padding(.bottom, peeking ? 12 : (sizeClass == .compact ? 22 : 30))
         .frame(maxWidth: .infinity, alignment: .leading)
         // Peeking: set back, a shade under an open card — to be read, not written in.
         .background {
             RoundedRectangle(cornerRadius: 14).fill(peeking ? Ink.paper.color : Color.card)
-                // Its drawer out: the card lit a little, as the row it belongs to.
+                #if os(iOS)
+                // Written in: the card lit a little, as the drawer under it.
                 .overlay { RoundedRectangle(cornerRadius: 14).fill(Ink.accent.color.opacity(river.isDrawerOut(title) ? 0.07 : 0)) }
+                #endif
         }
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.rule.color.opacity(river.isSelected(title) ? 0 : 1)))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.accent.color.opacity(river.isSelected(title) ? 0.45 : 0)))
@@ -147,7 +157,11 @@ struct Card: View {
                 .onTapGesture { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Opens the card")
+            #if os(macOS)
+            macControls
+            #else
             dots
+            #endif
         }
         .font(.system(size: TextSettings.size))
         .draggingCard(title, shown: peek.title)
@@ -214,42 +228,38 @@ struct Card: View {
         Untitled.name(of: (store.draft(title) ?? store.tiddler(title))?.text ?? "") ?? ""
     }
 
-    /// An untitled card's header: the offer of a title — on the Mac under
-    /// the pointer, the first line's own Title at its end; on the phone,
-    /// always, with its first line a tap away from being the title.
-    @ViewBuilder private var untitledHeader: some View {
-        HStack(spacing: 10) {
-            Text("Add title")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(Ink.faint.color)
-                // On the phone, with no pointer to hover, always.
-                #if os(macOS)
-                .opacity(hovering ? 1 : 0)
-                #endif
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .contentShape(Rectangle())
-                .onTapGesture { startRenaming() }
-                .help("Give it a title (⌃⌘T) — or click Title at the end of its first line")
-                .accessibilityAddTraits(.isButton)
-            #if os(iOS)
-            // As last saved: not drawn again with each letter typed.
-            if let name = store.untitledName(title), name != "Untitled" {
-                Button { withAnimation(.snappy(duration: 0.2)) { river.titleByFirstLine(title) } } label: {
-                    Label("Use First Line", systemImage: "arrow.up")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .foregroundStyle(Ink.accent.color)
-                        .background(Ink.accent.color.opacity(0.12), in: Capsule())
-                        .fixedSize()
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Title it “\(name)”")
-            }
-            #endif
-        }
+    /// Whether it has a row for its title: not, untitled — its words are
+    /// all there is of it, till it is given a title — but while one is
+    /// typed, or with a ring to check off or a home river to show.
+    private var showsHeader: Bool {
+        !isUntitled || renaming || store.taskState(title) != nil || homeElsewhere != nil
+    }
+
+    /// Its home river, when that is not this one.
+    private var homeElsewhere: String? {
+        guard let home = store.homeRiver(of: title), home.caseInsensitiveCompare(river.name ?? "") != .orderedSame else { return nil }
+        return home
+    }
+
+    /// Room over what it says: on the Mac, with no title row, enough for
+    /// its controls to stand in.
+    private var headerlessTop: CGFloat {
+        #if os(macOS)
+        showsHeader ? 22 : 34
+        #else
+        22
+        #endif
+    }
+
+    /// Whether its drawer of controls is out under it: on the phone, while
+    /// it is open, always; peeking, when its ⋯ is tapped. The Mac's are
+    /// over it.
+    private var drawerShown: Bool {
+        #if os(macOS)
+        false
+        #else
+        !river.isFolded(title) || river.isDrawerOut(title)
+        #endif
     }
 
     /// Its title taken away: untitled again, shown as it begins, what
@@ -320,6 +330,7 @@ struct Card: View {
                 .font(.system(size: 22, weight: .semibold))
                 .lineLimit(1)
                 .focused($titleFocused)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .onSubmit {
                     // Untitled, and nothing typed: called what it begins with.
                     if isUntitled, case let offered = untitledSuggestion, !offered.isEmpty {
@@ -328,11 +339,9 @@ struct Card: View {
                     // A new tiddler named: on to what it says. One renamed: done.
                     if store.exists(title) { Platform.endEditing() } else { river.edit(title) }
                 }
-                // Typed in, clear of the controls.
-                .padding(.trailing, controlsWidth + 8)
-            } else if isUntitled, !river.isFolded(title) {
-                // No title till one is given: under the pointer, the offer of one.
-                untitledHeader
+            } else if isUntitled {
+                // No title till one is given: its ring, or its home river, alone.
+                EmptyView()
             } else {
                 Text(peeking ? store.peek(of: title).title : shown)
                     // Peeking: the size of what it says, bold.
@@ -365,7 +374,7 @@ struct Card: View {
                     .help("A wiki page: canonical, kept up")
             }
             // Its home river, a tap away — but in it already.
-            if let home = store.homeRiver(of: title), home.caseInsensitiveCompare(river.name ?? "") != .orderedSame {
+            if let home = homeElsewhere {
                 Button { river.follow(river: home) } label: {
                     Label(home, systemImage: RiverLink.symbol)
                         .font(.caption.weight(.semibold))
@@ -384,7 +393,7 @@ struct Card: View {
             }
         }
         // As wide as the card gives, however long the title: the rest of it
-        // runs on under the controls and is cut off at the card's edge.
+        // cut off before the controls.
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 30, alignment: .leading)
         .clipped()
         // Dragged by its title to elsewhere in the river; on the phone, held first.
@@ -394,11 +403,8 @@ struct Card: View {
         // Over the drag, not in it: its shape, the title's, would take the
         // chevron's clicks from it, outside it as it is.
         .overlay(alignment: .leading) { foldChevron.offset(x: -23) }
+        .safeAreaInset(edge: .trailing, spacing: 8) { macControls }
         #endif
-        .overlay(alignment: .trailing) {
-            dots
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { controlsWidth = $0 }
-        }
     }
 
     #if os(macOS)
@@ -430,8 +436,63 @@ struct Card: View {
     }
     #endif
 
-    /// The card's ⋯, faint — on the Mac, under the pointer — its drawer
-    /// out, or in again.
+    #if os(macOS)
+    /// The card's controls, at the end of its title row: under the pointer,
+    /// faint while it is written in or chosen, else out of sight. Open:
+    /// text or outline, the days beside a day's, what a query river does
+    /// with it, More, and closing it. Peeking: More and closing.
+    private var macControls: some View {
+        let peeking = river.isFolded(title)
+        let shownMode = store.editorMode(title)
+        return HStack(spacing: 2) {
+            if !peeking {
+                HStack(spacing: 1) {
+                    ForEach(WikiStore.EditorMode.allCases, id: \.self) { mode in
+                        Button { store.setEditorMode(mode, for: title) } label: {
+                            Image(systemName: mode.symbol)
+                                .font(.system(size: 11, weight: .medium))
+                                .frame(width: 26, height: 20)
+                                .background(mode == shownMode ? Color.primary.opacity(0.1) : .clear, in: .rect(cornerRadius: 5))
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(mode == shownMode ? Ink.text.color : Ink.secondary.color)
+                        .accessibilityLabel(mode.rawValue)
+                        .accessibilityAddTraits(mode == shownMode ? .isSelected : [])
+                    }
+                }
+                .padding(2)
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Ink.rule.color))
+                .help("Write as text, or as an outline of rows")
+                .padding(.trailing, 6)
+                if store.kind(title) == .day {
+                    CardButton("The Day Before", "chevron.left") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: -1) } }
+                    CardButton("The Day After", "chevron.right") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: 1) } }
+                }
+                if river.isQuery {
+                    if river.isHeld(title) {
+                        CardButton("Release to Query", "arrow.uturn.down") { withAnimation { river.releaseToQuery(title) } }
+                    } else {
+                        CardButton("Keep at Top", "pin") { withAnimation { river.keepAtTop(title) } }
+                    }
+                }
+            }
+            Menu { menuItems } label: { CardButtonFace(symbol: "ellipsis") }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More")
+                .accessibilityLabel("More")
+            CardButton(river.isQuery ? "Remove from River" : "Close", "xmark") { withAnimation { river.close(title) } }
+        }
+        .foregroundStyle(Ink.secondary.color)
+        .opacity(hovering ? 1 : !peeking && (river.isWriting(title) || river.isSelected(title)) ? 0.45 : 0)
+        .animation(.easeOut(duration: 0.15), value: hovering)
+    }
+    #endif
+
+    /// The card's ⋯ on the phone, peeking: its drawer out, or in again.
     private var dots: some View {
         let out = river.isDrawerOut(title)
         return Button { withAnimation(Self.drawerSpring) { river.toggleDrawer(title) } } label: {
@@ -442,12 +503,7 @@ struct Card: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(out ? Ink.accent.color : Ink.secondary.color)
-        #if os(macOS)
-        .opacity(out ? 1 : hovering ? 0.75 : 0)
-        .animation(.easeOut(duration: 0.15), value: hovering)
-        #else
         .opacity(out ? 1 : 0.5)
-        #endif
         .help("Controls")
         .accessibilityLabel(out ? "Hide Controls" : "Controls")
     }
@@ -680,6 +736,43 @@ struct FlowLayout: Layout {
         return rows
     }
 }
+
+#if os(macOS)
+/// One of a card's controls on the Mac: a plain symbol, lit under the
+/// pointer as a toolbar's buttons are.
+private struct CardButton: View {
+    let name: String
+    let symbol: String
+    let action: () -> Void
+
+    init(_ name: String, _ symbol: String, action: @escaping () -> Void) {
+        self.name = name
+        self.symbol = symbol
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) { CardButtonFace(symbol: symbol) }
+            .buttonStyle(.plain)
+            .help(name)
+            .accessibilityLabel(name)
+    }
+}
+
+private struct CardButtonFace: View {
+    let symbol: String
+    @State private var hovered = false
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 12, weight: .semibold))
+            .frame(width: 26, height: 24)
+            .background(Color.primary.opacity(hovered ? 0.08 : 0), in: .rect(cornerRadius: 6))
+            .contentShape(.rect)
+            .onHover { hovered = $0 }
+    }
+}
+#endif
 
 /// One of a card's controls in its drawer: its symbol alone, white on
 /// the drawer's colour — its name said under the pointer, and aloud.

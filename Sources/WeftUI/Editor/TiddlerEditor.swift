@@ -328,9 +328,6 @@ final class TiddlerTextView: NSTextView {
     var isUntitled: () -> Bool = { false }
     var onTitle: (String) -> Void = { _ in }
     var onAskTitle: () -> Void = {}
-    /// At the end of an untitled page's first line, while the caret is on
-    /// it: Title, to make that line its title.
-    let titleChip = NSButton(title: "Title", target: nil, action: nil)
     private let model = SuggestionModel()
     private lazy var panel = SuggestionPanel(model: model)
     private let ghost = NSTextField(labelWithString: "")
@@ -377,7 +374,6 @@ final class TiddlerTextView: NSTextView {
         ghost.textColor = Palette.faint
         ghost.isHidden = true
         addSubview(ghost)
-        setUpTitleChip()
         model.pick = { [weak self] target in self?.accept(target) }
     }
 
@@ -400,7 +396,6 @@ final class TiddlerTextView: NSTextView {
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
         if became { onFocusChange(true) }
-        placeTitleChip()
         return became
     }
 
@@ -408,14 +403,13 @@ final class TiddlerTextView: NSTextView {
         hideCompletions()
         let resigned = super.resignFirstResponder()
         if resigned { onFocusChange(false) }
-        titleChip.isHidden = true
         return resigned
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         let changed = newSize != frame.size
         super.setFrameSize(newSize)
-        if changed { onResize(); placeTitleChip() }
+        if changed { onResize() }
     }
 
     // MARK: Links
@@ -734,7 +728,6 @@ private struct EditorRepresentable: NSViewRepresentable {
             context.coordinator.live?.changed()
         }
         context.coordinator.shown = text
-        view.placeTitleChip()
         if wantsCaret {
             DispatchQueue.main.async { [onCaretTaken] in
                 guard let window = view.window else { return }
@@ -787,7 +780,6 @@ private struct EditorRepresentable: NSViewRepresentable {
             shown = text
             parent.text = text
             live?.changed()
-            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         /// No word marked misspelled where what is written is not shown:
@@ -804,7 +796,6 @@ private struct EditorRepresentable: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }
             live?.selectionChanged(view.selectedRange())
-            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textStorage(_ storage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range: NSRange, changeInLength: Int) {
@@ -830,13 +821,9 @@ final class TiddlerTextView: UITextView {
     var isUntitled: () -> Bool = { false }
     var onTitle: (String) -> Void = { _ in }
     var onAskTitle: () -> Void = {}
-    /// At the end of an untitled page's first line, while the caret is on
-    /// it: Title, to make that line its title.
-    let titleChip = UIButton(type: .system)
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
-        setUpTitleChip()
     }
 
     required init?(coder: NSCoder) { fatalError("unused") }
@@ -846,19 +833,16 @@ final class TiddlerTextView: UITextView {
         if abs(bounds.width - laidOutWidth) > 0.5 {
             laidOutWidth = bounds.width
             onLayout()
-            placeTitleChip()
         }
     }
 
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
-        placeTitleChip()
         return became
     }
 
     override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
-        titleChip.isHidden = true
         return resigned
     }
 
@@ -1073,7 +1057,6 @@ private struct EditorRepresentable: UIViewRepresentable {
             context.coordinator.live?.changed()
         }
         context.coordinator.shown = text
-        view.placeTitleChip()
         if wantsCaret {
             DispatchQueue.main.async { [onCaretTaken] in
                 if !view.isFirstResponder {
@@ -1110,13 +1093,11 @@ private struct EditorRepresentable: UIViewRepresentable {
             live?.changed()
             (view as? TiddlerTextView)?.offerCompletions()
             (view as? TiddlerTextView)?.showUndoState()
-            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textViewDidChangeSelection(_ view: UITextView) {
             live?.selectionChanged(view.selectedRange)
             (view as? TiddlerTextView)?.offerCompletions()
-            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textViewDidBeginEditing(_ view: UITextView) {
