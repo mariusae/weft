@@ -32,12 +32,12 @@ struct Card: View {
 
     var body: some View {
         let peeking = river.isFolded(title)
-        VStack(alignment: .leading, spacing: peeking ? 4 : 14) {
-            header
-            relinking
+        VStack(alignment: .leading, spacing: peeking ? 0 : 14) {
             if peeking {
-                peekSummary
+                peekRow
             } else {
+                header
+                relinking
                 if store.needsReview(title) {
                     ConflictView(title: title)
                 } else {
@@ -50,15 +50,33 @@ struct Card: View {
                         .padding(.top, 4)
                 }
             }
+            // Its controls, out under it: while it is written in, or asked for.
+            if river.isDrawerOut(title) {
+                drawer
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.snappy(duration: 0.22), value: river.isDrawerOut(title))
+        .popover(isPresented: $insertingQuery) {
+            QueryBuilder(query: Self.starterQuery, card: title) { query in
+                insert(query)
+                insertingQuery = false
+            } cancel: {
+                insertingQuery = false
+            }
         }
         // Room round what it says: more at its foot, where the last line
         // would otherwise sit close against the edge.
         .padding(.horizontal, sizeClass == .compact ? 16 : 28)
-        .padding(.top, peeking ? (sizeClass == .compact ? 12 : 14) : (sizeClass == .compact ? 16 : 22))
-        .padding(.bottom, peeking ? (sizeClass == .compact ? 14 : 16) : (sizeClass == .compact ? 22 : 30))
+        .padding(.top, peeking ? 12 : (sizeClass == .compact ? 16 : 22))
+        .padding(.bottom, peeking ? 12 : (sizeClass == .compact ? 22 : 30))
         .frame(maxWidth: .infinity, alignment: .leading)
         // Peeking: set back, a shade under an open card — to be read, not written in.
-        .background(peeking ? Ink.paper.color : Color.card, in: RoundedRectangle(cornerRadius: 14))
+        .background {
+            RoundedRectangle(cornerRadius: 14).fill(peeking ? Ink.paper.color : Color.card)
+                // Its drawer out: the card lit a little, as the row it belongs to.
+                .overlay { RoundedRectangle(cornerRadius: 14).fill(Ink.accent.color.opacity(river.isDrawerOut(title) ? 0.07 : 0)) }
+        }
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.rule.color.opacity(river.isSelected(title) ? 0 : 1)))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.accent.color.opacity(river.isSelected(title) ? 0.45 : 0)))
         .shadow(color: .black.opacity(peeking ? 0.03 : 0.07), radius: peeking ? 4 : 10, y: peeking ? 1 : 3)
@@ -95,25 +113,52 @@ struct Card: View {
         }
     }
 
-    /// Peeking: two lines of what it says after its title, set back and
-    /// not to be written in — always two lines' room, so that a river of
-    /// peeking cards is as tall as it looks. A tap opens it.
-    @ViewBuilder private var peekSummary: some View {
-        let summary = store.peek(of: title).summary
-        Button { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } } label: {
-            Text(summary.isEmpty ? " " : summary)
-                .font(.system(size: TextSettings.size))
-                .foregroundStyle(Ink.secondary.color)
-                .lineLimit(2, reservesSpace: true)
+    /// Peeking: its title in bold and what it says after, run on as one,
+    /// set back and not to be written in — two lines on the Mac, three on
+    /// the phone, always that room, so that a river of peeking cards is as
+    /// tall as it looks. A tap opens it.
+    @ViewBuilder private var peekRow: some View {
+        let peek = store.peek(of: title)
+        let task = store.taskState(title)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if store.kind(title) == .day {
+                Image(systemName: "calendar").foregroundStyle(Ink.secondary.color)
+            }
+            if let task {
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
+                } label: {
+                    Image(systemName: task == .done ? "checkmark.circle.fill" : "circle")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(task == .done ? Color.white : Ink.secondary.color, Ink.accent.color)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(task == .done ? "Done" : "To do")
+            }
+            (Text(peek.title).bold().foregroundStyle(task == .done ? Ink.secondary.color : Ink.text.color)
+             + Text(peek.summary.isEmpty ? "" : "  " + peek.summary).foregroundStyle(Ink.secondary.color))
+                .strikethrough(false)
+                .lineLimit(Self.peekLines, reservesSpace: true)
                 .truncationMode(.tail)
-                .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Opens the card")
+            dots
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(summary.isEmpty ? "Open" : summary)
-        .accessibilityHint("Opens the card")
+        .font(.system(size: TextSettings.size))
+        .draggingCard(title, shown: peek.title)
+        #if os(macOS)
+        .overlay(alignment: .topLeading) { foldChevron.offset(x: -23, y: -3) }
+        #endif
     }
+
+    #if os(macOS)
+    static let peekLines = 2
+    #else
+    static let peekLines = 3
+    #endif
 
     /// Being renamed: whether what refers to it is updated too.
     @ViewBuilder private var relinking: some View {
@@ -346,7 +391,7 @@ struct Card: View {
         .overlay(alignment: .leading) { foldChevron.offset(x: -23) }
         #endif
         .overlay(alignment: .trailing) {
-            controls
+            dots
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { controlsWidth = $0 }
         }
     }
@@ -380,203 +425,174 @@ struct Card: View {
     }
     #endif
 
-    /// Text or Outline; and, in a glass capsule, the card's menu and its
-    /// close button.
-    private func dayButton(_ symbol: String, _ name: String, by: Int) -> some View {
-        Button { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: by) } } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
-                .frame(width: 28, height: 26)
+    /// The card's ⋯, faint — on the Mac, under the pointer — its drawer
+    /// out, or in again.
+    private var dots: some View {
+        let out = river.isDrawerOut(title)
+        return Button { withAnimation(.snappy(duration: 0.22)) { river.toggleDrawer(title) } } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .bold))
+                .frame(width: 30, height: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(name)
-        .accessibilityLabel(name)
+        .foregroundStyle(out ? Ink.accent.color : Ink.secondary.color)
+        #if os(macOS)
+        .opacity(out ? 1 : hovering ? 0.75 : 0)
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        #else
+        .opacity(out ? 1 : 0.5)
+        #endif
+        .help("Controls")
+        .accessibilityLabel(out ? "Hide Controls" : "Controls")
     }
 
-    private var controls: some View {
-        let writing = river.isWriting(title)
-        return HStack(spacing: 8) {
-            #if os(macOS)
-            // Two buttons, not a segmented picker: AppKit's segmented
-            // control, with icons, threw as a card was readied off screen.
-            let shown = store.editorMode(title)
-            HStack(spacing: 2) {
-                ForEach(WikiStore.EditorMode.allCases, id: \.self) { mode in
-                    Button { store.setEditorMode(mode, for: title) } label: {
-                        Image(systemName: mode.symbol)
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(width: 26, height: 18)
-                            .background(mode == shown ? Color.primary.opacity(0.12) : .clear, in: .capsule)
-                            .contentShape(.capsule)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(mode == shown ? .primary : .secondary)
-                    .accessibilityLabel(mode.rawValue)
-                    .accessibilityAddTraits(mode == shown ? .isSelected : [])
-                }
-            }
-            .padding(3)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .help("Write as text, or as an outline of rows")
-            #else
-            if writing {
-                // Writing on the phone: Done, the keyboard put away.
-                Button { Platform.endEditing() } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .frame(width: 34, height: 30)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .glassEffect(.regular.tint(Ink.accent.color).interactive(), in: .circle)
-                .accessibilityLabel("Done")
+    /// The card's controls, slid out under it: open or peek, text or
+    /// outline, the days beside a day's, what a query river does with it,
+    /// the rest of what can be done with it, and closing it.
+    private var drawer: some View {
+        let peeking = river.isFolded(title)
+        let mode = store.editorMode(title)
+        let other: WikiStore.EditorMode = mode == .text ? .outline : .text
+        return HStack(spacing: 0) {
+            #if os(iOS)
+            if river.isWriting(title) {
+                DrawerButton("Done", "keyboard.chevron.compact.down") { Platform.endEditing() }
             }
             #endif
-            HStack(spacing: 0) {
-                if store.kind(title) == .day, !writing {
-                    // The day before and after, opened just after this one.
-                    dayButton("chevron.left", "Previous Day", by: -1)
-                    dayButton("chevron.right", "Next Day", by: 1)
-                }
-                menu
-                Button { withAnimation { river.close(title) } } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .frame(width: 30, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(river.isQuery ? "Remove from River" : "Close")
+            DrawerButton(peeking ? "Open" : "Peek",
+                         peeking ? "arrow.up.left.and.arrow.down.right.circle" : "arrow.down.right.and.arrow.up.left.circle") {
+                withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) }
             }
-            .foregroundStyle(Ink.secondary.color)
-            .padding(.horizontal, 2)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .popover(isPresented: $insertingQuery) {
-                QueryBuilder(query: Self.starterQuery, card: title) { query in
-                    insert(query)
-                    insertingQuery = false
-                } cancel: {
-                    insertingQuery = false
-                }
+            DrawerButton("Write as \(other.rawValue)", other == .outline ? "list.bullet.circle" : "line.3.horizontal.circle") {
+                store.setEditorMode(other, for: title)
             }
-        }
-        #if os(macOS)
-        .opacity(hovering || writing || river.isSelected(title) ? 1 : 0.55)
-        .animation(.easeOut(duration: 0.15), value: hovering)
-        #endif
-    }
-
-    private var menu: some View {
-        Menu {
-            if canRename {
-                if isUntitled {
-                    // What it begins with, as its title: at once.
-                    // As last saved: the menu not drawn again with each letter typed.
-                    if let name = store.untitledName(title), name != "Untitled" {
-                        Button("Title “\(name)”", systemImage: "arrow.up.to.line") { river.titleByFirstLine(title) }
-                    }
-                    Button("Add Title…", systemImage: "character.cursor.ibeam") { startRenaming() }
-                } else {
-                    Button("Rename", systemImage: "character.cursor.ibeam") { startRenaming() }
-                    Button("Remove Title", systemImage: "minus.circle") { removeTitle() }
-                }
-            }
-            Button(river.isFolded(title) ? "Unfold" : "Fold") {
-                withAnimation(.snappy(duration: 0.2)) { river.toggleFold(title) }
+            if store.kind(title) == .day {
+                DrawerButton("The Day Before", "chevron.backward.circle") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: -1) } }
+                DrawerButton("The Day After", "chevron.forward.circle") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: 1) } }
             }
             if river.isQuery {
-                // What the river finds: held at its top; what is held, let go.
                 if river.isHeld(title) {
-                    Button("Release to Query", systemImage: "arrow.uturn.down") { withAnimation { river.releaseToQuery(title) } }
+                    DrawerButton("Release to Query", "arrow.uturn.down.circle") { withAnimation { river.releaseToQuery(title) } }
                 } else {
-                    Button("Keep at Top", systemImage: "pin") { withAnimation { river.keepAtTop(title) } }
-                }
-                Button("Remove from River", systemImage: "minus.circle") { withAnimation { river.close(title) } }
-            } else {
-                Button("Close Other Cards") { withAnimation { river.closeOthers(title) } }
-            }
-            #if os(iOS)
-            // The Mac's switch in the header, on the phone in here: no room beside the title.
-            Picker("Write As", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
-                ForEach(WikiStore.EditorMode.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.symbol).tag($0) }
-            }
-            #endif
-            Divider()
-            Button("Add Tag", systemImage: "tag") { addingTag = true }
-            Button("Relate To…", systemImage: "link") { addingRelated = true }
-            homeRiverMenu
-            Button("Add Field", systemImage: "plus.rectangle") {
-                addingField = true
-                store.fieldsShown.insert(title)
-            }
-            Button("Insert Query…", systemImage: "line.3.horizontal.decrease.circle") { insertingQuery = true }
-            if store.tiddler(title) != nil, !store.tagged(title).isEmpty || !FieldSpec.specs(of: store.tiddler(title)!).isEmpty {
-                Button("Fields of Tiddlers Tagged “\(title)”…", systemImage: "list.bullet.rectangle") { definingFields = true }
-            }
-            if store.tiddler(title) != nil || store.isEditing(title) {
-                let wiki = store.draftHead(title)?.isWiki ?? store.isWiki(title)
-                Button(wiki ? "Remove from Wiki" : "Add to Wiki") { store.setWiki(title, !wiki) }
-            }
-            if store.tiddler(title) != nil, store.kind(title) != .day {
-                // Prism's flags: in its inbox, among its pinned.
-                let inbox = store.isInInbox(title), pinned = store.isPinned(title)
-                Button(inbox ? "Done with It" : "Add to Inbox", systemImage: inbox ? "tray.and.arrow.up" : "tray.and.arrow.down") {
-                    store.setInbox(title, !inbox)
-                }
-                Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") { store.setPinned(title, !pinned) }
-            }
-            if store.canRead(title) {
-                Button("Read", systemImage: "doc.richtext") { river.reading = title }
-            }
-            if store.kind(title) != .day, !store.isShadow(title) {
-                // The page itself a thing to do: checked off on its card, listed in Tasks.
-                switch store.taskState(title) {
-                case nil:
-                    Button("Make a To-Do", systemImage: "circle") { store.setTaskState(title, .todo) }
-                case .todo:
-                    Button("Mark Done", systemImage: "checkmark.circle") { store.setTaskState(title, .done) }
-                    Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
-                case .done:
-                    Button("Mark Not Done", systemImage: "circle") { store.setTaskState(title, .todo) }
-                    Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
+                    DrawerButton("Keep at Top", "pin.circle") { withAnimation { river.keepAtTop(title) } }
                 }
             }
-            Divider()
-            Button("Find in Card", systemImage: "text.magnifyingglass") { river.find(in: title) }
-            if store.tiddler(title) != nil {
-                Button("History…", systemImage: "clock.arrow.circlepath") { historyShown = true }
+            Menu { menuItems } label: { DrawerIcon(symbol: "ellipsis.circle") }
+                #if os(macOS)
+                .menuStyle(.button)
+                #endif
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .frame(maxWidth: .infinity)
+                .help("More")
+                .accessibilityLabel("More")
+            DrawerButton(river.isQuery ? "Remove from River" : "Close", "xmark.circle") {
+                withAnimation { river.close(title) }
             }
-            Button("Copy Link") { Platform.copy("[[\(title)]]") }
-            // What it says, as written — the draft, while it is being written.
-            Button("Copy Contents", systemImage: "doc.on.doc") {
-                Platform.copy((store.draft(title) ?? store.tiddler(title))?.text ?? "")
-            }
-            .disabled(store.tiddler(title) == nil && !store.isEditing(title))
-            if Platform.canReveal, let path = store.path(of: title) {
-                Button("Show in Finder") { Platform.reveal(path) }
-            }
-            if store.tiddler(title) != nil, !store.isShadow(title) {
-                Divider()
-                Button("Delete Tiddler…", role: .destructive) {
-                    referring = store.references(to: title).count
-                    confirmingDelete = true
-                }
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 30, height: 26)
-                .contentShape(Rectangle())
         }
-        #if os(macOS)
-        .menuStyle(.button)
+        .padding(.horizontal, 6)
+        .frame(height: 46)
+        .background(Ink.accent.color, in: Capsule())
+        .padding(.top, 12)
+    }
+
+    /// Everything else to do with the card: in its drawer's More.
+    @ViewBuilder private var menuItems: some View {
+        if canRename {
+            if isUntitled {
+                // What it begins with, as its title: at once.
+                // As last saved: the menu not drawn again with each letter typed.
+                if let name = store.untitledName(title), name != "Untitled" {
+                    Button("Title “\(name)”", systemImage: "arrow.up.to.line") { river.titleByFirstLine(title) }
+                }
+                Button("Add Title…", systemImage: "character.cursor.ibeam") { startRenaming() }
+            } else {
+                Button("Rename", systemImage: "character.cursor.ibeam") { startRenaming() }
+                Button("Remove Title", systemImage: "minus.circle") { removeTitle() }
+            }
+        }
+        Button(river.isFolded(title) ? "Unfold" : "Fold") {
+            withAnimation(.snappy(duration: 0.2)) { river.toggleFold(title) }
+        }
+        if river.isQuery {
+            // What the river finds: held at its top; what is held, let go.
+            if river.isHeld(title) {
+                Button("Release to Query", systemImage: "arrow.uturn.down") { withAnimation { river.releaseToQuery(title) } }
+            } else {
+                Button("Keep at Top", systemImage: "pin") { withAnimation { river.keepAtTop(title) } }
+            }
+            Button("Remove from River", systemImage: "minus.circle") { withAnimation { river.close(title) } }
+        } else {
+            Button("Close Other Cards") { withAnimation { river.closeOthers(title) } }
+        }
+        #if os(iOS)
+        // The Mac's switch in the header, on the phone in here: no room beside the title.
+        Picker("Write As", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
+            ForEach(WikiStore.EditorMode.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.symbol).tag($0) }
+        }
         #endif
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("More")
+        Divider()
+        Button("Add Tag", systemImage: "tag") { addingTag = true }
+        Button("Relate To…", systemImage: "link") { addingRelated = true }
+        homeRiverMenu
+        Button("Add Field", systemImage: "plus.rectangle") {
+            addingField = true
+            store.fieldsShown.insert(title)
+        }
+        Button("Insert Query…", systemImage: "line.3.horizontal.decrease.circle") { insertingQuery = true }
+        if store.tiddler(title) != nil, !store.tagged(title).isEmpty || !FieldSpec.specs(of: store.tiddler(title)!).isEmpty {
+            Button("Fields of Tiddlers Tagged “\(title)”…", systemImage: "list.bullet.rectangle") { definingFields = true }
+        }
+        if store.tiddler(title) != nil || store.isEditing(title) {
+            let wiki = store.draftHead(title)?.isWiki ?? store.isWiki(title)
+            Button(wiki ? "Remove from Wiki" : "Add to Wiki") { store.setWiki(title, !wiki) }
+        }
+        if store.tiddler(title) != nil, store.kind(title) != .day {
+            // Prism's flags: in its inbox, among its pinned.
+            let inbox = store.isInInbox(title), pinned = store.isPinned(title)
+            Button(inbox ? "Done with It" : "Add to Inbox", systemImage: inbox ? "tray.and.arrow.up" : "tray.and.arrow.down") {
+                store.setInbox(title, !inbox)
+            }
+            Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") { store.setPinned(title, !pinned) }
+        }
+        if store.canRead(title) {
+            Button("Read", systemImage: "doc.richtext") { river.reading = title }
+        }
+        if store.kind(title) != .day, !store.isShadow(title) {
+            // The page itself a thing to do: checked off on its card, listed in Tasks.
+            switch store.taskState(title) {
+            case nil:
+                Button("Make a To-Do", systemImage: "circle") { store.setTaskState(title, .todo) }
+            case .todo:
+                Button("Mark Done", systemImage: "checkmark.circle") { store.setTaskState(title, .done) }
+                Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
+            case .done:
+                Button("Mark Not Done", systemImage: "circle") { store.setTaskState(title, .todo) }
+                Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
+            }
+        }
+        Divider()
+        Button("Find in Card", systemImage: "text.magnifyingglass") { river.find(in: title) }
+        if store.tiddler(title) != nil {
+            Button("History…", systemImage: "clock.arrow.circlepath") { historyShown = true }
+        }
+        Button("Copy Link") { Platform.copy("[[\(title)]]") }
+        // What it says, as written — the draft, while it is being written.
+        Button("Copy Contents", systemImage: "doc.on.doc") {
+            Platform.copy((store.draft(title) ?? store.tiddler(title))?.text ?? "")
+        }
+        .disabled(store.tiddler(title) == nil && !store.isEditing(title))
+        if Platform.canReveal, let path = store.path(of: title) {
+            Button("Show in Finder") { Platform.reveal(path) }
+        }
+        if store.tiddler(title) != nil, !store.isShadow(title) {
+            Divider()
+            Button("Delete Tiddler…", role: .destructive) {
+                referring = store.references(to: title).count
+                confirmingDelete = true
+            }
+        }
     }
 
     /// A query put in: at the caret, while the caret is in the text; else at
@@ -657,5 +673,39 @@ struct FlowLayout: Layout {
             rows[rows.count - 1] = row
         }
         return rows
+    }
+}
+
+/// One of a card's controls in its drawer: its symbol alone, white on
+/// the drawer's colour — its name said under the pointer, and aloud.
+private struct DrawerButton: View {
+    let name: String
+    let symbol: String
+    let action: () -> Void
+
+    init(_ name: String, _ symbol: String, action: @escaping () -> Void) {
+        self.name = name
+        self.symbol = symbol
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) { DrawerIcon(symbol: symbol) }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .help(name)
+            .accessibilityLabel(name)
+    }
+}
+
+private struct DrawerIcon: View {
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 22, weight: .regular))
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 40)
+            .contentShape(Rectangle())
     }
 }

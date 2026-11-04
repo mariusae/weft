@@ -542,6 +542,27 @@ public final class River: Identifiable {
         return writing == title
     }
 
+    /// The card whose drawer of controls is out, under it: one at a time —
+    /// the one being written in, or the one whose ⋯ was tapped.
+    @ObservationIgnored public private(set) var drawer: String? {
+        didSet {
+            guard drawer != oldValue else { return }
+            for title in [oldValue, drawer].compactMap({ $0 }) { cardChanged(title) }
+        }
+    }
+
+    public func isDrawerOut(_ title: String) -> Bool {
+        watch(title)
+        return drawer == title
+    }
+
+    /// A card's ⋯: its drawer out, any other's in — or its own in again.
+    public func toggleDrawer(_ title: String) {
+        drawer = drawer == title ? nil : title
+    }
+
+    public func closeDrawer() { drawer = nil }
+
     /// The caret came into a card: in its body, its title, or its fields.
     public func caretEntered(_ title: String, in part: CaretPart) {
         caretParts[title, default: []].insert(part)
@@ -553,6 +574,8 @@ public final class River: Identifiable {
         if let before { cardChanged(before) }
         cardChanged(title)
         select(title)
+        // Written in, its controls out under it.
+        drawer = title
     }
 
     /// The caret left part of a card — or, `part` nil, the card is done with
@@ -575,6 +598,7 @@ public final class River: Identifiable {
                 writing = nil
                 cardChanged(title)
             }
+            if drawer == title { drawer = nil }
             guard !store.rivers.contains(where: { $0.writing == title }) else { return }
             store.finishEditing(title)
         }

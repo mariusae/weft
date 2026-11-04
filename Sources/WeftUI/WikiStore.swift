@@ -576,6 +576,8 @@ public final class WikiStore {
                 }
             }
             plain = Self.plain(plain).trimmingCharacters(in: .whitespaces)
+            // *Emphasis* and _emphasis_: the words alone.
+            plain = plain.replacingOccurrences(of: #"(?<![\w*])[*_]([^*_\n]+)[*_](?![\w*])"#, with: "$1", options: .regularExpression)
             if plain.isEmpty || ["-", "+", "*"].contains(plain) { continue }
             words.append(plain)
             length += plain.count

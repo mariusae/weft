@@ -737,10 +737,13 @@ private struct RiverColumn: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 22) {
-                    if river.isQuery { QueryRiverHeader() }
+                LazyVStack(spacing: 0) {
+                    if river.isQuery { QueryRiverHeader().padding(.bottom, 16) }
                     ForEach(river.cards, id: \.self) { title in
-                        DroppableCard(title: title, drop: $drop, gap: 22)
+                        // Peeking cards closer together: a list to glance down, still of cards.
+                        let gap: CGFloat = river.isFolded(title) ? 11 : 22
+                        DroppableCard(title: title, drop: $drop, gap: gap)
+                            .padding(.bottom, gap)
                             .id(title)
                             .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity),
                                                     removal: .opacity.combined(with: .scale(scale: 0.97))))
