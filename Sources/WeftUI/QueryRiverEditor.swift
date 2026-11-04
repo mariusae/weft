@@ -1,4 +1,5 @@
 import SwiftUI
+import ReflectCore
 import WeftCore
 
 /// A query river's settings, as a podcast app's playlist has them: its

@@ -1,4 +1,5 @@
 import GraphKit
+import ReflectCore
 import SwiftUI
 
 /// The icons to choose among, by group, each by its name — found by
