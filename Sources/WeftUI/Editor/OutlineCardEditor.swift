@@ -36,6 +36,11 @@ struct OutlineCardEditor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> PageOutlineEditor {
+        // A `[[link]]`'s card: the page it is to, as the graph has it; a
+        // link to an untitled page, what it begins with — told before the
+        // editor first styles its text.
+        PageOutlineEditor.findNotes { [store] linked in store.noteFile(linked) }
+        PageOutlineEditor.nameUntitled { [store] name in store.untitledName(name) }
         let editor = PageOutlineEditor(text: "", fontSize: TextSettings.size + 1, root: store.root)
         // Prism's keys, ⌘⇧K deleting rows and the rest: Weft has not its menus.
         editor.takesEditorKeys = true
@@ -63,14 +68,16 @@ struct OutlineCardEditor: NSViewRepresentable {
             guard path.hasPrefix("assets/"), !path.contains(".."), let root = store.root else { return NSSound.beep() }
             NSWorkspace.shared.open(root.appendingPathComponent(path))
         }
-        // A `[[link]]`'s card: the page it is to, as the graph has it.
-        PageOutlineEditor.findNotes { [store] linked in store.noteFile(linked) }
         // A day's card: today's shows the time now among its blocks; its
         // tasks offered Do Today and Later — moved into that day's page.
         editor.day = Day(title)
         editor.dayName = { [store] day in store.shownTitle(day.description) }
         editor.onMoveToDay = { [store] rows, day, undo in store.add(rows, toDay: day, undo: undo ?? UndoManager()) }
         editor.onHeightChange = { [weak editor] in editor?.invalidateIntrinsicContentSize() }
+        // Untitled: its first row offered as its title, while the caret is on it.
+        editor.isUntitled = { [store, title] in Untitled.isName(store.draftHead(title)?.title ?? title) }
+        editor.onTitle = { [store, title] name in store.change(title) { $0.title = name } }
+        editor.onAskTitle = { [river, title] in river.edit(title, inTitle: true) }
         editor.onFocusChange = { [coordinator = context.coordinator] in coordinator.onFocusChange($0) }
         store.prepareLinkNotes { PageOutlineEditor.completeLinks(from: $0) }
         return editor

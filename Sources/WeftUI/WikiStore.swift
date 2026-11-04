@@ -410,9 +410,53 @@ public final class WikiStore {
 
     /// How a title is shown: a day's date in words, else the title.
     public func shownTitle(_ title: String) -> String {
+        if Untitled.isName(title) { return untitledName(title) ?? "Untitled" }
         if let river = RiverLink.name(title) { return river }
         guard let date = Day(title)?.date else { return title }
         return date.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
+    }
+
+    /// What an untitled page is shown as, as last written: what it begins
+    /// with, or "Untitled". Nil for a page with a title.
+    public func untitledName(_ title: String) -> String? {
+        guard Untitled.isName(title) else { return nil }
+        watch(title)
+        if let entry = wiki?.entries[title] { return entry.shown }
+        // Not written yet: what its draft begins with.
+        return drafts[title].map { Untitled.name(of: $0.text) ?? "Untitled" }
+    }
+
+    /// How often each page's words were replaced from outside its editor
+    /// while it may be being written in — its first line made its title —
+    /// for an editor that otherwise keeps what it has while it has the
+    /// caret: it takes them anyway.
+    public private(set) var replacements: [String: Int] = [:]
+
+    func noteReplaced(_ title: String) { replacements[title, default: 0] += 1 }
+
+    /// The title a page is to take: what is typed, or — none — untitled:
+    /// as it was, if it was, else under a new name.
+    func titleTaken(_ typed: String, by title: String) -> String {
+        let typed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty { return typed }
+        return Untitled.isName(title) ? title : wiki?.newUntitledName() ?? Untitled.newName()
+    }
+
+    /// A tiddler titled by its first line with words — that line taken
+    /// out of what it says, and the blank lines after it. Nil, when it
+    /// says nothing to be titled by.
+    public static func titledByFirstLine(_ tiddler: Tiddler) -> Tiddler? {
+        var lines = tiddler.text.components(separatedBy: "\n")
+        guard let first = lines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return nil }
+        let title = Untitled.title(from: lines[first])
+        guard !title.isEmpty else { return nil }
+        lines.removeSubrange(0...first)
+        while lines.first?.trimmingCharacters(in: .whitespaces).isEmpty == true, lines.count > 1 { lines.removeFirst() }
+        var titled = tiddler
+        titled.title = title
+        titled.text = lines.joined(separator: "\n")
+        if titled.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { titled.text = "" }
+        return titled
     }
 
     /// The pages linking to a page, by any name it answers to.
@@ -1266,7 +1310,16 @@ public final class WikiStore {
     /// Writes what every card being edited says, now: before the app goes
     /// to the background, or quits.
     public func saveEditing() {
-        for title in editing { autosave(title) }
+        for title in editing {
+            // A title given it and not yet taken — its first line made its
+            // title, that line gone from what it says — taken now: the app
+            // may not come back to take it.
+            if let typed = drafts[title]?.title.trimmingCharacters(in: .whitespacesAndNewlines), !typed.isEmpty, typed != title {
+                finishEditing(title)
+            } else {
+                autosave(title)
+            }
+        }
     }
 
     /// A new tiddler with nothing in it yet, which is not worth a file.
@@ -1284,7 +1337,17 @@ public final class WikiStore {
         guard var tiddler = drafts[title], !isUntouched(title, tiddler) else { return }
         tiddler.title = title
         guard tiddler != wiki?[title] || wiki?[title] == nil else { return }
-        if write(tiddler, from: title) { draftBases[title] = wiki?[title] }
+        if write(tiddler, from: title) {
+            draftBases[title] = wiki?[title]
+            // What writing it gave it — an id and its times, made new — kept
+            // in the draft too: else the draft, written again, takes them out.
+            if let saved = wiki?[title], var draft = drafts[title] {
+                draft.id = draft.id ?? saved.id
+                draft.created = draft.created ?? saved.created
+                draft.modified = saved.modified
+                drafts[title] = draft
+            }
+        }
     }
 
     /// Back to Preview: the draft written, a new title taken — with what
@@ -1293,8 +1356,8 @@ public final class WikiStore {
         autosaves[title]?.cancel()
         autosaves[title] = nil
         guard let wiki, var tiddler = drafts[title] else { return }
-        if isUntouched(title, tiddler) {
-            // Made and left empty: it goes, card and all.
+        // Made and left empty — no title given it either — it goes, card and all.
+        if isUntouched(title, tiddler), tiddler.title == title || Untitled.isName(tiddler.title) || tiddler.title.trimmingCharacters(in: .whitespaces).isEmpty {
             drafts[title] = nil
             draftChanged(title)
             editing.remove(title)
@@ -1302,8 +1365,8 @@ public final class WikiStore {
             if !closing, !exists(title) { for river in rivers { river.close(title) } }
             return
         }
-        tiddler.title = tiddler.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if tiddler.title.isEmpty { tiddler.title = title }
+        // No title: untitled — again, its title taken away.
+        tiddler.title = titleTaken(tiddler.title, by: title)
         if tiddler.title != title, wiki[tiddler.title] != nil || ShadowTiddlers.all[tiddler.title] != nil {
             error = "There is already a tiddler called “\(tiddler.title)”; this one keeps its title."
             tiddler.title = title
@@ -1438,9 +1501,9 @@ public final class WikiStore {
     /// A new tiddler's draft — tagged with `tag`, when there is one, and
     /// given its fields; called `name`, and saying `text`, when it is
     /// made of something — under a title no page and no card has. Its title.
-    func makeTiddler(taggedWith tag: String? = nil, named name: String? = nil, text: String = "") -> String? {
-        guard wiki != nil else { return nil }
-        var title = name ?? tag.map { "New \($0)" } ?? "New Tiddler"
+    func makeTiddler(taggedWith tag: String? = nil, named name: String? = nil, text: String = "", untitled: Bool = false) -> String? {
+        guard let wiki else { return nil }
+        var title = untitled ? wiki.newUntitledName() : name ?? tag.map { "New \($0)" } ?? "New Tiddler"
         let base = title
         var number = 1
         while exists(title) || rivers.contains(where: { $0.cards.contains(title) }) {
@@ -1448,8 +1511,8 @@ public final class WikiStore {
             number += 1
         }
         var tiddler = Tiddler(title: title, tags: tag.map { [$0] } ?? [], text: text)
-        // What Weft makes is the wiki's.
-        tiddler.isWiki = true
+        // What Weft makes is the wiki's — but a jot, untitled, till it is named.
+        tiddler.isWiki = !untitled
         for spec in schema(for: tiddler) { tiddler[field: spec.name] = .text("") }
         schemaTags[title] = tiddler.tags
         drafts[title] = tiddler
@@ -1560,7 +1623,7 @@ extension WikiStore {
     public func linkSuggestions(_ partial: String, limit: Int = 8) -> [LinkTarget] {
         let query = partial.trimmingCharacters(in: .whitespaces)
         let titles = query.isEmpty ? Array(recent().prefix(limit)) : (wiki?.search(query, limit: limit * 3) ?? [])
-        var found = titles.filter { pageNames($0).contains { name in name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil } || query.isEmpty }
+        var found = titles.filter { (pageNames($0) + (Untitled.isName($0) ? [shownTitle($0)] : [])).contains { name in name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil } || query.isEmpty }
             .prefix(limit).map(target)
         if let day = dayTarget(query), !found.contains(day) { found.insert(day, at: 0) }
         // Saved rivers the words name, kept a place among the pages.

@@ -80,6 +80,9 @@ extension NSAttributedString.Key {
     static let weftPill = NSAttributedString.Key("WeftPill")
     /// On the hidden character laid out as a shortened address's ellipsis.
     static let weftEllipsis = NSAttributedString.Key("WeftEllipsis")
+    /// On the hidden character whose room shows a link's words instead of
+    /// what it says: an untitled page's name, as the page begins.
+    static let weftLabel = NSAttributedString.Key("WeftLabel")
     /// Over a link's words: what it is to, followed when it is clicked.
     static let weftLink = NSAttributedString.Key("WeftLink")
     /// Over a quote's line: a bar drawn down its left.
@@ -226,6 +229,15 @@ final class LiveLayoutManager: NSLayoutManager {
                 let point = location(forGlyphAt: glyph)
                 (LinkPill.ellipsis as NSString).draw(at: CGPoint(x: line.minX + point.x + origin.x, y: line.minY + point.y - ascent + origin.y),
                                                      withAttributes: [.font: font, .foregroundColor: pill.tint])
+            }
+            // An untitled page's name, in the room of the name it is linked by.
+            storage.enumerateAttribute(.weftLabel, in: whole) { value, at, _ in
+                guard let label = value as? String else { return }
+                let glyph = glyphIndexForCharacter(at: at.location)
+                let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                let point = location(forGlyphAt: glyph)
+                (label as NSString).draw(at: CGPoint(x: line.minX + point.x + origin.x, y: line.minY + point.y - ascent + origin.y),
+                                         withAttributes: [.font: font, .foregroundColor: pill.tint])
             }
         }
     }

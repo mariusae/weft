@@ -239,7 +239,8 @@ struct TiddlerEditor: View {
 
     var body: some View {
         EditorRepresentable(text: $text, controller: controller, store: store, river: river, card: card, suggest: suggest,
-                            styler: MarkdownStyler(size: MarkdownStyler.defaultSize, exists: exists, describe: { store.riverNote($0) }),
+                            styler: MarkdownStyler(size: MarkdownStyler.defaultSize, exists: exists, describe: { store.riverNote($0) },
+                                                   untitledName: { store.untitledName($0) }),
                             onEscape: onEscape, wantsCaret: wantsCaret, onCaretTaken: onCaretTaken,
                             onFocusChange: onFocusChange)
     }
@@ -322,6 +323,14 @@ final class TiddlerTextView: NSTextView {
     /// Told when it is made another size: what is under its lines placed again.
     var onResize: () -> Void = {}
     weak var controller: EditorController?
+    /// Whether its page has no title yet; and its title, given — by its
+    /// first line, or typed in the card's title.
+    var isUntitled: () -> Bool = { false }
+    var onTitle: (String) -> Void = { _ in }
+    var onAskTitle: () -> Void = {}
+    /// At the end of an untitled page's first line, while the caret is on
+    /// it: Title, to make that line its title.
+    let titleChip = NSButton(title: "Title", target: nil, action: nil)
     private let model = SuggestionModel()
     private lazy var panel = SuggestionPanel(model: model)
     private let ghost = NSTextField(labelWithString: "")
@@ -368,6 +377,7 @@ final class TiddlerTextView: NSTextView {
         ghost.textColor = Palette.faint
         ghost.isHidden = true
         addSubview(ghost)
+        setUpTitleChip()
         model.pick = { [weak self] target in self?.accept(target) }
     }
 
@@ -390,6 +400,7 @@ final class TiddlerTextView: NSTextView {
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
         if became { onFocusChange(true) }
+        placeTitleChip()
         return became
     }
 
@@ -397,13 +408,14 @@ final class TiddlerTextView: NSTextView {
         hideCompletions()
         let resigned = super.resignFirstResponder()
         if resigned { onFocusChange(false) }
+        titleChip.isHidden = true
         return resigned
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         let changed = newSize != frame.size
         super.setFrameSize(newSize)
-        if changed { onResize() }
+        if changed { onResize(); placeTitleChip() }
     }
 
     // MARK: Links
@@ -470,6 +482,8 @@ final class TiddlerTextView: NSTextView {
     /// Format ▸ Checklist Item and Task, ⌘↩ and ⇧⌘↩: as the outline's.
     @objc func cycleChecklist(_ sender: Any?) { controller?.cycleChecklist() }
     @objc func cycleTask(_ sender: Any?) { controller?.cycleTask() }
+    /// Story ▸ Title Tiddler, ⌃⌘T: untitled, by its first line; else in its title.
+    @objc func titlePage(_ sender: Any?) { if !titleByFirstLine() { onAskTitle() } }
 
     /// ⌘B, ⌘I, ⌘K: bold, italic, a link — there being no bar of buttons.
     override func keyDown(with event: NSEvent) {
@@ -689,6 +703,9 @@ private struct EditorRepresentable: NSViewRepresentable {
         view.onEscape = onEscape
         view.controller = controller
         view.onOpenLink = { [river, card] in follow($0, in: river, from: card) }
+        view.isUntitled = { [store, card] in Untitled.isName(store.draftHead(card)?.title ?? card) }
+        view.onTitle = { [store, card] title in store.change(card) { $0.title = title } }
+        view.onAskTitle = { [river, card] in river.edit(card, inTitle: true) }
         let live = LiveMarkdown(view: view, styler: styler, store: store, river: river, card: card)
         live.onResize = { [weak view] in view?.invalidateIntrinsicContentSize() }
         context.coordinator.live = live
@@ -717,6 +734,7 @@ private struct EditorRepresentable: NSViewRepresentable {
             context.coordinator.live?.changed()
         }
         context.coordinator.shown = text
+        view.placeTitleChip()
         if wantsCaret {
             DispatchQueue.main.async { [onCaretTaken] in
                 guard let window = view.window else { return }
@@ -769,11 +787,24 @@ private struct EditorRepresentable: NSViewRepresentable {
             shown = text
             parent.text = text
             live?.changed()
+            (view as? TiddlerTextView)?.placeTitleChip()
+        }
+
+        /// No word marked misspelled where what is written is not shown:
+        /// hidden markup, a link shown as an untitled page's name.
+        func textView(_ view: NSTextView, shouldSetSpellingState value: Int, range: NSRange) -> Int {
+            guard value != 0, let storage = view.textStorage, NSMaxRange(range) <= storage.length else { return value }
+            var shown = true
+            storage.enumerateAttributes(in: range) { attributes, _, stop in
+                if attributes[.weftLabel] != nil || ((attributes[.font] as? NSFont)?.pointSize ?? 12) < 1 { shown = false; stop.pointee = true }
+            }
+            return shown ? value : 0
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }
             live?.selectionChanged(view.selectedRange())
+            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textStorage(_ storage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range: NSRange, changeInLength: Int) {
@@ -794,13 +825,41 @@ final class TiddlerTextView: UITextView {
     /// Told when it is laid out again: what is under its lines placed again.
     var onLayout: () -> Void = {}
     private var laidOutWidth: CGFloat = 0
+    /// Whether its page has no title yet; and its title, given — by its
+    /// first line, or typed in the card's title.
+    var isUntitled: () -> Bool = { false }
+    var onTitle: (String) -> Void = { _ in }
+    var onAskTitle: () -> Void = {}
+    /// At the end of an untitled page's first line, while the caret is on
+    /// it: Title, to make that line its title.
+    let titleChip = UIButton(type: .system)
+
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        setUpTitleChip()
+    }
+
+    required init?(coder: NSCoder) { fatalError("unused") }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         if abs(bounds.width - laidOutWidth) > 0.5 {
             laidOutWidth = bounds.width
             onLayout()
+            placeTitleChip()
         }
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        placeTitleChip()
+        return became
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        titleChip.isHidden = true
+        return resigned
     }
 
     var selection: NSRange {
@@ -864,6 +923,7 @@ final class TiddlerTextView: UITextView {
         .init("link", #selector(insertLink), "Link"),
         .init("square.on.square", #selector(insertEmbed), "Embed"),
         .init("lightbulb", #selector(insertCallout), "Callout"),
+        .init("textformat.size.larger", #selector(titlePage), "Title"),
     ])
 
     private var toolbar: OutlineToolbar? { inputAccessoryView as? OutlineToolbar }
@@ -896,6 +956,8 @@ final class TiddlerTextView: UITextView {
     @objc func makeCode() { controller?.wrap("`") }
     @objc func cycleHeading() { controller?.cycleHeading() }
     @objc func toggleQuote() { controller?.prefixLines("> ") }
+    /// Title: untitled, by its first line; else in its title, to be typed.
+    @objc func titlePage() { if !titleByFirstLine() { onAskTitle() } }
 
     func complete(with title: String) {
         guard let range = linkPartialRange(in: text as NSString, caret: selectedRange.location) else { return }
@@ -986,6 +1048,9 @@ private struct EditorRepresentable: UIViewRepresentable {
         view.suggest = suggest
         view.controller = controller
         view.followLinks { [river, card] in follow($0, in: river, from: card) }
+        view.isUntitled = { [store, card] in Untitled.isName(store.draftHead(card)?.title ?? card) }
+        view.onTitle = { [store, card] title in store.change(card) { $0.title = title } }
+        view.onAskTitle = { [river, card] in river.edit(card, inTitle: true) }
         let live = LiveMarkdown(view: view, styler: styler, store: store, river: river, card: card)
         live.onResize = { [weak view] in view?.invalidateIntrinsicContentSize() }
         context.coordinator.live = live
@@ -1008,6 +1073,7 @@ private struct EditorRepresentable: UIViewRepresentable {
             context.coordinator.live?.changed()
         }
         context.coordinator.shown = text
+        view.placeTitleChip()
         if wantsCaret {
             DispatchQueue.main.async { [onCaretTaken] in
                 if !view.isFirstResponder {
@@ -1044,11 +1110,13 @@ private struct EditorRepresentable: UIViewRepresentable {
             live?.changed()
             (view as? TiddlerTextView)?.offerCompletions()
             (view as? TiddlerTextView)?.showUndoState()
+            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textViewDidChangeSelection(_ view: UITextView) {
             live?.selectionChanged(view.selectedRange)
             (view as? TiddlerTextView)?.offerCompletions()
+            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textViewDidBeginEditing(_ view: UITextView) {

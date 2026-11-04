@@ -117,12 +117,18 @@ struct RiverCommands: Commands {
             Button("New Tiddler") { river?.newTiddler() }
                 .keyboardShortcut("n")
                 .disabled(river == nil || store.root == nil)
+            Button("New Titled Tiddler") { river?.newTitledTiddler() }
+                .keyboardShortcut("n", modifiers: [.command, .control])
+                .disabled(river == nil || store.root == nil)
             Button("New Tiddler from Pasteboard") { river?.newTiddlerFromPasteboard() }
                 .keyboardShortcut("n", modifiers: [.command, .option])
                 .disabled(river == nil || store.root == nil)
             Button("New Tab") { rivers?.add() }
                 .keyboardShortcut("t")
                 .disabled(rivers == nil || store.root == nil)
+            Button("Reopen Closed Tab") { rivers?.reopenClosed() }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(rivers?.canReopen != true || store.root == nil)
             Button("New Window") { openWindow(value: RiverSeed()) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(store.root == nil)
@@ -190,8 +196,12 @@ struct RiverCommands: Commands {
         }
         CommandMenu("Story") {
             Button("Today") { river?.openToday() }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .keyboardShortcut("d", modifiers: [.command, .shift])
                 .disabled(river == nil || store.root == nil)
+            // In the words being written: by their first line, if untitled.
+            Button("Title Tiddler") { if !NSApp.sendAction(Selector(("titlePage:")), to: nil, from: nil) { river?.titleCard() } }
+                .keyboardShortcut("t", modifiers: [.command, .control])
+                .disabled(river?.cards.isEmpty ?? true)
             Button("Write in Selected Card") { river?.toggleEditing() }
                 .disabled(river?.cards.isEmpty ?? true)
             Button("Switch Between Outline and Text") { river?.toggleEditorMode() }

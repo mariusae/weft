@@ -570,9 +570,47 @@ public final class River: Identifiable {
     }
 
     /// A new tiddler, at the top of the river, being edited — tagged with
-    /// `tag`, when there is one, and given its fields.
+    /// `tag`, when there is one, and given its fields, its title typed
+    /// first; else untitled, what it says typed at once, to be named later
+    /// if ever.
     public func newTiddler(taggedWith tag: String? = nil) {
-        guard let title = store.makeTiddler(taggedWith: tag) else { return }
+        guard let title = store.makeTiddler(taggedWith: tag, untitled: tag == nil) else { return }
+        edit(title, inTitle: tag != nil)
+    }
+
+    /// The card ⌃⌘T titles: the one being written in, else the one
+    /// selected — any but a day's or a week's, or one of Weft's own.
+    public var titleableCard: String? {
+        guard let title = writing ?? focus, cards.contains(title), Day(title) == nil, Week(title) == nil,
+              !store.isShadow(title) else { return nil }
+        return title
+    }
+
+    /// Titles a card: an untitled one by its first line, the caret staying
+    /// where it is — one saying nothing yet, or titled already, in its
+    /// title, to be typed.
+    public func titleCard() {
+        guard let title = titleableCard else { return }
+        let current = store.draftHead(title) ?? store.tiddler(title)
+        if let current, Untitled.isName(current.title), WikiStore.titledByFirstLine(current) != nil {
+            titleByFirstLine(title)
+        } else {
+            edit(title, inTitle: true)
+        }
+    }
+
+    /// An untitled card titled by its first line, that line taken out of
+    /// what it says: written at once, when the caret is not in it.
+    public func titleByFirstLine(_ title: String) {
+        change(title, settling: true) { tiddler in
+            if let titled = WikiStore.titledByFirstLine(tiddler) { tiddler = titled }
+        }
+        store.noteReplaced(title)
+    }
+
+    /// A new tiddler with a title, typed first.
+    public func newTitledTiddler() {
+        guard let title = store.makeTiddler() else { return }
         edit(title, inTitle: true)
     }
 

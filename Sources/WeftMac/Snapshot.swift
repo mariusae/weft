@@ -251,6 +251,9 @@ enum Snapshot {
                 if let key = environment["WEFT_KEY"], let window = NSApp.windows.first(where: { $0.firstResponder is NSTextView }) {
                     press(key, in: window)
                 }
+                // `WEFT_TITLE`: Story ▸ Title Tiddler, as its menu sends it —
+                // the window, in a snapshot, never key for the menu to know its river.
+                if environment["WEFT_TITLE"] != nil, !NSApp.sendAction(Selector(("titlePage:")), to: nil, from: nil) { river.titleCard() }
                 // `WEFT_NEWLINE`: Return pressed at the end of the card being written in.
                 if environment["WEFT_NEWLINE"] != nil, let view = NSApp.windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first {
                     view.moveToEndOfDocument(nil)

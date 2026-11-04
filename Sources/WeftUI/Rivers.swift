@@ -124,8 +124,29 @@ public final class RiverSet {
         keep()
     }
 
+    /// The tabs closed, the last closed last: each as it was, and where
+    /// it was — to be opened again, ⌘⇧T, as a browser's are.
+    private var closed: [(state: River.State, index: Int)] = []
+
+    public var canReopen: Bool { !closed.isEmpty }
+
+    private func remember(_ river: River, at index: Int) {
+        closed.append((river.state, index))
+        if closed.count > 30 { closed.removeFirst() }
+    }
+
+    /// The tab closed last, open again where it was, in front.
+    public func reopenClosed() {
+        guard let last = closed.popLast() else { return }
+        let river = make(last.state)
+        rivers.insert(river, at: min(last.index, rivers.count))
+        current = river
+        keep()
+    }
+
     /// The rivers but this one closed.
     public func closeOthers(_ kept: River) {
+        for (index, river) in rivers.enumerated() where river !== kept { remember(river, at: index) }
         for river in rivers where river !== kept { store.release(river) }
         rivers = [kept]
         current = kept
@@ -135,6 +156,7 @@ public final class RiverSet {
     /// Closes a river — not the last. A saved river stays saved.
     public func close(_ river: River) {
         guard rivers.count > 1, let index = rivers.firstIndex(where: { $0 === river }) else { return }
+        remember(river, at: index)
         rivers.remove(at: index)
         store.release(river)
         if current === river { current = rivers[min(index, rivers.count - 1)] }

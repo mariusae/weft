@@ -29,6 +29,8 @@ struct OutlineCardEditor: UIViewRepresentable {
         var shell = OutlineMarkdown.parse("")
         /// The text last loaded, or written: a change from elsewhere is one that differs.
         var loaded: String?
+        /// The store's count of the page's words replaced, as last taken.
+        var replaced = 0
         var write: (String) -> Void = { _ in }
         var onFocusChange: (Bool) -> Void = { _ in }
         /// The rows folded, as the river keeps them for the card, and keeping them.
@@ -117,10 +119,13 @@ struct OutlineCardEditor: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.write = { text = $0 }
         coordinator.onFocusChange = onFocusChange
-        // Changed elsewhere — another river, a sync — and not being written in here.
-        if text != coordinator.loaded, !editor.isFirstResponder {
+        // Changed elsewhere — another river, a sync — and not being written in
+        // here; or replaced, its first line made its title, even while it is.
+        let replaced = store.replacements[title] ?? 0
+        if text != coordinator.loaded, !editor.isFirstResponder || replaced != coordinator.replaced {
             coordinator.load(text, into: editor)
         }
+        coordinator.replaced = replaced
         // Folded elsewhere — a sync brought the river's file.
         let folds = river.rowFolds(of: title)
         if folds != coordinator.asked, !editor.isFirstResponder {

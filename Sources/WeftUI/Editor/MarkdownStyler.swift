@@ -21,6 +21,8 @@ struct MarkdownStyler {
     var exists: (String) -> Bool
     /// What is said of a link under the pointer: a saved river's cards.
     var describe: (String) -> String? = { _ in nil }
+    /// What an untitled page is shown as, for a link to it by its name.
+    var untitledName: (String) -> String? = { _ in nil }
 
     /// The size cards are set in, as Settings has it.
     static var defaultSize: CGFloat { TextSettings.size }
@@ -360,6 +362,20 @@ struct MarkdownStyler {
                         if tail == nil { tail = content.location + NSMaxRange(rest) - 1 }
                     }
                 }
+            }
+            // A link to an untitled page, by its made-up name: off the
+            // caret's lines, what the page begins with, in the name's room.
+            if !shown, case .wikiLink = span.kind, let page, Untitled.isName(nsLine.substring(with: content)),
+               let label = untitledName(page).map({ $0.count > 48 ? String($0.prefix(47)) + "…" : $0 }), content.length > 0 {
+                // Its first letter, unseen, made as wide as the name — the
+                // pill measured by its font — the rest of it hidden.
+                let first = NSRange(location: content.location, length: 1)
+                if content.length > 1 { storage.addAttributes(Self.hidden, range: sub(NSRange(location: content.location + 1, length: content.length - 1))) }
+                let font = PlatformFont.systemFont(ofSize: size)
+                let width = ceil((label as NSString).size(withAttributes: [.font: font]).width)
+                let letter = ceil((nsLine.substring(with: first) as NSString).size(withAttributes: [.font: font]).width)
+                storage.addAttributes([.weftLabel: label, .kern: max(0, width - letter), .font: font, .foregroundColor: PlatformColor.clear],
+                                      range: sub(first))
             }
             let pill = LinkPill(kind, hasLead: lead != nil, missing: missing)
             storage.addAttribute(.weftPill, value: pill, range: sub(span.range))

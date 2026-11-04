@@ -93,7 +93,7 @@ struct CardEditor: View {
 
     private func placeholder(_ page: Tiddler?) -> String {
         if store.kind(title) == .day { return "Nothing written on this day yet." }
-        if page == nil { return "No tiddler has this title yet. Write here to make it." }
+        if page == nil { return Untitled.isName(title) ? "Jot something down." : "No tiddler has this title yet. Write here to make it." }
         return "Write here."
     }
 

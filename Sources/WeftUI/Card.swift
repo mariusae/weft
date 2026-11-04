@@ -64,7 +64,7 @@ struct Card: View {
         // A click makes it the card ⌘↩ goes to.
         .simultaneousGesture(TapGesture().onEnded { river.select(title) })
         .sheet(isPresented: $historyShown) { HistorySheet(title: title).environment(store) }
-        .confirmationDialog("Delete “\(title)”?", isPresented: $confirmingDelete) {
+        .confirmationDialog("Delete “\(store.shownTitle(title))”?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) { withAnimation { store.delete(title) } }
         } message: {
             Text(referring == 0 ? "Its file is removed; the graph's history keeps it."
@@ -128,7 +128,7 @@ struct Card: View {
                 let references = store.references(to: title)
                 if !references.isEmpty {
                     Toggle(isOn: Binding(get: { store.relinkOnRename[title] ?? true }, set: { store.relinkOnRename[title] = $0 })) {
-                        Text("Update \(references.count) \(references.count == 1 ? "tiddler" : "tiddlers") that refer to “\(title)”")
+                        Text("Update \(references.count) \(references.count == 1 ? "tiddler" : "tiddlers") that refer to “\(store.shownTitle(title))”")
                             .help(references.prefix(12).joined(separator: ", "))
                     }
                     .font(.callout)
@@ -161,6 +161,58 @@ struct Card: View {
 
     private var canRename: Bool { store.kind(title) != .day && !store.isShadow(title) }
 
+    /// Whether it has no title yet — as it is being written, too.
+    private var isUntitled: Bool { Untitled.isName(store.draftHead(title)?.title ?? title) }
+
+    /// What an untitled card would be called: what it begins with, now.
+    private var untitledSuggestion: String {
+        Untitled.name(of: (store.draft(title) ?? store.tiddler(title))?.text ?? "") ?? ""
+    }
+
+    /// An untitled card's header: the offer of a title — on the Mac under
+    /// the pointer, the first line's own Title at its end; on the phone,
+    /// always, with its first line a tap away from being the title.
+    @ViewBuilder private var untitledHeader: some View {
+        HStack(spacing: 10) {
+            Text("Add title")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Ink.faint.color)
+                // On the phone, with no pointer to hover, always.
+                #if os(macOS)
+                .opacity(hovering ? 1 : 0)
+                #endif
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .contentShape(Rectangle())
+                .onTapGesture { startRenaming() }
+                .help("Give it a title (⌃⌘T) — or click Title at the end of its first line")
+                .accessibilityAddTraits(.isButton)
+            #if os(iOS)
+            // As last saved: not drawn again with each letter typed.
+            if let name = store.untitledName(title), name != "Untitled" {
+                Button { withAnimation(.snappy(duration: 0.2)) { river.titleByFirstLine(title) } } label: {
+                    Label("Use First Line", systemImage: "arrow.up")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .foregroundStyle(Ink.accent.color)
+                        .background(Ink.accent.color.opacity(0.12), in: Capsule())
+                        .fixedSize()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Title it “\(name)”")
+            }
+            #endif
+        }
+    }
+
+    /// Its title taken away: untitled again, shown as it begins, what
+    /// referred to it following it.
+    private func removeTitle() {
+        river.change(title, settling: true) { $0.title = "" }
+    }
+
     private func startRenaming() {
         guard canRename else { return }
         renaming = true
@@ -174,7 +226,7 @@ struct Card: View {
             }
             // A new tiddler's made-up name, all selected: typed over at once —
             // once the field has taken the keys, which puts the caret at its end.
-            guard titleFocused, !store.exists(title) else { return }
+            guard titleFocused, !store.exists(title), !isUntitled else { return }
             try? await Task.sleep(for: .milliseconds(30))
             let name = store.draftHead(title)?.title ?? title
             titleSelection = TextSelection(range: name.startIndex..<name.endIndex)
@@ -186,7 +238,7 @@ struct Card: View {
     /// Double-clicked, it is typed in.
     private var header: some View {
         let kind = store.kind(title)
-        let shown = store.draftHead(title).map(\.title) ?? store.shownTitle(title)
+        let shown = store.draftHead(title).map(\.title).flatMap { Untitled.isName($0) ? nil : $0 } ?? store.shownTitle(title)
         let task = store.taskState(title)
         return HStack(alignment: .center, spacing: 10) {
             if kind == .day {
@@ -210,21 +262,31 @@ struct Card: View {
                 .accessibilityLabel(task == .done ? "Done" : "To do")
             }
             if renaming {
-                TextField("Title", text: Binding {
-                    store.draftHead(title)?.title ?? title
+                // Untitled: empty, what it begins with offered — taken with
+                // Return, typed over, or left, and it stays untitled.
+                TextField(isUntitled ? (untitledSuggestion.isEmpty ? "Title" : untitledSuggestion) : "Title", text: Binding {
+                    let name = store.draftHead(title)?.title ?? title
+                    return Untitled.isName(name) ? "" : name
                 } set: { value in
-                    store.change(title) { $0.title = value }
+                    store.change(title) { $0.title = value.isEmpty && Untitled.isName(title) ? title : value }
                 }, selection: $titleSelection)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
                 .lineLimit(1)
                 .focused($titleFocused)
                 .onSubmit {
+                    // Untitled, and nothing typed: called what it begins with.
+                    if isUntitled, case let offered = untitledSuggestion, !offered.isEmpty {
+                        store.change(title) { $0.title = offered }
+                    }
                     // A new tiddler named: on to what it says. One renamed: done.
                     if store.exists(title) { Platform.endEditing() } else { river.edit(title) }
                 }
                 // Typed in, clear of the controls.
                 .padding(.trailing, controlsWidth + 8)
+            } else if isUntitled, !river.isFolded(title) {
+                // No title till one is given: under the pointer, the offer of one.
+                untitledHeader
             } else {
                 Text(shown)
                     .font(.system(size: 22, weight: .semibold))
@@ -245,7 +307,7 @@ struct Card: View {
                     #endif
             }
             let wiki = store.draftHead(title)?.isWiki ?? (kind == .wiki)
-            if wiki {
+            if wiki, !isUntitled {
                 Label("Wiki", systemImage: "book.closed")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
@@ -412,7 +474,17 @@ struct Card: View {
     private var menu: some View {
         Menu {
             if canRename {
-                Button("Rename", systemImage: "character.cursor.ibeam") { startRenaming() }
+                if isUntitled {
+                    // What it begins with, as its title: at once.
+                    // As last saved: the menu not drawn again with each letter typed.
+                    if let name = store.untitledName(title), name != "Untitled" {
+                        Button("Title “\(name)”", systemImage: "arrow.up.to.line") { river.titleByFirstLine(title) }
+                    }
+                    Button("Add Title…", systemImage: "character.cursor.ibeam") { startRenaming() }
+                } else {
+                    Button("Rename", systemImage: "character.cursor.ibeam") { startRenaming() }
+                    Button("Remove Title", systemImage: "minus.circle") { removeTitle() }
+                }
             }
             Button(river.isFolded(title) ? "Unfold" : "Fold") {
                 withAnimation(.snappy(duration: 0.2)) { river.toggleFold(title) }
