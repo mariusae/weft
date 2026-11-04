@@ -47,11 +47,15 @@ struct QueryRiverEditor: View {
                             LabeledContent("Tagged", value: listed(query.anyTags, none: "Choose…"))
                         }
                     case .linking:
-                        TextField("Linking to", text: $query.linksTo, prompt: Text("A page’s title"))
+                        NavigationLink { PageChooser(page: $query.linksTo) } label: {
+                            LabeledContent("Page", value: query.linksTo.isEmpty ? "Choose…" : store.shownTitle(query.linksTo))
+                        }
                     }
                     NavigationLink { TagsChooser(title: "Excluding Tags", tags: $query.excludedTags, ordered: false) } label: {
                         LabeledContent("Excluding Tags", value: listed(query.excludedTags, none: "None"))
                     }
+                } footer: {
+                    if from == .linking { Text("Pages linking to it, and pages related to it either way.") }
                 }
                 Section {
                     NavigationLink { TagsChooser(title: "High-Priority Tags", tags: $query.highPriority, ordered: query.priorityMode == .ranked) } label: {
@@ -150,7 +154,7 @@ struct QueryRiverEditor: View {
             switch self {
             case .all: "All Pages"
             case .tagged: "Tagged…"
-            case .linking: "Linking To…"
+            case .linking: "Linked or Related To…"
             }
         }
     }
@@ -392,5 +396,44 @@ private struct HiddenCards: View {
             }
         }
         .navigationTitle("Excluded Tiddlers")
+    }
+}
+
+/// A page to choose, found as it is typed: as Quick Open finds them.
+private struct PageChooser: View {
+    @Environment(WikiStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @Binding var page: String
+    @State private var search = ""
+
+    var body: some View {
+        List {
+            ForEach(found, id: \.self) { target in
+                Button {
+                    page = target.title
+                    dismiss()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: target.kind.symbol)
+                            .foregroundStyle(Ink.accent.color)
+                            .frame(width: 20)
+                        Text(target.shown)
+                            .lineLimit(1)
+                        Spacer()
+                        if target.title == page { Image(systemName: "checkmark").foregroundStyle(Ink.accent.color) }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .searchable(text: $search, prompt: "Find a page")
+        .navigationTitle("Linked or Related To")
+    }
+
+    /// What is typed found — pages, days — or, with nothing typed, the
+    /// pages written last; nothing that is not yet written.
+    private var found: [LinkTarget] {
+        store.quickOpen(search, limit: 30).filter { $0.kind != .new && $0.kind != .river }
     }
 }
