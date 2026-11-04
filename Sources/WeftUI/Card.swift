@@ -31,11 +31,12 @@ struct Card: View {
     private var compact: Bool { sizeClass == .compact }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let peeking = river.isFolded(title)
+        VStack(alignment: .leading, spacing: peeking ? 4 : 14) {
             header
             relinking
-            if river.isFolded(title) {
-                foldedSummary
+            if peeking {
+                peekSummary
             } else {
                 if store.needsReview(title) {
                     ConflictView(title: title)
@@ -53,13 +54,14 @@ struct Card: View {
         // Room round what it says: more at its foot, where the last line
         // would otherwise sit close against the edge.
         .padding(.horizontal, sizeClass == .compact ? 16 : 28)
-        .padding(.top, sizeClass == .compact ? 16 : 22)
-        .padding(.bottom, sizeClass == .compact ? 22 : 30)
+        .padding(.top, peeking ? (sizeClass == .compact ? 12 : 14) : (sizeClass == .compact ? 16 : 22))
+        .padding(.bottom, peeking ? (sizeClass == .compact ? 14 : 16) : (sizeClass == .compact ? 22 : 30))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.card, in: RoundedRectangle(cornerRadius: 14))
+        // Peeking: set back, a shade under an open card — to be read, not written in.
+        .background(peeking ? Ink.paper.color : Color.card, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.rule.color.opacity(river.isSelected(title) ? 0 : 1)))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.accent.color.opacity(river.isSelected(title) ? 0.45 : 0)))
-        .shadow(color: .black.opacity(0.07), radius: 10, y: 3)
+        .shadow(color: .black.opacity(peeking ? 0.03 : 0.07), radius: peeking ? 4 : 10, y: peeking ? 1 : 3)
         .onHover { hovering = $0 }
         // A click makes it the card ⌘↩ goes to.
         .simultaneousGesture(TapGesture().onEnded { river.select(title) })
@@ -93,31 +95,24 @@ struct Card: View {
         }
     }
 
-    /// Folded: what it begins with, faint, and how much more there is —
-    /// a tap opens it again.
-    @ViewBuilder private var foldedSummary: some View {
-        let (first, more) = store.summary(of: title)
-        if first != nil || more > 0 {
-            Button { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } } label: {
-                HStack(spacing: 6) {
-                    if let first {
-                        Text(first).lineLimit(1).truncationMode(.tail)
-                    }
-                    if more > 0 {
-                        Text(first == nil ? "\(more) \(more == 1 ? "line" : "lines")" : "· \(more) more")
-                            .fixedSize()
-                            .foregroundStyle(Ink.faint.color)
-                    }
-                }
-                .font(.callout)
+    /// Peeking: two lines of what it says after its title, set back and
+    /// not to be written in — always two lines' room, so that a river of
+    /// peeking cards is as tall as it looks. A tap opens it.
+    @ViewBuilder private var peekSummary: some View {
+        let summary = store.peek(of: title).summary
+        Button { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } } label: {
+            Text(summary.isEmpty ? " " : summary)
+                .font(.system(size: TextSettings.size))
                 .foregroundStyle(Ink.secondary.color)
+                .lineLimit(2, reservesSpace: true)
+                .truncationMode(.tail)
+                .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, -6)
-            .accessibilityLabel("Unfold")
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(summary.isEmpty ? "Open" : summary)
+        .accessibilityHint("Opens the card")
     }
 
     /// Being renamed: whether what refers to it is updated too.
@@ -240,7 +235,8 @@ struct Card: View {
         let kind = store.kind(title)
         let shown = store.draftHead(title).map(\.title).flatMap { Untitled.isName($0) ? nil : $0 } ?? store.shownTitle(title)
         let task = store.taskState(title)
-        return HStack(alignment: .center, spacing: 10) {
+        let peeking = river.isFolded(title)
+        return HStack(alignment: .center, spacing: peeking ? 8 : 10) {
             if kind == .day {
                 Image(systemName: "calendar")
                     .foregroundStyle(Ink.secondary.color)
@@ -288,8 +284,9 @@ struct Card: View {
                 // No title till one is given: under the pointer, the offer of one.
                 untitledHeader
             } else {
-                Text(shown)
-                    .font(.system(size: 22, weight: .semibold))
+                Text(peeking ? store.peek(of: title).title : shown)
+                    // Peeking: the size of what it says, bold.
+                    .font(peeking ? .system(size: TextSettings.size, weight: .bold) : .system(size: 22, weight: .semibold))
                     .italic(!store.exists(title) && !store.isEditing(title))
                     // Done: struck through, quieter.
                     .strikethrough(task == .done, color: Ink.secondary.color)

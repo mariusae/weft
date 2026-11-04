@@ -551,6 +551,34 @@ public final class WikiStore {
         return (nil, lines.count)
     }
 
+    /// A card collapsed to its peek: what it is called — an untitled one,
+    /// its first line — and what it says after, as plain words run on, as
+    /// much as two lines could show.
+    public func peek(of title: String) -> (title: String, summary: String) {
+        let text = (drafts[title] ?? tiddler(title))?.text ?? ""
+        var lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("```") }
+        let name = Untitled.isName(title) ? (Untitled.name(of: text) ?? "Untitled") : shownTitle(title)
+        // Its own title — a first heading, or an untitled page's first line — says nothing more.
+        if let head = lines.first, Untitled.title(from: head).caseInsensitiveCompare(name) == .orderedSame { lines.removeFirst() }
+        var words: [String] = []
+        var length = 0
+        for line in lines where length < 400 {
+            var plain = line.replacingOccurrences(of: #"!\[[^\]]*\]\([^)]*\)(<!--.*?-->)?"#, with: "", options: .regularExpression)
+            plain = plain.replacingOccurrences(of: #"<(https?://[^>]+)>"#, with: "$1", options: .regularExpression)
+            // A link to an untitled page, as the page begins.
+            if plain.contains("[[untitled-") {
+                for match in plain.matches(of: #/\[\[(untitled-[0-9a-z-]+)\]\]/#).reversed() where Untitled.isName(String(match.1)) {
+                    plain.replaceSubrange(match.range, with: shownTitle(String(match.1)))
+                }
+            }
+            plain = Self.plain(plain).trimmingCharacters(in: .whitespaces)
+            if plain.isEmpty || ["-", "+", "*"].contains(plain) { continue }
+            words.append(plain)
+            length += plain.count
+        }
+        return (name, words.joined(separator: " · "))
+    }
+
     // MARK: Folds
 
     /// Which rows of a page's outline were folded last on this device — as
