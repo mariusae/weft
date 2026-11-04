@@ -91,6 +91,29 @@ import ReflectCore
         #expect(again.cards == ["Epsilon", "Delta", "Alpha", "Gamma", "Beta"])
     }
 
+    @Test func aTiddlerMadeInItIsOneOfWhatItFinds() async throws {
+        let river = River(store: store)
+        store.adopt(river)
+        river.restore(River.State(graph: root.path, cards: []))
+        river.save(as: "Alpha's")
+        river.setQuery(Query(text: "links to: Alpha\ntag: Work\nsort: -modified"), icon: nil, color: nil)
+        river.newTiddler()
+        let name = try #require(river.cards.first)
+        #expect(store.draft(name)?.tags == ["Work"])
+        #expect(store.draft(name)?[field: "related"]?.list == ["Alpha"])
+        // Left empty, it goes, as any new tiddler does.
+        store.finishEditing(name)
+        #expect(!store.exists(name))
+        // Written in, it stays, found by the river's query.
+        river.newTiddler()
+        let jot = try #require(river.cards.first)
+        store.change(jot) { $0.text = "About Alpha, really.\n" }
+        store.finishEditing(jot)
+        #expect(store.tiddler(jot)?[field: "related"]?.list == ["Alpha"])
+        river.releaseToQuery(jot)
+        #expect(river.cards.contains(jot))
+    }
+
     @Test func whileInFrontWhatChangesWaits() async throws {
         let river = river()
         river.isShown = true

@@ -674,7 +674,7 @@ public final class River: Identifiable {
     /// first; else untitled, what it says typed at once, to be named later
     /// if ever.
     public func newTiddler(taggedWith tag: String? = nil) {
-        guard let title = store.makeTiddler(taggedWith: tag, untitled: tag == nil) else { return }
+        guard let title = store.makeTiddler(taggedWith: tag, untitled: tag == nil, seed: query) else { return }
         edit(title, inTitle: tag != nil)
     }
 
@@ -710,7 +710,7 @@ public final class River: Identifiable {
 
     /// A new tiddler with a title, typed first.
     public func newTitledTiddler() {
-        guard let title = store.makeTiddler() else { return }
+        guard let title = store.makeTiddler(seed: query) else { return }
         edit(title, inTitle: true)
     }
 
@@ -719,7 +719,7 @@ public final class River: Identifiable {
     /// one it was given, given that.
     public func newTiddlerFromPasteboard() {
         guard let content = PastedTiddler.read(), let made = PastedTiddler.draft(of: content),
-              let title = store.makeTiddler(named: made.title, text: made.text) else { return }
+              let title = store.makeTiddler(named: made.title, text: made.text, seed: query) else { return }
         edit(title, inTitle: true)
         let asked = Date()
         Task {

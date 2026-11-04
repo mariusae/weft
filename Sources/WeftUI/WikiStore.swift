@@ -129,6 +129,9 @@ public final class WikiStore {
     @ObservationIgnored private var createdWhileEditing: Set<String> = []
     /// The tags a new tiddler was made with, which alone do not make it worth a file.
     @ObservationIgnored private var schemaTags: [String: [String]] = [:]
+    /// The fields a new tiddler was made with — its tags' schema, what the
+    /// query river it was made in gave it — which alone do not make it worth a file.
+    @ObservationIgnored private var madeFields: [String: [Tiddler.Field]] = [:]
     public var error: String?
     /// How a graph is chosen here: a folder on the Mac, a GitHub repository
     /// on the phone. Set by the app.
@@ -1376,7 +1379,7 @@ public final class WikiStore {
     /// A new tiddler with nothing in it yet, which is not worth a file.
     private func isUntouched(_ title: String, _ draft: Tiddler) -> Bool {
         wiki?[title] == nil && draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && draft.fields.allSatisfy { $0.value.text?.isEmpty ?? ($0.value.list?.isEmpty ?? true) }
+            && (draft.fields.allSatisfy { $0.value.text?.isEmpty ?? ($0.value.list?.isEmpty ?? true) } || draft.fields == madeFields[title])
             && (draft.tags.isEmpty || draft.tags == schemaTags[title])
     }
 
@@ -1552,7 +1555,8 @@ public final class WikiStore {
     /// A new tiddler's draft — tagged with `tag`, when there is one, and
     /// given its fields; called `name`, and saying `text`, when it is
     /// made of something — under a title no page and no card has. Its title.
-    func makeTiddler(taggedWith tag: String? = nil, named name: String? = nil, text: String = "", untitled: Bool = false) -> String? {
+    func makeTiddler(taggedWith tag: String? = nil, named name: String? = nil, text: String = "", untitled: Bool = false,
+                     seed: Query? = nil) -> String? {
         guard let wiki else { return nil }
         var title = untitled ? wiki.newUntitledName() : name ?? tag.map { "New \($0)" } ?? "New Tiddler"
         let base = title
@@ -1564,8 +1568,11 @@ public final class WikiStore {
         var tiddler = Tiddler(title: title, tags: tag.map { [$0] } ?? [], text: text)
         // What Weft makes is the wiki's — but a jot, untitled, till it is named.
         tiddler.isWiki = !untitled
-        for spec in schema(for: tiddler) { tiddler[field: spec.name] = .text("") }
+        // Made in a query river: filled in to be one of what it finds.
+        if let seed { tiddler = seed.seeded(tiddler) }
+        for spec in schema(for: tiddler) where tiddler[field: spec.name] == nil { tiddler[field: spec.name] = .text("") }
         schemaTags[title] = tiddler.tags
+        madeFields[title] = tiddler.fields
         drafts[title] = tiddler
         editing.insert(title)
         draftChanged(title)
