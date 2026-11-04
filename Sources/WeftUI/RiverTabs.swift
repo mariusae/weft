@@ -194,6 +194,7 @@ private struct RiverTab: View {
 
     /// A saved river's stack; else what its top card is — a day, a wiki page, a note.
     private var symbol: String {
+        if let icon = river.icon { return icon }
         if river.name != nil { return "square.stack" }
         return river.cards.first.map { store.kind($0).symbol } ?? "rectangle.stack"
     }
@@ -205,7 +206,7 @@ private struct RiverTab: View {
                     if river.name != nil || bunched {
                         Image(systemName: symbol)
                             .font(.system(size: bunched ? 12 : 10, weight: .semibold))
-                            .foregroundStyle(Ink.secondary.color)
+                            .foregroundStyle(river.color == nil ? Ink.secondary.color : RiverColor.color(river.color))
                     }
                     if !bunched {
                     Text(river.title)

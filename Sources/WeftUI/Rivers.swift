@@ -16,7 +16,13 @@ extension FocusedValues {
 public final class RiverSet {
     let store: WikiStore
     public private(set) var rivers: [River] = []
-    public private(set) var current: River
+    public private(set) var current: River {
+        didSet {
+            guard current !== oldValue else { return }
+            oldValue.isShown = false
+            current.isShown = true
+        }
+    }
 
     /// The window these are the rivers of, on the iPad: each keeps its
     /// own. Empty for the first, which keeps them as the phone does.
@@ -27,6 +33,7 @@ public final class RiverSet {
     public init(store: WikiStore) {
         self.store = store
         current = River(store: store)
+        current.isShown = true
         rivers = [current]
         hook(current)
         store.adopt(current)
@@ -217,6 +224,10 @@ struct RiverSetMenu: View {
                 Button("Copy River Address", systemImage: "safari") { Platform.copy(RiverLink.url(name).absoluteString) }
             }
             Button("Saved Rivers…", systemImage: "tray.full") { current.riversShown = true }
+        }
+        Section {
+            Button("New Query River…", systemImage: "line.3.horizontal.decrease.circle") { current.queryEditor = .new }
+            Button(current.isQuery ? "Edit River Query…" : "Fill from Query…", systemImage: "slider.horizontal.3") { current.queryEditor = .edit }
         }
         if rivers.rivers.count > 1 {
             Button("Close River", systemImage: "xmark", role: .destructive) { rivers.close(current) }

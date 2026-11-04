@@ -738,6 +738,7 @@ private struct RiverColumn: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 22) {
+                    if river.isQuery { QueryRiverHeader() }
                     ForEach(river.cards, id: \.self) { title in
                         DroppableCard(title: title, drop: $drop, gap: 22)
                             .id(title)
@@ -784,6 +785,30 @@ private struct RiverColumn: View {
             }
             #endif
             .background(Color.river)
+            // What a query river finds anew, waiting to be shown.
+            .overlay(alignment: .top) {
+                if river.updates > 0 {
+                    Button {
+                        withAnimation(.snappy(duration: 0.3)) { river.applyUpdates() }
+                        if let first = river.cards.first { withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(first, anchor: .top) } }
+                    } label: {
+                        Label("\(river.updates) updated", systemImage: "arrow.up")
+                            .font(.callout.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(.white)
+                            .background(Ink.accent.color, in: Capsule())
+                            .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 10)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.25), value: river.updates > 0)
+            .sheet(item: Binding(get: { river.queryEditor }, set: { river.queryEditor = $0 })) { ask in
+                QueryRiverEditor(ask: ask).environment(store).environment(river)
+            }
             #if os(macOS)
             .overlay(alignment: .trailing) {
                 if river.cards.count > 1 {
@@ -1034,7 +1059,8 @@ private struct RiverRail: View {
         // No gap between rows while their titles show, so the pointer
         // passes from one to the next without lighting none between.
         VStack(alignment: .trailing, spacing: open ? 0 : 6) {
-            ForEach(river.cards, id: \.self) { title in
+            // A query river's, as far as a rail can show: its first cards.
+            ForEach(river.isQuery ? Array(river.cards.prefix(60)) : river.cards, id: \.self) { title in
                 let current = title == inView
                 let lit = hovering && pointed == title
                 Button { go(title) } label: {

@@ -250,6 +250,11 @@ struct RiverCommands: Commands {
             Button("Saved Rivers…") { river?.riversShown = true }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(river == nil || store.root == nil)
+            Divider()
+            Button("New Query River…") { river?.queryEditor = .new }
+                .disabled(river == nil || store.root == nil)
+            Button(river?.isQuery == true ? "Edit River Query…" : "Fill River from Query…") { river?.queryEditor = .edit }
+                .disabled(river == nil || store.root == nil)
         }
     }
 }

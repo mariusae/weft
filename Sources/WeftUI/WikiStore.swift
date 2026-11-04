@@ -88,6 +88,10 @@ public final class WikiStore {
             for tag in (before?.tags ?? []) + (after?.tags ?? []) { tell(tag) }
         }
         if before?.names != after?.names { namesVersion += 1 }
+        // Query rivers find again what they find — and in what order.
+        if let title = after?.page.title ?? before?.page.title {
+            for river in rivers where river.query != nil { river.pageChanged(title) }
+        }
         listsVersion += 1
         textVersion += 1
         // What most queries ask — names, tags, fields, links — changed: they
@@ -830,6 +834,17 @@ public final class WikiStore {
         return wiki?.tagged(tag) ?? []
     }
 
+    /// What a query river's query finds, in its order, each with its place.
+    func riverOrder(_ query: Query) -> [(title: String, place: Query.Place)] {
+        _ = graphVersion
+        return wiki.map { query.ordered(in: $0) } ?? []
+    }
+
+    /// A page's place in a query river's order.
+    func riverPlace(_ query: Query, of title: String) -> Query.Place? {
+        wiki.map { query.place(of: title, in: $0) }
+    }
+
     public func tags() -> [(tag: String, count: Int)] {
         _ = listsVersion
         return wiki?.tags() ?? []
@@ -1068,6 +1083,12 @@ public final class WikiStore {
         guard writeSavedRiver(name, river) else { return nil }
         savedVersion += 1
         return name
+    }
+
+    /// A query river saved under a name no other has: what it finds, and
+    /// how it shows. The name it was saved under.
+    public func addQueryRiver(_ name: String, query: Query, icon: String?, color: String?) -> String? {
+        addSavedRiver(name, SavedRiver(cards: [], query: query, icon: icon, color: color))
     }
 
     /// A copy of a saved river, under a new name — not opened.

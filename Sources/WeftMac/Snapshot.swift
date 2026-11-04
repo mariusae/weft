@@ -88,6 +88,21 @@ enum Snapshot {
             river.closeAll()
         }
         for title in titles.reversed() { river.open(title) }
+        // `WEFT_QUERY_RIVER=Name|query lines`: a query river of the
+        // query (its lines with \n), shown here.
+        if let asked = environment["WEFT_QUERY_RIVER"], let bar = asked.firstIndex(of: "|") {
+            let name = String(asked[..<bar])
+            let query = Query(text: String(asked[asked.index(after: bar)...]).replacingOccurrences(of: "\\n", with: "\n"))
+            if store.savedRiverName(name) == nil {
+                _ = store.addQueryRiver(name, query: query, icon: "clock", color: "orange")
+            }
+            if let rivers { rivers.closeOthers(river) }
+            river.restore(River.State(graph: store.root?.path ?? "", name: name, cards: []))
+        }
+        // `WEFT_QUERY_EDITOR=new|edit`: the query river's editor.
+        if let ask = environment["WEFT_QUERY_EDITOR"].flatMap(QueryEditorAsk.init(rawValue:)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { river.queryEditor = ask }
+        }
         // `WEFT_OUTLINE`: a card edited as an outline.
         if let outline = environment["WEFT_OUTLINE"] { store.setEditorMode(.outline, for: outline) }
         if let text = environment["WEFT_TEXT"] { store.setEditorMode(.text, for: text) }
@@ -287,7 +302,9 @@ enum Snapshot {
         }
         let delay = Double(environment["WEFT_DELAY"] ?? "") ?? 2.5
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }), let view = window.contentView?.superview ?? window.contentView,
+            // A sheet over the window, when there is one: it is what shows.
+            guard let front = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }), case let window = front.attachedSheet ?? front,
+                  let view = window.contentView?.superview ?? window.contentView,
                   let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
                 FileHandle.standardError.write(Data("No window to draw\n".utf8))
                 exit(1)

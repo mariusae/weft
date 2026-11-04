@@ -448,7 +448,7 @@ struct Card: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Close")
+                .help(river.isQuery ? "Remove from River" : "Close")
             }
             .foregroundStyle(Ink.secondary.color)
             .padding(.horizontal, 2)
@@ -486,7 +486,17 @@ struct Card: View {
             Button(river.isFolded(title) ? "Unfold" : "Fold") {
                 withAnimation(.snappy(duration: 0.2)) { river.toggleFold(title) }
             }
-            Button("Close Other Cards") { withAnimation { river.closeOthers(title) } }
+            if river.isQuery {
+                // What the river finds: held at its top; what is held, let go.
+                if river.isHeld(title) {
+                    Button("Release to Query", systemImage: "arrow.uturn.down") { withAnimation { river.releaseToQuery(title) } }
+                } else {
+                    Button("Keep at Top", systemImage: "pin") { withAnimation { river.keepAtTop(title) } }
+                }
+                Button("Remove from River", systemImage: "minus.circle") { withAnimation { river.close(title) } }
+            } else {
+                Button("Close Other Cards") { withAnimation { river.closeOthers(title) } }
+            }
             #if os(iOS)
             // The Mac's switch in the header, on the phone in here: no room beside the title.
             Picker("Write As", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
