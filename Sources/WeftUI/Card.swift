@@ -551,11 +551,6 @@ struct Card: View {
         let mode = store.editorMode(title)
         let other: WikiStore.EditorMode = mode == .text ? .outline : .text
         return HStack(spacing: 0) {
-            #if os(iOS)
-            if river.isWriting(title) {
-                DrawerButton("Done", "keyboard.chevron.compact.down") { Platform.endEditing() }
-            }
-            #endif
             DrawerButton(peeking ? "Open" : "Peek",
                          peeking ? "arrow.up.left.and.arrow.down.right.circle" : "arrow.down.right.and.arrow.up.left.circle") {
                 withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) }
