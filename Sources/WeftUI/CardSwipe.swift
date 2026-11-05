@@ -32,9 +32,10 @@ private struct CardSwipe: ViewModifier {
     /// Past the point a long swipe does the outer action: told once, with a tick.
     @State private var committing = false
 
-    private static let button: CGFloat = 76
-    private static let gap: CGFloat = 6
-    private var opened: CGFloat { Self.button * 2 + Self.gap }
+    private static let button: CGFloat = 84
+    private static let gap: CGFloat = 10
+    private static let capsule: CGFloat = 46
+    private var opened: CGFloat { Self.button * 2 + Self.gap * 3 }
     /// How far a long swipe goes before letting go does the outer action.
     private var commit: CGFloat { max(opened + 40, width * 0.55) }
 
@@ -44,17 +45,18 @@ private struct CardSwipe: ViewModifier {
             .background(alignment: .leading) { if offset > 0 { actions(leading, side: .leading) } }
             .background(alignment: .trailing) { if offset < 0 { actions(trailing, side: .trailing) } }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            // Open, a tap on the card closes it again — not what the tap would do.
+            .overlay {
+                if rest != 0 {
+                    Color.clear.contentShape(Rectangle()).offset(x: offset).onTapGesture { settle(0) }
+                }
+            }
+            // Over all of it: a swipe back on an open card closes it.
             .gesture(HorizontalPan(enabled: enabled) { dx in
                 drag(dx)
             } ended: { dx, velocity in
                 end(dx, velocity: velocity)
             })
-            // Open, a tap on the card closes it again — not what the tap would do.
-            .overlay {
-                if rest != 0 {
-                    Color.clear.contentShape(Rectangle()).onTapGesture { settle(0) }
-                }
-            }
             .sensoryFeedback(.impact(weight: .medium), trigger: committing) { _, now in now }
             .onChange(of: enabled) { _, now in if !now { settle(0) } }
     }
@@ -75,20 +77,32 @@ private struct CardSwipe: ViewModifier {
                         settle(0)
                         action.run()
                     } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: action.symbol).font(.system(size: 20, weight: .semibold))
-                            Text(action.name).font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()
+                        // As Overcast's: a capsule of the action's colour, its
+                        // symbol in it, its name under it — in the card's middle,
+                        // not as tall as it.
+                        VStack(spacing: 6) {
+                            Image(systemName: action.symbol)
+                                .font(.system(size: 19, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: Self.capsule)
+                                .background(action.tint, in: Capsule())
+                            Text(action.name)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(Ink.secondary.color)
+                                .lineLimit(1)
+                                .fixedSize()
                         }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(action.tint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .frame(width: committing ? max(Self.button, shown - Self.gap) : Self.button)
+                    .frame(width: committing ? max(Self.button, shown - Self.gap * 2) : Self.button)
                     .accessibilityLabel(action.name)
                 }
             }
         }
+        .padding(.horizontal, Self.gap)
         .animation(.snappy(duration: 0.2), value: committing)
     }
 
@@ -109,6 +123,11 @@ private struct CardSwipe: ViewModifier {
             committing = false
             settle(0)
             action?.run()
+            return
+        }
+        // Open, and swiped back some way: closed.
+        if rest != 0, (rest > 0) != (dx > 0), abs(dx) > 24 || abs(velocity) > 300 {
+            settle(0)
             return
         }
         // Flung or let go far enough: open on that side; else closed.
@@ -162,6 +181,13 @@ private struct HorizontalPan: UIGestureRecognizerRepresentable {
             guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
             let velocity = pan.velocity(in: pan.view)
             return abs(velocity.x) > abs(velocity.y) * 1.4
+        }
+
+        /// Alongside a card's taps — a peek's double tap — but not the
+        /// river's scroll, nor another pan.
+        func gestureRecognizer(_ recognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            !(other is UIPanGestureRecognizer)
         }
     }
 }
