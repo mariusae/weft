@@ -140,21 +140,10 @@ struct Card: View {
         let peek = store.peek(of: title)
         let task = store.taskState(title)
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if let symbol = shownSymbol {
-                Image(systemName: symbol).foregroundStyle(Ink.secondary.color)
-            }
-            if let task {
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
-                } label: {
-                    Image(systemName: task == .done ? "checkmark.circle.fill" : "circle")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(task == .done ? Color.white : Ink.secondary.color, Ink.accent.color)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(task == .done ? "Done" : "To do")
-            }
-            (Text(peek.title).bold().foregroundStyle(task == .done ? Ink.secondary.color : Ink.text.color)
+            // Its ring and its icon in its first line, not beside it: what
+            // it says flows back under them to the card's edge.
+            (peekLead(task: task)
+             + Text(peek.title).bold().foregroundStyle(task == .done ? Ink.secondary.color : Ink.text.color)
              + Text(peek.summary.isEmpty ? "" : "  " + peek.summary).foregroundStyle(Ink.secondary.color))
                 .strikethrough(false)
                 .lineLimit(Self.peekLines, reservesSpace: true)
@@ -162,6 +151,18 @@ struct Card: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
+                // The ring, first in the line, checked off where it is drawn.
+                .overlay(alignment: .topLeading) {
+                    if let task {
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
+                        } label: {
+                            Color.clear.frame(width: TextSettings.size * 1.4, height: TextSettings.size * 1.3).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(task == .done ? "Done" : "To do")
+                    }
+                }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Opens the card")
             #if os(macOS)
@@ -175,6 +176,20 @@ struct Card: View {
         #if os(macOS)
         .overlay(alignment: .topLeading) { foldChevron.offset(x: -23, y: -3) }
         #endif
+    }
+
+    /// What a peek's first line begins with: its ring, if it is a thing to
+    /// do, then its icon — a day's calendar, or its own — as words are.
+    private func peekLead(task: Tiddler.TaskState?) -> Text {
+        var lead = Text("")
+        if let task {
+            lead = lead + Text(Image(systemName: task == .done ? "checkmark.circle.fill" : "circle"))
+                .foregroundStyle(task == .done ? Ink.accent.color : Ink.secondary.color) + Text("  ")
+        }
+        if let symbol = shownSymbol {
+            lead = lead + Text(Image(systemName: symbol)).foregroundStyle(Ink.secondary.color) + Text("  ")
+        }
+        return lead
     }
 
     /// How the card opens for its drawer, and the drawer grows into it.
