@@ -2,9 +2,10 @@ import Foundation
 import ReflectCore
 import WeftCore
 
-/// What the query's editor is asked for: a new query river, or this one's.
+/// What the query's editor is asked for: a new query river — beside this
+/// one, or in its place — or this one's.
 public enum QueryEditorAsk: String, Identifiable, Sendable {
-    case new, edit
+    case new, newHere, edit
     public var id: String { rawValue }
 }
 
@@ -19,6 +20,8 @@ public enum QueryEditorAsk: String, Identifiable, Sendable {
 /// order of what is being read not moving under the reader.
 extension River {
     public var isQuery: Bool { query != nil }
+    /// Nothing in it, nor a query to fill it: on the Mac, its start page shown.
+    public var startsEmpty: Bool { cards.isEmpty && query == nil && !store.isLoading }
 
     /// Its cards held by hand: at its top, and placed among what it finds.
     var ownCards: [String] { head + placed.keys.sorted() }

@@ -782,6 +782,28 @@ public final class River: Identifiable {
     /// phone's rivers. Set by the app.
     @ObservationIgnored public var openNew: (State) -> Void = { _ in }
 
+    /// On the Mac: its start page over it, asked for from its tab — what to
+    /// put in its place.
+    public var startShown = false
+    /// Told what it showed before something was put in its place: kept, as
+    /// a closed tab is, to be had back. Set by the app.
+    @ObservationIgnored public var replaced: (State) -> Void = { _ in }
+
+    /// A saved river put in this one's place, as a page chosen from Safari's
+    /// start page takes the tab's — what it showed kept as a closed tab is.
+    /// Shown in another already: that one brought to the front.
+    public func replace(withSaved saved: String) {
+        startShown = false
+        if let showing = store.river(named: saved) {
+            if showing !== self { showing.present() }
+            return
+        }
+        if !cards.isEmpty || query != nil { replaced(state) }
+        for title in cards where store.isEditing(title) { store.finishEditing(title, closing: true) }
+        cards = []
+        restore(State(graph: store.root?.path ?? "", name: saved, cards: []))
+    }
+
     /// Brings back a saved river: the one showing it to the front, when one
     /// does; else here, when nothing is open here; else beside this one.
     public func recall(_ saved: String) {

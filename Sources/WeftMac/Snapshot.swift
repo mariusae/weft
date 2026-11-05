@@ -88,6 +88,11 @@ enum Snapshot {
             river.closeAll()
         }
         for title in titles.reversed() { river.open(title) }
+        // `WEFT_EMPTY`: one river, empty — its start page showing, as a new tab's.
+        if environment["WEFT_EMPTY"] != nil {
+            if let rivers { rivers.closeOthers(river) }
+            river.restore(River.State(graph: store.root?.path ?? "", cards: []))
+        }
         // `WEFT_QUERY_RIVER=Name|query lines`: a query river of the
         // query (its lines with \n), shown here.
         if let asked = environment["WEFT_QUERY_RIVER"], let bar = asked.firstIndex(of: "|") {
@@ -113,6 +118,12 @@ enum Snapshot {
         for title in environment["WEFT_FOLD"]?.split(separator: "|") ?? [] { river.setFolded(String(title), true) }
         if let edit = environment["WEFT_EDIT"] { river.edit(edit) }
         if environment["WEFT_QUICK_OPEN"] != nil { river.quickOpenShown = true }
+        // `WEFT_REPLACE=Saved`: a saved river chosen from its start page, in its place.
+        if let saved = environment["WEFT_REPLACE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { river.replace(withSaved: saved) }
+        }
+        // `WEFT_START`: its start page over it, as its tab clicked asks.
+        if environment["WEFT_START"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { river.startShown = true } }
         // `WEFT_NEW`: a new tiddler, its title being typed.
         if environment["WEFT_NEW"] != nil { river.newTiddler() }
         // `WEFT_PASTEBOARD_TEXT=words` or `WEFT_PASTEBOARD_PICTURE=file`: a new

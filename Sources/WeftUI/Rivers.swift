@@ -102,6 +102,11 @@ public final class RiverSet {
         river.onChange = { [weak self] in self?.keep() }
         river.present = { [weak self, weak river] in if let river { self?.select(river) } }
         river.openNew = { [weak self] in self?.add($0) }
+        river.replaced = { [weak self, weak river] state in
+            guard let self, let index = rivers.firstIndex(where: { $0 === river }) else { return }
+            closed.append((state, index))
+            if closed.count > 30 { closed.removeFirst() }
+        }
     }
 
     /// Another river, after this one: empty, with Quick Open showing — or
@@ -124,6 +129,10 @@ public final class RiverSet {
         current = river
         keep()
     }
+
+    /// On the phone, swiped past the last river: a new one, as Safari's new
+    /// tab past its last — but not from one empty already.
+    public var swipesToNew: Bool { current === rivers.last && !current.startsEmpty }
 
     /// The river before or after this one.
     public func step(_ by: Int) {

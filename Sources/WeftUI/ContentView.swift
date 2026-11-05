@@ -131,7 +131,8 @@ public struct ContentView: View {
         #if os(macOS)
         // Over the river, as Prism's Go to is: a click outside it puts it away.
         .overlay(alignment: .top) {
-            if river.quickOpenShown && store.root != nil {
+            // An empty river's start page has it at its top already.
+            if river.quickOpenShown && store.root != nil && !river.startsEmpty {
                 ZStack(alignment: .top) {
                     Color.clear
                         .contentShape(Rectangle())
@@ -143,6 +144,11 @@ public struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: river.quickOpenShown)
+        // Filled from elsewhere — the sidebar, a link — the start page's ask
+        // to go somewhere is done with: not left to show over the river.
+        .onChange(of: river.startsEmpty) { _, empty in if !empty { river.quickOpenShown = false } }
+        // A page opened from it, or from elsewhere: its start page done with.
+        .onChange(of: river.focusRequest) { river.startShown = false }
         #else
         // On the phone, the start page, as Safari's; else a sheet, as Prism's Go to is.
         .fullScreenCover(isPresented: Binding(get: { river.quickOpenShown && store.root != nil && sizeClass == .compact },
@@ -740,6 +746,23 @@ private struct KeptRiverViews: NSViewRepresentable {
 #endif
 
 #if os(iOS)
+/// Swiped toward past the last river: the new one, on its start page's
+/// paper — what it will open on — saying what letting go makes.
+private struct NewRiverPage: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "plus.square.on.square")
+                .font(.system(size: 34, weight: .regular))
+            Text("New River")
+                .font(.headline)
+        }
+        .foregroundStyle(Ink.secondary.color)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Ink.paper.color)
+        .ignoresSafeArea()
+    }
+}
+
 /// The phone's river, and under it — shown as it shrinks away — the
 /// overview of them all: as Safari's page does, the river drawn smaller,
 /// its corners rounding, into its own tile, the others coming into focus
@@ -780,6 +803,13 @@ private struct PhoneRivers: View {
                     .opacity(each === river && settled ? 0 : 1)
                     .allowsHitTesting(each === river && progress == 0 && rivers.swipe == 0)
                     .zIndex(each === river ? 1 : 0)
+            }
+            // Past the last, the new river to be: its start page's paper, beside.
+            if rivers.swipe < 0, rivers.swipesToNew {
+                NewRiverPage()
+                    .frame(width: frame.width, height: frame.height)
+                    .offset(x: frame.width + Self.gutter + rivers.swipe)
+                    .allowsHitTesting(false)
             }
         }
         // Between rivers slid side by side: a shade under them, as Safari's.
@@ -891,6 +921,15 @@ private struct RiverColumn: View {
     /// Read down into the river: the controls over it out of the way, the
     /// bar at its foot gathered to the river's name — as Prism does.
     @State private var tucked = false
+
+    /// On the Mac: its start page asked for over what it shows.
+    private var startOver: Bool {
+        #if os(macOS)
+        river.startShown && store.root != nil && (!river.cards.isEmpty || river.isQuery)
+        #else
+        false
+        #endif
+    }
     #if os(iOS)
     @State private var scrolling = ScrollFollower()
     /// The keys up — for a card, or a find bar, or anything else.
@@ -987,7 +1026,7 @@ private struct RiverColumn: View {
             .overlay {
                 if store.isLoading {
                     ProgressView().controlSize(.large)
-                } else if river.cards.isEmpty {
+                } else if river.cards.isEmpty || startOver {
                     #if os(iOS)
                     if showSidebar != nil {
                         ContentUnavailableView {
@@ -1000,8 +1039,14 @@ private struct RiverColumn: View {
                             .foregroundStyle(.secondary)
                     }
                     #else
-                    Text("Open a tiddler from the sidebar, or make one with ⌘N.")
-                        .foregroundStyle(.secondary)
+                    // As a new tab's in Safari: what to fill it with — or, asked
+                    // for from its tab, what to put in its place, over it.
+                    if store.root != nil, river.startShown || !river.isQuery {
+                        MacStartPage().background { if startOver { Color.river } }
+                    } else {
+                        Text("Open a tiddler from the sidebar, or make one with ⌘N.")
+                            .foregroundStyle(.secondary)
+                    }
                     #endif
                 }
             }

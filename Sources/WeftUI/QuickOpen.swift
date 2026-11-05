@@ -17,6 +17,11 @@ struct QuickOpen: View {
     @State private var query = ""
     @State private var selected = 0
     @FocusState private var focused: Bool
+    /// On a start page, not over the river: what it finds shown only once
+    /// something is typed, the page under it showing till then.
+    let inline: Bool
+
+    init(inline: Bool = false) { self.inline = inline }
 
     #if os(macOS)
     /// The window it is in: what has the keys there — a card being written
@@ -110,6 +115,7 @@ struct QuickOpen: View {
 
     private func open(_ target: LinkTarget, inNewTab: Bool = false) {
         river.quickOpenShown = false
+        river.startShown = false
         if inNewTab, target.kind != .new, target.kind != .river {
             river.openNew(River.State(graph: store.root?.path ?? "", cards: [target.title]))
             return
@@ -151,7 +157,7 @@ struct QuickOpen: View {
             }
             .padding(.horizontal, 22)
             .frame(height: 60)
-            if !results.isEmpty {
+            if !results.isEmpty, !inline || !query.trimmingCharacters(in: .whitespaces).isEmpty {
                 Rectangle().fill(Ink.rule.color).frame(height: 1)
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -186,7 +192,9 @@ struct QuickOpen: View {
             return .handled
         }
         .onKeyPress(.escape) {
-            river.quickOpenShown = false
+            // On the start page, what was typed let go — nothing typed, the
+            // page put away, asked for over the river; over the river, put away.
+            if inline, !query.isEmpty { query = "" } else if inline { river.startShown = false } else { river.quickOpenShown = false }
             return .handled
         }
     }

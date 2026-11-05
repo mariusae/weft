@@ -90,14 +90,14 @@ struct QueryRiverEditor: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(ask == .new ? "New Query River" : "Edit River")
+            .navigationTitle(ask != .edit ? "New Query River" : "Edit River")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(ask == .new ? "Create" : "Done") { finish() }
+                    Button(ask != .edit ? "Create" : "Done") { finish() }
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -140,6 +140,9 @@ struct QueryRiverEditor: View {
         case .new:
             guard let saved = store.addQueryRiver(name, query: query, icon: icon, color: color) else { return }
             river.recall(saved)
+        case .newHere:
+            guard let saved = store.addQueryRiver(name, query: query, icon: icon, color: color) else { return }
+            river.replace(withSaved: saved)
         case .edit:
             if river.name == nil || river.name != name { river.save(as: name) }
             river.setQuery(query, icon: icon, color: color)

@@ -104,8 +104,10 @@ struct RiverTabs: View {
                 RiverTab(river: river, isCurrent: index == current, closable: all.count > 1,
                          bunched: bunched && index != current && pointed != index && (widths.indices.contains(index) ? widths[index] : 0) < TabLayout.namedMin,
                          hovering: pointed == index) {
-                    // At once: no animation to wait out.
-                    if river === rivers.current { river.quickOpenShown = true } else { rivers.select(river) }
+                    // At once: no animation to wait out. The tab in front
+                    // clicked: its start page, to put another river in its
+                    // place — clicked again, put away.
+                    if river === rivers.current { river.startShown.toggle() } else { rivers.select(river) }
                 } close: {
                     withAnimation(.snappy(duration: 0.2)) { rivers.close(river) }
                 }

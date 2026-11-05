@@ -212,9 +212,10 @@ struct PhoneBar: View {
         DragGesture(minimumDistance: 12, coordinateSpace: .global)
             .onChanged { drag in
                 guard let rivers, abs(drag.translation.width) > abs(drag.translation.height) || rivers.swipe != 0 else { return }
-                // Toward a river there is: as far as the finger; past the last, held back.
+                // Toward a river there is, or past the last toward a new one:
+                // as far as the finger; before the first, held back.
                 let toward = drag.translation.width < 0 ? 1 : -1
-                let beside = rivers.rivers.indices.contains(rivers.currentIndex + toward)
+                let beside = rivers.rivers.indices.contains(rivers.currentIndex + toward) || toward > 0 && rivers.swipesToNew
                 var still = Transaction()
                 still.disablesAnimations = true
                 withTransaction(still) {
@@ -233,6 +234,8 @@ struct PhoneBar: View {
                 let far = abs(drag.translation.width) > width * 0.4 || (abs(moved) > width * 0.5 && (moved < 0) == (toward > 0))
                 if far, rivers.rivers.indices.contains(rivers.currentIndex + toward) {
                     Self.slide(rivers, by: toward, width: width)
+                } else if far, toward > 0, rivers.swipesToNew {
+                    Self.slideToNew(rivers, width: width)
                 } else {
                     withAnimation(.interpolatingSpring(stiffness: 260, damping: 28)) { rivers.swipe = 0 }
                 }
@@ -250,6 +253,22 @@ struct PhoneBar: View {
             still.disablesAnimations = true
             withTransaction(still) {
                 rivers.step(by)
+                rivers.swipe = 0
+            }
+        }
+    }
+
+    /// Past the last river: the new one slid in, and made — its start page
+    /// in it, there at once, not risen over it.
+    static func slideToNew(_ rivers: RiverSet, width: CGFloat) {
+        let page = width + 28 + 14
+        withAnimation(.interpolatingSpring(stiffness: 260, damping: 30)) {
+            rivers.swipe = -page
+        } completion: {
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) {
+                rivers.add(browsing: true)
                 rivers.swipe = 0
             }
         }
@@ -519,7 +538,7 @@ struct StartPage: View {
             withAnimation(.snappy(duration: 0.28)) { river.edit(target.title) }
         case .river:
             close()
-            if let name = RiverLink.name(target.title) { river.recall(name) }
+            if let name = RiverLink.name(target.title) { river.replace(withSaved: name) }
         default:
             open(target.title)
         }
@@ -558,7 +577,6 @@ private struct RiversGrid: View {
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4), spacing: 18) {
                     ForEach(saved, id: \.self) { name in tile(name) }
-                    newRiver
                     newQuery
                 }
             }
@@ -571,9 +589,11 @@ private struct RiversGrid: View {
         let saved = store.savedRiver(name)
         let color = RiverColor.color(saved?.color ?? (saved?.query != nil ? "orange" : "blue"))
         let open = store.river(named: name) != nil
+        // In this river's place, as a page chosen from Safari's start page
+        // takes the tab's — a new river is a new tab's.
         return Button {
             close()
-            river.recall(name)
+            withAnimation(.snappy(duration: 0.28)) { river.replace(withSaved: name) }
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: store.savedRiverIcon(name) ?? (saved?.query != nil ? "line.3.horizontal.decrease.circle" : "square.stack"))
@@ -594,26 +614,22 @@ private struct RiversGrid: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("Open", systemImage: "arrow.up.forward.square") { close(); river.recall(name) }
+            Button("Open", systemImage: "arrow.up.forward.square") { close(); river.replace(withSaved: name) }
+            Button("Open in New River", systemImage: "plus.square.on.square") {
+                close()
+                if let showing = store.river(named: name) { showing.present() } else {
+                    river.openNew(River.State(graph: store.root?.path ?? "", name: name, cards: []))
+                }
+            }
             Button("Copy Link", systemImage: "link") { Platform.copy(RiverLink.link(name)) }
         }
         .accessibilityLabel(name + (open ? ", open" : ""))
     }
 
-    /// An empty river, after this one — or, this one empty already, as a
-    /// new tab's start page is, this one as it is.
-    private var newRiver: some View {
-        newTile("New River", "plus.square.on.square") {
-            close()
-            if river.cards.isEmpty, !river.isQuery { return }
-            withAnimation(.snappy(duration: 0.28)) { rivers?.add(River.State(graph: store.root?.path ?? "", cards: [])) }
-        }
-    }
-
     private var newQuery: some View {
         newTile("Query River", "line.3.horizontal.decrease") {
             close()
-            river.queryEditor = .new
+            river.queryEditor = .newHere
         }
     }
 
