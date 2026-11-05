@@ -18,12 +18,7 @@ struct RelatedRow: View {
         let related = store.related(of: title)
         if !related.isEmpty || adding {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Related")
-                    .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                    .kerning(0.8)
-                    .foregroundStyle(Ink.secondary.color)
-                FlowLayout(spacing: 6) {
+                FootRow("Related") {
                     ForEach(related, id: \.title) { page in
                         Button { river.open(page.title, from: title) } label: { RelatedPill(page: page, shown: store.shownTitle(page.title)) }
                             .buttonStyle(.plain)
@@ -112,11 +107,58 @@ struct RelatedPill: View {
                 .italic(!page.exists)
                 .lineLimit(1)
         }
-        .font(.callout)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 3)
+        .footPill()
         .foregroundStyle(page.exists ? Ink.text.color : Ink.secondary.color)
         .background(Ink.rule.color.opacity(page.exists ? 0.9 : 0.5), in: Capsule())
         .overlay(Capsule().strokeBorder(Ink.rule.color))
+    }
+}
+
+/// A row at a card's foot — what it is related to, the rivers it is in —
+/// all alike: on the Mac its name in line before its pills, quiet; on the
+/// phone over them, in small capitals.
+struct FootRow<Content: View>: View {
+    let name: String
+    @ViewBuilder let content: () -> Content
+
+    init(_ name: String, @ViewBuilder content: @escaping () -> Content) {
+        self.name = name
+        self.content = content
+    }
+
+    var body: some View {
+        #if os(macOS)
+        HStack(alignment: .firstTextBaseline, spacing: Measures.s) {
+            Text(name)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(Ink.secondary.color)
+                .fixedSize()
+            FlowLayout(spacing: 6) { content() }
+        }
+        #else
+        VStack(alignment: .leading, spacing: 6) {
+            Text(name)
+                .font(.caption.weight(.semibold))
+                .textCase(.uppercase)
+                .kerning(0.8)
+                .foregroundStyle(Ink.secondary.color)
+            FlowLayout(spacing: 6) { content() }
+        }
+        #endif
+    }
+}
+
+/// A pill at a card's foot: a related page's, a river's.
+extension View {
+    func footPill() -> some View {
+        #if os(macOS)
+        self.font(.system(size: 12))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+        #else
+        self.font(.callout)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+        #endif
     }
 }

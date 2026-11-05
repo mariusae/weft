@@ -11,6 +11,10 @@ import WeftCore
 /// before it too is bunched; and the one shown taking what is left.
 enum TabLayout {
     static let spacing: CGFloat = 4
+    /// Between the tabs and the toolbar's buttons, their glass and all.
+    static let gap: CGFloat = 8
+    /// After the toolbar's buttons, to the window's edge.
+    static let trailing: CGFloat = 20
     /// A bunched tab: its icon alone.
     static let bunched: CGFloat = 34
     /// The narrowest a tab still shows its name.
@@ -85,15 +89,30 @@ enum TabLayout {
 struct RiverTabs: View {
     @Environment(WikiStore.self) private var store
     let rivers: RiverSet
-    /// The room the title bar gives the tabs.
+    /// The room the title bar should give the tabs, as reckoned from the
+    /// window: at most what they take — less, when the toolbar has less.
     var width: CGFloat
     /// A tab moved to a window of its own: the window to open with it.
     var moveToWindow: (River) -> Void = { _ in }
     @State private var dragged: River?
     /// The tab under the pointer. `WEFT_TAB_HOVER=<n>`, for a snapshot.
     @State private var pointed: Int? = ProcessInfo.processInfo.environment["WEFT_TAB_HOVER"].flatMap(Int.init)
+    /// Where in the window the strip is, as laid out.
+    @State private var spot: WindowPlace.Spot?
+
+    /// The room the window leaves the tabs: from where they begin to its
+    /// right edge, all but what the toolbar's buttons take after them — each
+    /// as wide as it says — and the space round them. Else, till the strip
+    /// is placed, as reckoned. Not from where the buttons are: the toolbar
+    /// packs them after the tabs, so they move as the tabs widen.
+    private var room: CGFloat {
+        guard let spot, !rivers.toolbarButtons.isEmpty else { return width }
+        let buttons = rivers.toolbarButtons.values.reduce(0, +)
+        return max(TabLayout.shownMin + 2 * TabLayout.bunched, spot.window - spot.minX - TabLayout.gap - buttons - TabLayout.trailing)
+    }
 
     var body: some View {
+        let width = room
         let all = rivers.rivers
         let current = all.firstIndex { $0 === rivers.current } ?? 0
         let widths = TabLayout.widths(count: all.count, current: current, pointed: pointed,
@@ -152,6 +171,9 @@ struct RiverTabs: View {
             }
         }
         .frame(width: width, alignment: .leading)
+        // Out of the window — put in the toolbar's overflow — its room
+        // reckoned again, from the window, till it is placed once more.
+        .background(WindowPlace { spot = $0 })
     }
 
     @ViewBuilder private func menu(_ river: River) -> some View {
@@ -297,6 +319,79 @@ private struct TabDrop: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         dragged = nil
         return true
+    }
+}
+/// Where a view is in its window, from its left — told as the window
+/// changes size, as the view is laid out, and nil once it leaves: for
+/// views in different parts of the toolbar, which SwiftUI can't compare.
+struct WindowPlace: NSViewRepresentable {
+    /// Its left and right in its window, and the window's width.
+    struct Spot: Equatable {
+        var minX: CGFloat
+        var maxX: CGFloat
+        var window: CGFloat
+    }
+    let told: (Spot?) -> Void
+
+    final class Place: NSView {
+        var told: (Spot?) -> Void = { _ in }
+        private var last: Spot?
+        private var resizing: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let resizing { NotificationCenter.default.removeObserver(resizing) }
+            resizing = nil
+            guard let window else {
+                last = nil
+                told(nil)
+                return
+            }
+            resizing = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.tell() }
+            }
+            tell()
+        }
+
+        override func layout() {
+            super.layout()
+            tell()
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        func tell() {
+            guard window != nil else { return }
+            // Once the toolbar has placed it.
+            DispatchQueue.main.async { [self] in
+                guard let window else { return }
+                let frame = convert(bounds, to: nil)
+                let spot = Spot(minX: frame.minX, maxX: frame.maxX, window: window.frame.width)
+                guard spot != last else { return }
+                last = spot
+                told(spot)
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> Place {
+        let place = Place()
+        place.told = told
+        return place
+    }
+
+    func updateNSView(_ place: Place, context: Context) {
+        place.told = told
+        place.tell()
+    }
+}
+
+extension View {
+    /// Says how wide it is, as one of the toolbar's buttons after the tabs:
+    /// what they take of the room — gone, nothing.
+    func toolbarButton(_ name: String, in rivers: RiverSet?) -> some View {
+        onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rivers?.toolbarButtons[name] = $0 }
+            .onDisappear { rivers?.toolbarButtons[name] = nil }
     }
 }
 #endif

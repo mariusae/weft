@@ -35,6 +35,9 @@ public final class RiverSet {
     /// On the phone: how far the river has been dragged aside by the bar
     /// under it, toward the one beside it.
     public var swipe: CGFloat = 0
+    /// On the Mac: how wide each of the toolbar's buttons after the tabs
+    /// is, by name — so the tabs take the room the window leaves them.
+    public var toolbarButtons: [String: CGFloat] = [:]
 
     /// Where the river shown is among them.
     public var currentIndex: Int { rivers.firstIndex { $0 === current } ?? 0 }
@@ -339,11 +342,13 @@ struct RiverSwitcher: View {
 /// In the toolbar: this river — saved or not — and the saved ones.
 struct RiversButton: View {
     @Environment(River.self) private var river
+    @Environment(RiverSet.self) private var rivers: RiverSet?
 
     var body: some View {
         @Bindable var river = river
         Button("Rivers", systemImage: "square.stack.3d.up") { river.riversShown.toggle() }
             .help("Saved Rivers (⇧⌘R)")
+            .toolbarButton("rivers", in: rivers)
             .popover(isPresented: $river.riversShown, arrowEdge: .bottom) {
                 RiversPanel().frame(width: 320)
             }

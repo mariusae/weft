@@ -27,13 +27,15 @@ struct CardEditor: View {
         // All but its words, which the editor reads for itself: typing
         // redraws the editor, not the tags, fields and foot around it.
         let page = store.draftHead(title) ?? store.tiddler(title)
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: partSpacing) {
             if store.isShadow(title), !store.isEditing(title) {
                 Label("Built into Weft. Write in it, and it becomes one of your tiddlers.", systemImage: "sparkles")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .padding(.leading, textEdge)
             }
             tags(page?.tags ?? [])
+                .padding(.leading, textEdge)
             let specs = page.map { store.schema(for: $0) } ?? []
             if !specs.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -47,14 +49,17 @@ struct CardEditor: View {
                 }
                 .font(.callout)
                 .padding(10)
-                .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+                .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: Measures.controlRadius + 2))
+                .padding(.leading, textEdge)
             }
             editor(page)
+                // Its words at the card's one edge — an outline's bullets in the gutter before it.
+                .padding(.leading, mode == .outline ? 0 : textEdge)
             // Related without a link: pages named in its frontmatter, or naming it.
-            if page != nil || addingRelated { RelatedRow(title: title, adding: $addingRelated) }
+            if page != nil || addingRelated { RelatedRow(title: title, adding: $addingRelated).padding(.leading, textEdge) }
             // The saved rivers it is a card of, but this one.
-            if page != nil { InRiversRow(title: title) }
-            if let page { foot(page, specs: specs) }
+            if page != nil { InRiversRow(title: title).padding(.leading, textEdge) }
+            if let page { foot(page, specs: specs).padding(.leading, textEdge) }
         }
         .onChange(of: focus) { _, now in
             if now != nil { river.caretEntered(title, in: .fields) } else { river.caretLeft(title, from: .fields) }
@@ -66,6 +71,23 @@ struct CardEditor: View {
     // MARK: The body
 
     private var mode: WikiStore.EditorMode { store.editorMode(title) }
+
+    /// Where a card's title and words begin: after its gutter, on the Mac.
+    private var textEdge: CGFloat {
+        #if os(macOS)
+        Measures.gutter
+        #else
+        0
+        #endif
+    }
+
+    private var partSpacing: CGFloat {
+        #if os(macOS)
+        Measures.cardParts
+        #else
+        12
+        #endif
+    }
 
     @AppStorage(TextSettings.sizeKey) private var textSize = TextSettings.standardSize
     @AppStorage("Typeface") private var face = ""

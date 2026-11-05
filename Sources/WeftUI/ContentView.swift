@@ -39,14 +39,14 @@ public struct ContentView: View {
         if store.sync != nil { buttons += 1 }
         let review: CGFloat = store.conflicted().isEmpty ? 0 : 130
         let right = buttons * 38 + 30 + review
-        return max(TabLayout.shownMin + 2 * TabLayout.bunched, detailWidth - left - right)
+        // A little short, till the buttons are placed and the tabs take the
+        // room up to them: too wide at first, the toolbar would put the
+        // buttons away in its overflow, and they'd never be placed.
+        return max(TabLayout.shownMin + 2 * TabLayout.bunched, detailWidth - left - right - 40)
     }
 
     private var hasTabs: Bool { (riverSet?.rivers.count ?? 0) > 1 }
 
-    private var graphLine: String {
-        store.isLoading || store.sync != nil ? "\(store.graphName) · \(store.count) pages" : "\(store.graphName) · \(store.count) pages · not synced"
-    }
     #endif
 
     public var body: some View {
@@ -104,7 +104,7 @@ public struct ContentView: View {
                         .navigationTitle(hasTabs ? "" : river.title)
                         // A folder in no repository is not synced: said, as Sync Now
                         // greyed out alone would not.
-                        .navigationSubtitle(hasTabs ? "" : graphLine)
+                        .navigationSubtitle("")
                         // The tabs stand as the title: none kept room for besides.
                         .toolbar(removing: hasTabs ? .title : nil)
                         .toolbar {
@@ -207,6 +207,7 @@ public struct ContentView: View {
 private struct RiverToolbar: ToolbarContent {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
+    @Environment(RiverSet.self) private var rivers: RiverSet?
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
@@ -220,13 +221,24 @@ private struct RiverToolbar: ToolbarContent {
                 }
                 .tint(.orange)
                 .help("Tiddlers changed on two devices")
+                #if os(macOS)
+                .toolbarButton("review", in: rivers)
+                #endif
             }
-            if let sync = store.sync { SyncButton(sync: sync) }
+            if let sync = store.sync {
+                SyncButton(sync: sync)
+                    #if os(macOS)
+                    .toolbarButton("sync", in: rivers)
+                    #endif
+            }
             #if os(iOS)
             Button("Quick Open", systemImage: "magnifyingglass") { river.quickOpenShown = true }
             #endif
             Button("Today", systemImage: "calendar") { river.openToday() }
                 .help("Today's Note (⇧⌘T)")
+                #if os(macOS)
+                .toolbarButton("today", in: rivers)
+                #endif
             // Clicked, a new tiddler; held, one of what is on the pasteboard.
             Menu {
                 Button("New Tiddler from Pasteboard", systemImage: "doc.on.clipboard") { river.newTiddlerFromPasteboard() }
@@ -238,8 +250,14 @@ private struct RiverToolbar: ToolbarContent {
             }
             .menuIndicator(.hidden)
             .help("New Tiddler (⌘N) — hold for one of what is on the pasteboard")
+            #if os(macOS)
+            .toolbarButton("new", in: rivers)
+            #endif
             Button("Close All", systemImage: "rectangle.stack.badge.minus") { river.closeAll() }
                 .help("Close All Cards (⇧⌘W)")
+                #if os(macOS)
+                .toolbarButton("close all", in: rivers)
+                #endif
             #if os(macOS)
             RiversButton()
             #endif
@@ -520,6 +538,12 @@ private struct Sidebar: View {
              wiki = "Wiki", tags = "Tags", missing = "Missing"
     }
 
+    #if os(macOS)
+    private var graphLine: String {
+        store.isLoading || store.sync != nil ? "\(store.graphName) · \(store.count) pages" : "\(store.graphName) · \(store.count) pages · not synced"
+    }
+    #endif
+
     var body: some View {
         @Bindable var river = river
         VStack(spacing: 0) {
@@ -543,6 +567,22 @@ private struct Sidebar: View {
             .padding(.bottom, 6)
 
             if river.search.trimmingCharacters(in: .whitespaces).isEmpty {
+                #if os(macOS)
+                // Which of them, from a menu: all named, none cut off.
+                HStack {
+                    Picker("Show", selection: $tab) {
+                        ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 2)
+                list
+                    .environment(\.defaultMinListRowHeight, 24)
+                #else
                 // More than a segmented control holds: a row of them, scrolled.
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
@@ -563,10 +603,25 @@ private struct Sidebar: View {
                 }
                 .padding(.bottom, 6)
                 list
+                #endif
             } else {
                 searchResults
             }
         }
+        #if os(macOS)
+        // The graph, how much of it, and whether it syncs: at the sidebar's
+        // foot, not under the window's title.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Text(graphLine)
+                .font(.caption)
+                .foregroundStyle(Ink.secondary.color)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+        }
+        #endif
         .onChange(of: river.searchFocusRequest) { searchFocused = true }
     }
 
@@ -951,6 +1006,15 @@ private struct TopCard: Shape {
 #endif
 
 private struct RiverColumn: View {
+    /// Between cards: open, and peeking.
+    #if os(macOS)
+    static let cardGap = Measures.cardGap
+    static let peekGap = Measures.peekGap
+    #else
+    static let cardGap: CGFloat = 22
+    static let peekGap: CGFloat = 11
+    #endif
+
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
     @Environment(RiverSet.self) private var riverSet: RiverSet?
@@ -983,10 +1047,10 @@ private struct RiverColumn: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    if river.isQuery { QueryRiverHeader().padding(.bottom, 16) }
+                    if river.isQuery { QueryRiverHeader().padding(.bottom, Self.cardGap) }
                     ForEach(river.cards, id: \.self) { title in
                         // Peeking cards closer together: a list to glance down, still of cards.
-                        let gap: CGFloat = river.isFolded(title) ? 11 : 22
+                        let gap: CGFloat = river.isFolded(title) ? Self.peekGap : Self.cardGap
                         DroppableCard(title: title, drop: $drop, gap: gap)
                             .padding(.bottom, gap)
                             .id(title)
@@ -996,8 +1060,13 @@ private struct RiverColumn: View {
                 }
                 .scrollTargetLayout()
                 .animation(.snappy(duration: 0.28), value: river.cards)
+                #if os(macOS)
+                .padding(.horizontal, Measures.riverSides)
+                .padding(.vertical, Measures.riverEnds)
+                #else
                 .padding(.horizontal, sizeClass == .compact ? 10 : 28)
                 .padding(.vertical, sizeClass == .compact ? 12 : 22)
+                #endif
                 .frame(maxWidth: 820)
                 .frame(maxWidth: .infinity)
             }

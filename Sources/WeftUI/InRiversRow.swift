@@ -13,13 +13,7 @@ struct InRiversRow: View {
     var body: some View {
         let rivers = store.rivers(holding: title).filter { $0 != river.name }
         if !rivers.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("In Rivers")
-                    .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                    .kerning(0.8)
-                    .foregroundStyle(Ink.secondary.color)
-                FlowLayout(spacing: 6) {
+            FootRow("In Rivers") {
                     ForEach(rivers, id: \.self) { name in
                         Button { river.follow(river: name) } label: {
                             HStack(spacing: 5) {
@@ -27,9 +21,7 @@ struct InRiversRow: View {
                                     .font(.caption2.weight(.semibold))
                                 Text(name).lineLimit(1)
                             }
-                            .font(.callout)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 3)
+                            .footPill()
                             .foregroundStyle(Ink.text.color)
                             .background(Ink.rule.color.opacity(0.9), in: Capsule())
                             .overlay(Capsule().strokeBorder(Ink.rule.color))
@@ -41,7 +33,6 @@ struct InRiversRow: View {
                             Button("Copy River Address", systemImage: "safari") { Platform.copy(RiverLink.url(name).absoluteString) }
                         }
                     }
-                }
             }
         }
     }

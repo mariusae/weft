@@ -27,7 +27,7 @@ struct Card: View {
 
     var body: some View {
         let peeking = river.isFolded(title)
-        VStack(alignment: .leading, spacing: peeking ? 0 : 14) {
+        VStack(alignment: .leading, spacing: peeking ? 0 : partSpacing) {
             if peeking {
                 peekRow
             } else {
@@ -46,12 +46,26 @@ struct Card: View {
                                addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
                         .overlay(alignment: .topLeading) {
                             taskRing(task)
+                                #if os(iOS)
                                 .frame(width: ringColumn)
                                 // A little into the margin: room before the words.
                                 .offset(x: -6)
+                                #else
+                                .gutterMark()
+                                #endif
                                 .padding(.top, TextSettings.size * 0.12)
                         }
                 } else if let task = ringBeside {
+                    #if os(macOS)
+                    // In the gutter before its words, as every card's ring is.
+                    CardEditor(title: title, controller: controller, addingTag: $addingTag,
+                               addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
+                        .overlay(alignment: .topLeading) {
+                            taskRing(task)
+                                .gutterMark()
+                                .padding(.top, TextSettings.size * 0.12)
+                        }
+                    #else
                     // Untitled, a thing to do: its ring beside its first line, as a
                     // checklist's row has it — not a row of its own over it.
                     HStack(alignment: .top, spacing: 10) {
@@ -60,6 +74,7 @@ struct Card: View {
                         CardEditor(title: title, controller: controller, addingTag: $addingTag,
                                    addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
                     }
+                    #endif
                 } else {
                     CardEditor(title: title, controller: controller, addingTag: $addingTag,
                                addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
@@ -67,7 +82,11 @@ struct Card: View {
                 let links = store.backlinks(of: title)
                 if !links.isEmpty {
                     BacklinkFan(card: title, links: links)
+                        #if os(macOS)
+                        .padding(.leading, Measures.gutter)
+                        #else
                         .padding(.top, 4)
+                        #endif
                 }
             }
             // Its controls, out under it: on the phone, while it is open,
@@ -100,7 +119,7 @@ struct Card: View {
         }
         .animation(.easeOut(duration: 0.15), value: hovering)
         .overlay(alignment: .topLeading) {
-            if !peeking, !showsHeader { foldChevron.offset(x: -23, y: -3) }
+            if !peeking, !showsHeader { foldChevron.offset(x: -Measures.cardSides + 1, y: -3) }
         }
         #endif
         .popover(isPresented: $choosingIcon) {
@@ -119,20 +138,26 @@ struct Card: View {
         }
         // Room round what it says: more at its foot, where the last line
         // would otherwise sit close against the edge.
+        #if os(macOS)
+        .padding(.horizontal, Measures.cardSides)
+        .padding(.top, peeking ? Measures.peekPadding : Measures.cardTop)
+        .padding(.bottom, peeking ? Measures.peekPadding : Measures.cardBottom)
+        #else
         .padding(.horizontal, sizeClass == .compact ? 16 : 28)
         .padding(.top, peeking ? 12 : (sizeClass == .compact ? 16 : headerlessTop))
         .padding(.bottom, peeking ? 12 : (sizeClass == .compact ? 22 : 30))
+        #endif
         .frame(maxWidth: .infinity, alignment: .leading)
         // Peeking: set back, a shade under an open card — to be read, not written in.
         .background {
-            RoundedRectangle(cornerRadius: 14).fill(peeking ? Ink.paper.color : Color.card)
+            RoundedRectangle(cornerRadius: Measures.cardRadius).fill(peeking ? Ink.paper.color : Color.card)
                 #if os(iOS)
                 // Written in: the card lit a little, as the drawer under it.
-                .overlay { RoundedRectangle(cornerRadius: 14).fill(Ink.accent.color.opacity(river.isDrawerOut(title) ? 0.07 : 0)) }
+                .overlay { RoundedRectangle(cornerRadius: Measures.cardRadius).fill(Ink.accent.color.opacity(river.isDrawerOut(title) ? 0.07 : 0)) }
                 #endif
         }
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.rule.color.opacity(river.isSelected(title) ? 0 : 1)))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.accent.color.opacity(river.isSelected(title) ? 0.45 : 0)))
+        .overlay(RoundedRectangle(cornerRadius: Measures.cardRadius).strokeBorder(Ink.rule.color.opacity(river.isSelected(title) ? 0 : 1)))
+        .overlay(RoundedRectangle(cornerRadius: Measures.cardRadius).strokeBorder(Ink.accent.color.opacity(river.isSelected(title) ? 0.45 : 0)))
         .shadow(color: .black.opacity(peeking ? 0.03 : 0.07), radius: peeking ? 4 : 10, y: peeking ? 1 : 3)
         #if os(iOS)
         // Swiped aside, its actions under it — not while it is written in.
@@ -172,7 +197,14 @@ struct Card: View {
     @ViewBuilder private var peekRow: some View {
         let peek = store.peek(of: title)
         let task = store.taskState(title)
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: Self.peekAlignment, spacing: 8) {
+            #if os(macOS)
+            // On its one line, its ring — else its icon — in the gutter, as
+            // an open card's: its title where every card's words begin.
+            peekGutter(task: task)
+                .gutterMark()
+                .padding(.trailing, -8)
+            #endif
             // Its ring and its icon in its first line, not beside it: what
             // it says flows back under them to the card's edge.
             (peekLead(task: task)
@@ -193,7 +225,7 @@ struct Card: View {
                 #endif
                 // The ring, first in the line, checked off where it is drawn.
                 .overlay(alignment: .topLeading) {
-                    if let task {
+                    if let task, Self.ringInPeekLine {
                         Button {
                             withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
                         } label: {
@@ -232,10 +264,10 @@ struct Card: View {
         .contextMenu { longPressMenu }
         #endif
         #if os(macOS)
-        .overlay(alignment: .topLeading) { foldChevron.offset(x: -23, y: -3) }
+        .overlay(alignment: .leading) { foldChevron.offset(x: -Measures.cardSides + 1) }
         // Under the pointer, its controls over the end of its words, on a
         // fade of its own paper — taking no room from them otherwise.
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .trailing) {
             if hovering {
                 macControls
                     .padding(.leading, 28)
@@ -244,7 +276,6 @@ struct Card: View {
                                                .init(color: Ink.paper.color, location: 0.35)],
                                        startPoint: .leading, endPoint: .trailing)
                     }
-                    .offset(y: -3)
                     .transition(.opacity)
             }
         }
@@ -256,6 +287,13 @@ struct Card: View {
     /// do, then its icon — a day's calendar, or its own — as words are.
     private func peekLead(task: Tiddler.TaskState?) -> Text {
         var lead = Text("")
+        #if os(macOS)
+        // The gutter has its ring, else its icon: its icon here only with its ring there.
+        if task != nil, let symbol = shownSymbol {
+            lead = lead + Text(Image(systemName: symbol)).foregroundStyle(Ink.secondary.color) + Text("  ")
+        }
+        return lead
+        #else
         if let task {
             lead = lead + Text(Image(systemName: task == .done ? "checkmark.circle.fill" : "circle"))
                 .foregroundStyle(task == .done ? Ink.accent.color : Ink.secondary.color) + Text("  ")
@@ -264,7 +302,32 @@ struct Card: View {
             lead = lead + Text(Image(systemName: symbol)).foregroundStyle(Ink.secondary.color) + Text("  ")
         }
         return lead
+        #endif
     }
+
+    #if os(macOS)
+    /// A peek's gutter: its ring, checked off there, else its icon.
+    @ViewBuilder private func peekGutter(task: Tiddler.TaskState?) -> some View {
+        if let task {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
+            } label: {
+                Image(systemName: task == .done ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: TextSettings.size + 1))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(task == .done ? Color.white : Ink.secondary.color, Ink.accent.color)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(task == .done ? "Done — click to open again" : "To do — click when done")
+            .accessibilityLabel(task == .done ? "Done" : "To do")
+        } else if let symbol = shownSymbol {
+            Image(systemName: symbol)
+                .font(.system(size: TextSettings.size * 0.95))
+                .foregroundStyle(Ink.secondary.color)
+        }
+    }
+    #endif
 
     #if os(iOS)
     /// Opened, and the caret put at the start of what it says.
@@ -342,10 +405,16 @@ struct Card: View {
     /// How the card opens for its drawer, and the drawer grows into it.
     static let drawerSpring = Animation.spring(response: 0.34, dampingFraction: 0.82)
 
+    /// How many lines a peek always has room for: one on the Mac, its ring
+    /// or icon in the gutter; on the phone, three, they in its first line.
     #if os(macOS)
-    static let peekLines = 2
+    static let peekLines = 1
+    static let peekAlignment = VerticalAlignment.center
+    static let ringInPeekLine = false
     #else
     static let peekLines = 3
+    static let peekAlignment = VerticalAlignment.firstTextBaseline
+    static let ringInPeekLine = true
     #endif
 
     /// Being renamed: whether what refers to it is updated too.
@@ -445,7 +514,7 @@ struct Card: View {
             withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
         } label: {
             Image(systemName: task == .done ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 21, weight: .regular))
+                .font(.system(size: Measures.ringSize, weight: .regular))
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(task == .done ? Color.white : Ink.secondary.color, Ink.accent.color)
                 .contentTransition(.symbolEffect(.replace))
@@ -463,6 +532,27 @@ struct Card: View {
 
     /// Room over what it says: on the Mac, with no title row, enough for
     /// its controls to stand in.
+    /// Between a card's parts.
+    private var partSpacing: CGFloat {
+        #if os(macOS)
+        Measures.cardParts
+        #else
+        14
+        #endif
+    }
+
+    /// Its icon — a day's calendar, or its own — a click away from another.
+    private func iconButton(_ symbol: String, kind: LinkTarget.Kind) -> some View {
+        Button { if canChooseIcon { choosingIcon = true } } label: {
+            Image(systemName: symbol)
+                .foregroundStyle(Ink.secondary.color)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(kind == .day && store.icon(of: title) == nil ? "A day" : "Its icon: \(PageIcon.name(of: symbol)) — click to choose another")
+        .accessibilityLabel(PageIcon.name(of: symbol))
+    }
+
     private var headerlessTop: CGFloat {
         #if os(macOS)
         22
@@ -517,6 +607,16 @@ struct Card: View {
         let task = store.taskState(title)
         let peeking = river.isFolded(title)
         return HStack(alignment: .center, spacing: peeking ? 8 : 10) {
+            #if os(macOS)
+            // The gutter: its ring, else its icon — its title at the edge
+            // its words begin at. Both: its icon after the ring, by the title.
+            Group {
+                if let task { taskRing(task) } else if let symbol = shownSymbol { iconButton(symbol, kind: kind) }
+            }
+            .gutterMark()
+            .padding(.trailing, -10)
+            if task != nil, let symbol = shownSymbol { iconButton(symbol, kind: kind) }
+            #else
             // Its icon — a day's calendar, or its own — a click away from another.
             if let symbol = shownSymbol {
                 Button { if canChooseIcon { choosingIcon = true } } label: {
@@ -530,6 +630,7 @@ struct Card: View {
             }
             // A page that is a thing to do: its ring, to check it off.
             if let task { taskRing(task) }
+            #endif
             if renaming {
                 // Untitled: empty, what it begins with offered — taken with
                 // Return, typed over, or left, and it stays untitled.
@@ -540,7 +641,7 @@ struct Card: View {
                     store.change(title) { $0.title = value.isEmpty && Untitled.isName(title) ? title : value }
                 }, selection: $titleSelection)
                 .textFieldStyle(.plain)
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: Measures.titleSize, weight: .semibold))
                 .lineLimit(1)
                 .focused($titleFocused)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -558,7 +659,7 @@ struct Card: View {
             } else {
                 Text(peeking ? store.peek(of: title).title : shown)
                     // Peeking: the size of what it says, bold.
-                    .font(peeking ? .system(size: TextSettings.size, weight: .bold) : .system(size: 22, weight: .semibold))
+                    .font(peeking ? .system(size: TextSettings.size, weight: .bold) : .system(size: Measures.titleSize, weight: .semibold))
                     .italic(!store.exists(title) && !store.isEditing(title))
                     // Done: struck through, quieter.
                     .strikethrough(task == .done, color: Ink.secondary.color)
@@ -619,7 +720,7 @@ struct Card: View {
         // In the margin before the title: fold or unfold — ⌥, every card.
         // Over the drag, not in it: its shape, the title's, would take the
         // chevron's clicks from it, outside it as it is.
-        .overlay(alignment: .leading) { foldChevron.offset(x: -23) }
+        .overlay(alignment: .leading) { foldChevron.offset(x: -Measures.cardSides + 1) }
         .safeAreaInset(edge: .trailing, spacing: 8) { macControls }
         #endif
     }
@@ -669,7 +770,7 @@ struct Card: View {
                             Image(systemName: mode.symbol)
                                 .font(.system(size: 11, weight: .medium))
                                 .frame(width: 26, height: 20)
-                                .background(mode == shownMode ? Color.primary.opacity(0.1) : .clear, in: .rect(cornerRadius: 5))
+                                .background(mode == shownMode ? Color.primary.opacity(0.1) : .clear, in: .rect(cornerRadius: Measures.controlRadius))
                                 .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
@@ -680,7 +781,7 @@ struct Card: View {
                     }
                 }
                 .padding(2)
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Ink.rule.color))
+                .overlay(RoundedRectangle(cornerRadius: Measures.controlRadius).strokeBorder(Ink.rule.color))
                 .padding(.trailing, 6)
                 if store.kind(title) == .day {
                     CardButton("The Day Before", "chevron.left") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: -1) } }
@@ -999,8 +1100,8 @@ private struct CardTip: ViewModifier {
                     .fixedSize()
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(.regularMaterial, in: .rect(cornerRadius: 5))
-                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Ink.rule.color))
+                    .background(.regularMaterial, in: .rect(cornerRadius: Measures.controlRadius))
+                    .overlay(RoundedRectangle(cornerRadius: Measures.controlRadius).strokeBorder(Ink.rule.color))
                     .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
                     // Hung from the control's foot, below it.
                     .frame(height: 0, alignment: .top)
@@ -1032,7 +1133,7 @@ private struct CardButtonFace: View {
         let face = Image(systemName: symbol)
             .font(.system(size: 12, weight: .semibold))
             .frame(width: 26, height: 24)
-            .background(Color.primary.opacity(hovered && cardHovered ? 0.08 : 0), in: .rect(cornerRadius: 6))
+            .background(Color.primary.opacity(hovered && cardHovered ? 0.08 : 0), in: .rect(cornerRadius: Measures.controlRadius))
             .contentShape(.rect)
         if cardHovered {
             face.onHover { hovered = $0 }
