@@ -31,7 +31,10 @@ struct Card: View {
             if peeking {
                 peekRow
             } else {
-                if showsHeader { header }
+                if showsHeader {
+                    // Over the words after it: a control's name, said under it, not hidden by them.
+                    header.zIndex(1)
+                }
                 relinking
                 if store.needsReview(title) {
                     ConflictView(title: title)
@@ -671,13 +674,13 @@ struct Card: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(mode == shownMode ? Ink.text.color : Ink.secondary.color)
+                        .cardTip(mode == .outline ? "Write as an Outline" : "Write as Text")
                         .accessibilityLabel(mode.rawValue)
                         .accessibilityAddTraits(mode == shownMode ? .isSelected : [])
                     }
                 }
                 .padding(2)
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Ink.rule.color))
-                .help("Write as text, or as an outline of rows")
                 .padding(.trailing, 6)
                 if store.kind(title) == .day {
                     CardButton("The Day Before", "chevron.left") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: -1) } }
@@ -700,7 +703,7 @@ struct Card: View {
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("More")
+                .cardTip("More")
                 .accessibilityLabel("More")
             CardButton(river.isQuery ? "Remove from River" : "Close", "xmark") { withAnimation { river.close(title) } }
         }
@@ -962,8 +965,59 @@ private struct CardButton: View {
     var body: some View {
         Button(action: action) { CardButtonFace(symbol: symbol) }
             .buttonStyle(.plain)
-            .help(name)
+            .cardTip(name)
             .accessibilityLabel(name)
+    }
+}
+
+extension View {
+    /// A card control's name, as a tooltip says it: under it, a moment after
+    /// the pointer stops over it. Drawn here, not left to `help`, which the
+    /// card's text, under its controls, keeps from showing.
+    func cardTip(_ name: String) -> some View { modifier(CardTip(name: name)) }
+}
+
+private struct CardTip: ViewModifier {
+    let name: String
+    @Environment(\.cardHovered) private var cardHovered
+    @State private var over = false
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        // Followed only while the pointer is over the card — not, for every
+        // card, at every layout.
+        Group {
+            if cardHovered { content.onHover { over = $0 } } else { content }
+        }
+        // Its right edge under the control's: inside the card, however long.
+        .overlay(alignment: .bottomTrailing) {
+            if shown {
+                Text(name)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Ink.text.color)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.regularMaterial, in: .rect(cornerRadius: 5))
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Ink.rule.color))
+                    .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                    // Hung from the control's foot, below it.
+                    .frame(height: 0, alignment: .top)
+                    .offset(y: 6)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .task(id: over && cardHovered) {
+            guard over && cardHovered else {
+                if shown { withAnimation(.easeOut(duration: 0.1)) { shown = false } }
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.12)) { shown = true }
+        }
     }
 }
 

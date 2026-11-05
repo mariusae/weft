@@ -221,6 +221,8 @@ enum Snapshot {
                 }
                 // `WEFT_HOVER=x,y`: the pointer moved there, in points from the
                 // window's top left.
+                // Moved again a moment later: over what the first move showed.
+                func move() {
                 if let hover = environment["WEFT_HOVER"]?.split(separator: ",").compactMap({ Double($0) }), hover.count == 2,
                    let window = NSApp.windows.first(where: { $0.isVisible }) {
                     window.acceptsMouseMovedEvents = true
@@ -243,6 +245,9 @@ enum Snapshot {
                         }
                     }
                 }
+                }
+                move()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: move)
                 // `WEFT_CLICK=x,y`: a click there, in points from the window's
                 // top left, as the pointer would make it.
                 if let click = environment["WEFT_CLICK"]?.split(separator: ",").compactMap({ Double($0) }), click.count == 2,
