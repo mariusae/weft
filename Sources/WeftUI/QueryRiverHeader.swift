@@ -24,7 +24,7 @@ struct QueryRiverHeader: View {
                     .background(RiverColor.color(river.color), in: Circle())
                     #if os(macOS)
                     // In the gutter, as a card's ring: what it finds said where cards' words begin.
-                    .gutterMark()
+                    .frame(width: Measures.gutter)
                     #endif
                 Text(river.query?.summary ?? "")
                     .font(.callout)

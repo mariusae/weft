@@ -277,6 +277,8 @@ enum Snapshot {
                 }
                 move()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: move)
+                // Once more, after a river brought back has settled.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: move)
                 // `WEFT_CLICK=x,y`: a click there, in points from the window's
                 // top left, as the pointer would make it.
                 if let click = environment["WEFT_CLICK"]?.split(separator: ",").compactMap({ Double($0) }), click.count == 2,

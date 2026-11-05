@@ -22,6 +22,15 @@ struct OutlineCardEditor: NSViewRepresentable {
 
     /// Where a top-level row's words start.
     static var textIndent: CGFloat { PageOutlineEditor.textIndent(fontSize: TextSettings.size + 1) }
+    /// How big its rows' checkboxes are drawn.
+    static var markSize: CGFloat { PageOutlineEditor.markSize(fontSize: TextSettings.size + 1) }
+
+    /// An untitled page that is a thing to do: its ring as its first row's
+    /// mark, that row's own not shown; clicked, `onLead`.
+    var lead: Tiddler.TaskState? = nil
+    var onLead: () -> Void = {}
+    /// Told where its first line's middle is, down from its top.
+    var onFirstLine: (CGFloat) -> Void = { _ in }
 
     final class Coordinator {
         var revision = -1
@@ -33,6 +42,18 @@ struct OutlineCardEditor: NSViewRepresentable {
         var folds: [OutlineFolds.Mark] = []
         /// Heard: the app about to write what is being edited.
         var flushing: NSObjectProtocol?
+        /// Where its first line's middle was last told to be.
+        var firstLine: CGFloat?
+        var onFirstLine: (CGFloat) -> Void = { _ in }
+
+        /// Its first line's middle told, once laid out, when it moved.
+        func tellFirstLine(_ editor: PageOutlineEditor) {
+            DispatchQueue.main.async { [self] in
+                guard let middle = editor.firstLineMiddle, middle != firstLine else { return }
+                firstLine = middle
+                onFirstLine(middle)
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -76,7 +97,10 @@ struct OutlineCardEditor: NSViewRepresentable {
         editor.day = Day(title)
         editor.dayName = { [store] day in store.shownTitle(day.description) }
         editor.onMoveToDay = { [store] rows, day, undo in store.add(rows, toDay: day, undo: undo ?? UndoManager()) }
-        editor.onHeightChange = { [weak editor] in editor?.invalidateIntrinsicContentSize() }
+        editor.onHeightChange = { [weak editor, coordinator = context.coordinator] in
+            editor?.invalidateIntrinsicContentSize()
+            if let editor { coordinator.tellFirstLine(editor) }
+        }
         // Untitled: its first row its title by More's Title, or ⌃⌘T — not
         // offered in the row itself.
         editor.isUntitled = { [store, title] in Untitled.isName(store.draftHead(title)?.title ?? title) }
@@ -93,6 +117,12 @@ struct OutlineCardEditor: NSViewRepresentable {
 
     func updateNSView(_ editor: PageOutlineEditor, context: Context) {
         context.coordinator.onFocusChange = onFocusChange
+        context.coordinator.onFirstLine = onFirstLine
+        // The page's ring standing for its first row's mark.
+        let leadMark = lead.map { $0 == .done }
+        if editor.leadMark != leadMark { editor.leadMark = leadMark }
+        editor.onLeadMark = lead == nil ? nil : onLead
+        context.coordinator.tellFirstLine(editor)
         // A private page's links are not looked up on the web.
         editor.isPrivate = store.isPrivate(title)
         let folds = river.rowFolds(of: title)

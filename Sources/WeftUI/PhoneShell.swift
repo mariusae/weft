@@ -116,6 +116,7 @@ struct PhoneBar: View {
         Menu {
             Button("New Tiddler from Pasteboard", systemImage: "doc.on.clipboard") { river.newTiddlerFromPasteboard() }
                 .disabled(!Platform.pasteboardHasContents)
+            Button("New To-Do", systemImage: "circle") { river.newTodo() }
             Button("New Tiddler", systemImage: "plus") { river.newTiddler() }
         } label: {
             Image(systemName: "plus")

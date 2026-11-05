@@ -119,6 +119,9 @@ struct RiverCommands: Commands {
             Button("New Tiddler") { river?.newTiddler() }
                 .keyboardShortcut("n")
                 .disabled(river == nil || store.root == nil)
+            Button("New To-Do") { river?.newTodo() }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(river == nil || store.root == nil)
             Button("New Titled Tiddler") { river?.newTitledTiddler() }
                 .keyboardShortcut("n", modifiers: [.command, .control])
                 .disabled(river == nil || store.root == nil)
@@ -132,7 +135,7 @@ struct RiverCommands: Commands {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(rivers?.canReopen != true || store.root == nil)
             Button("New Window") { openWindow(value: RiverSeed()) }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .keyboardShortcut("n", modifiers: [.command, .shift, .option])
                 .disabled(store.root == nil)
             Button("Quick Open…") { river?.quickOpenShown = true }
                 .keyboardShortcut("o")

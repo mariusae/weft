@@ -241,6 +241,7 @@ private struct RiverToolbar: ToolbarContent {
                 #endif
             // Clicked, a new tiddler; held, one of what is on the pasteboard.
             Menu {
+                Button("New To-Do", systemImage: "circle") { river.newTodo() }
                 Button("New Tiddler from Pasteboard", systemImage: "doc.on.clipboard") { river.newTiddlerFromPasteboard() }
                     .disabled(!Platform.pasteboardHasContents)
             } label: {
@@ -249,7 +250,7 @@ private struct RiverToolbar: ToolbarContent {
                 river.newTiddler()
             }
             .menuIndicator(.hidden)
-            .help("New Tiddler (⌘N) — hold for one of what is on the pasteboard")
+            .help("New Tiddler (⌘N) — hold for a to-do (⇧⌘N), or one of what is on the pasteboard")
             #if os(macOS)
             .toolbarButton("new", in: rivers)
             #endif

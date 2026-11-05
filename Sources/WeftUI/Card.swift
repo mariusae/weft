@@ -28,6 +28,9 @@ struct Card: View {
     var body: some View {
         let peeking = river.isFolded(title)
         VStack(alignment: .leading, spacing: peeking ? 0 : partSpacing) {
+            #if os(macOS)
+            macRows(peeking: peeking)
+            #else
             if peeking {
                 peekRow
             } else {
@@ -38,34 +41,7 @@ struct Card: View {
                 relinking
                 if store.needsReview(title) {
                     ConflictView(title: title)
-                } else if let task = ringBeside, ringInIndent {
-                    // Untitled, a thing to do, written as an outline with a plain
-                    // first row: its ring where that row's bullet would be — its
-                    // words where every card's start.
-                    CardEditor(title: title, controller: controller, addingTag: $addingTag,
-                               addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
-                        .overlay(alignment: .topLeading) {
-                            taskRing(task)
-                                #if os(iOS)
-                                .frame(width: ringColumn)
-                                // A little into the margin: room before the words.
-                                .offset(x: -6)
-                                #else
-                                .gutterMark()
-                                #endif
-                                .padding(.top, TextSettings.size * 0.12)
-                        }
                 } else if let task = ringBeside {
-                    #if os(macOS)
-                    // In the gutter before its words, as every card's ring is.
-                    CardEditor(title: title, controller: controller, addingTag: $addingTag,
-                               addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
-                        .overlay(alignment: .topLeading) {
-                            taskRing(task)
-                                .gutterMark()
-                                .padding(.top, TextSettings.size * 0.12)
-                        }
-                    #else
                     // Untitled, a thing to do: its ring beside its first line, as a
                     // checklist's row has it — not a row of its own over it.
                     HStack(alignment: .top, spacing: 10) {
@@ -74,7 +50,6 @@ struct Card: View {
                         CardEditor(title: title, controller: controller, addingTag: $addingTag,
                                    addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
                     }
-                    #endif
                 } else {
                     CardEditor(title: title, controller: controller, addingTag: $addingTag,
                                addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
@@ -82,13 +57,10 @@ struct Card: View {
                 let links = store.backlinks(of: title)
                 if !links.isEmpty {
                     BacklinkFan(card: title, links: links)
-                        #if os(macOS)
-                        .padding(.leading, Measures.gutter)
-                        #else
                         .padding(.top, 4)
-                        #endif
                 }
             }
+            #endif
             // Its controls, out under it: on the phone, while it is open,
             // or asked for.
             if drawerShown {
@@ -99,29 +71,6 @@ struct Card: View {
             }
         }
         .animation(Self.drawerSpring, value: drawerShown)
-        #if os(macOS)
-        // No title: its controls and its fold in the corners, over its words.
-        // Under the pointer, over the end of its first line, on a fade of its
-        // own card — taking no room from its words otherwise.
-        .overlay(alignment: .topTrailing) {
-            if !peeking, !showsHeader, hovering {
-                macControls
-                    .padding(.leading, 28)
-                    .background {
-                        LinearGradient(stops: [.init(color: Color.card.opacity(0), location: 0),
-                                               .init(color: Color.card, location: 0.35)],
-                                       startPoint: .leading, endPoint: .trailing)
-                    }
-                    .padding(.top, 18)
-                    .padding(.trailing, 24)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: hovering)
-        .overlay(alignment: .topLeading) {
-            if !peeking, !showsHeader { foldChevron.offset(x: -Measures.cardSides + 1, y: -3) }
-        }
-        #endif
         .popover(isPresented: $choosingIcon) {
             IconPicker(current: store.icon(of: title)) { symbol in
                 store.setIcon(symbol, of: title)
@@ -139,7 +88,8 @@ struct Card: View {
         // Room round what it says: more at its foot, where the last line
         // would otherwise sit close against the edge.
         #if os(macOS)
-        .padding(.horizontal, Measures.cardSides)
+        // Its leading side each row's margin; its trailing, room.
+        .padding(.trailing, Measures.cardSides)
         .padding(.top, peeking ? Measures.peekPadding : Measures.cardTop)
         .padding(.bottom, peeking ? Measures.peekPadding : Measures.cardBottom)
         #else
@@ -198,13 +148,6 @@ struct Card: View {
         let peek = store.peek(of: title)
         let task = store.taskState(title)
         HStack(alignment: Self.peekAlignment, spacing: 8) {
-            #if os(macOS)
-            // On its one line, its ring — else its icon — in the gutter, as
-            // an open card's: its title where every card's words begin.
-            peekGutter(task: task)
-                .gutterMark()
-                .padding(.trailing, -8)
-            #endif
             // Its ring and its icon in its first line, not beside it: what
             // it says flows back under them to the card's edge.
             (peekLead(task: task)
@@ -264,7 +207,6 @@ struct Card: View {
         .contextMenu { longPressMenu }
         #endif
         #if os(macOS)
-        .overlay(alignment: .leading) { foldChevron.offset(x: -Measures.cardSides + 1) }
         // Under the pointer, its controls over the end of its words, on a
         // fade of its own paper — taking no room from them otherwise.
         .overlay(alignment: .trailing) {
@@ -305,29 +247,6 @@ struct Card: View {
         #endif
     }
 
-    #if os(macOS)
-    /// A peek's gutter: its ring, checked off there, else its icon.
-    @ViewBuilder private func peekGutter(task: Tiddler.TaskState?) -> some View {
-        if let task {
-            Button {
-                withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
-            } label: {
-                Image(systemName: task == .done ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: TextSettings.size + 1))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(task == .done ? Color.white : Ink.secondary.color, Ink.accent.color)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(task == .done ? "Done — click to open again" : "To do — click when done")
-            .accessibilityLabel(task == .done ? "Done" : "To do")
-        } else if let symbol = shownSymbol {
-            Image(systemName: symbol)
-                .font(.system(size: TextSettings.size * 0.95))
-                .foregroundStyle(Ink.secondary.color)
-        }
-    }
-    #endif
 
     #if os(iOS)
     /// Opened, and the caret put at the start of what it says.
@@ -485,29 +404,6 @@ struct Card: View {
         showsHeader ? nil : store.taskState(title)
     }
 
-    /// Whether an untitled to-do's ring goes in its outline's indent: written
-    /// as an outline, its first row with no bullet of its own there.
-    private var ringInIndent: Bool {
-        #if os(macOS)
-        guard store.editorMode(title) == .outline else { return false }
-        let text = (store.draftHead(title) ?? store.tiddler(title))?.text ?? ""
-        let first = text.split(separator: "\n").first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.map(String.init) ?? ""
-        let trimmed = first.trimmingCharacters(in: .whitespaces)
-        return !(["- ", "* ", "+ "].contains { trimmed.hasPrefix($0) } || trimmed.first?.isNumber == true)
-        #else
-        return false
-        #endif
-    }
-
-    /// How wide the column before an outline's top rows is.
-    private var ringColumn: CGFloat {
-        #if os(macOS)
-        OutlineCardEditor.textIndent
-        #else
-        28
-        #endif
-    }
-
     /// A thing to do's ring, to check it off — or open it again.
     private func taskRing(_ task: Tiddler.TaskState) -> some View {
         Button {
@@ -532,6 +428,74 @@ struct Card: View {
 
     /// Room over what it says: on the Mac, with no title row, enough for
     /// its controls to stand in.
+    #if os(macOS)
+    /// A card on the Mac, row by row — each its margin, its gutter, what it
+    /// says — so that what is beside what lines up by being laid out so.
+    @ViewBuilder private func macRows(peeking: Bool) -> some View {
+        if peeking {
+            CardRow(margin: { foldChevron }, mark: { GutterMark(kind: markKind) }, content: { peekRow })
+        } else {
+            if showsHeader {
+                // Over the words after it: a control's name, said under it, not hidden by them.
+                CardRow(margin: { foldChevron }, mark: { headerMark }, content: { header })
+                    .zIndex(1)
+            }
+            CardRow { relinking }
+            if store.needsReview(title) {
+                CardRow { ConflictView(title: title) }
+            } else {
+                // Its words: their gutter the editor's own — the outline draws
+                // its marks there, the page's ring among them, untitled.
+                CardRow(gutter: false, margin: { if !showsHeader { foldChevron } }, mark: { EmptyView() }) {
+                    CardEditor(title: title, controller: controller, addingTag: $addingTag, addingField: $addingField,
+                               addingRelated: $addingRelated, definingFields: $definingFields,
+                               lead: showsHeader ? nil : store.taskState(title))
+                }
+                // Untitled: its controls under the pointer, on its first line's
+                // end, on a fade of its own card — taking no room from its words.
+                .overlay(alignment: Alignment(horizontal: .trailing, vertical: .cardFirstLine)) {
+                    // Shown always to check the layout by: `WEFT_GRID=1`.
+                    if !showsHeader, hovering || CardGrid.shown {
+                        macControls
+                            .padding(.leading, 28)
+                            .background {
+                                LinearGradient(stops: [.init(color: Color.card.opacity(0), location: 0),
+                                                       .init(color: Color.card, location: 0.35)],
+                                               startPoint: .leading, endPoint: .trailing)
+                            }
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.15), value: hovering)
+            }
+            let links = store.backlinks(of: title)
+            if !links.isEmpty {
+                CardRow { BacklinkFan(card: title, links: links) }
+            }
+        }
+    }
+
+    /// What its title's gutter shows: its ring, else its icon.
+    private var markKind: GutterMark.Kind? {
+        if let task = store.taskState(title) { return .ring(done: task == .done) }
+        return shownSymbol.map { .icon($0) }
+    }
+
+    private var headerMark: some View {
+        let kind = store.kind(title)
+        let help: String? = if case .icon(let symbol) = markKind {
+            kind == .day && store.icon(of: title) == nil ? "A day" : "Its icon: \(PageIcon.name(of: symbol)) — click to choose another"
+        } else { nil }
+        return GutterMark(kind: markKind, help: help) {
+            if let task = store.taskState(title) {
+                withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
+            } else if canChooseIcon {
+                choosingIcon = true
+            }
+        }
+    }
+    #endif
+
     /// Between a card's parts.
     private var partSpacing: CGFloat {
         #if os(macOS)
@@ -608,13 +572,7 @@ struct Card: View {
         let peeking = river.isFolded(title)
         return HStack(alignment: .center, spacing: peeking ? 8 : 10) {
             #if os(macOS)
-            // The gutter: its ring, else its icon — its title at the edge
-            // its words begin at. Both: its icon after the ring, by the title.
-            Group {
-                if let task { taskRing(task) } else if let symbol = shownSymbol { iconButton(symbol, kind: kind) }
-            }
-            .gutterMark()
-            .padding(.trailing, -10)
+            // Its ring, else its icon, in its row's gutter; both, its icon here, by the title.
             if task != nil, let symbol = shownSymbol { iconButton(symbol, kind: kind) }
             #else
             // Its icon — a day's calendar, or its own — a click away from another.
@@ -717,10 +675,6 @@ struct Card: View {
         .contextMenu { if !renaming { longPressMenu } }
         #endif
         #if os(macOS)
-        // In the margin before the title: fold or unfold — ⌥, every card.
-        // Over the drag, not in it: its shape, the title's, would take the
-        // chevron's clicks from it, outside it as it is.
-        .overlay(alignment: .leading) { foldChevron.offset(x: -Measures.cardSides + 1) }
         .safeAreaInset(edge: .trailing, spacing: 8) { macControls }
         #endif
     }
@@ -1103,9 +1057,9 @@ private struct CardTip: ViewModifier {
                     .background(.regularMaterial, in: .rect(cornerRadius: Measures.controlRadius))
                     .overlay(RoundedRectangle(cornerRadius: Measures.controlRadius).strokeBorder(Ink.rule.color))
                     .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
-                    // Hung from the control's foot, below it.
+                    // Hung from the control's foot, a little below it.
+                    .padding(.top, Measures.s - 2)
                     .frame(height: 0, alignment: .top)
-                    .offset(y: 6)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }

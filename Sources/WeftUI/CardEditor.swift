@@ -17,7 +17,12 @@ struct CardEditor: View {
     @Binding var addingField: Bool
     @Binding var addingRelated: Bool
     @Binding var definingFields: Bool
+    /// An untitled page that is a thing to do: its ring before its first
+    /// line — in an outline, standing for its first row's mark.
+    var lead: Tiddler.TaskState? = nil
     @State private var newTag = ""
+    /// Where its words' first line's middle is, down from the editor's top.
+    @State private var firstLine: CGFloat?
     @State private var newField = ""
     @FocusState private var focus: Field?
 
@@ -53,8 +58,6 @@ struct CardEditor: View {
                 .padding(.leading, textEdge)
             }
             editor(page)
-                // Its words at the card's one edge — an outline's bullets in the gutter before it.
-                .padding(.leading, mode == .outline ? 0 : textEdge)
             // Related without a link: pages named in its frontmatter, or naming it.
             if page != nil || addingRelated { RelatedRow(title: title, adding: $addingRelated).padding(.leading, textEdge) }
             // The saved rivers it is a card of, but this one.
@@ -96,8 +99,9 @@ struct CardEditor: View {
         let wants = river.wantsCaret(title) == .body
         let taken = { river.caretTaken(title) }
         let focused: (Bool) -> Void = { $0 ? river.caretEntered(title, in: .body) : river.caretLeft(title, from: .body) }
-        ZStack(alignment: .topLeading) {
-            BodyEditor(title: title, mode: mode, controller: controller, wants: wants, taken: taken, focused: focused)
+        let body = ZStack(alignment: .topLeading) {
+            BodyEditor(title: title, mode: mode, controller: controller, wants: wants, taken: taken, focused: focused,
+                       lead: lead, onFirstLine: { firstLine = $0 })
             // Asked of its head, not its words: told when it comes to be
             // empty or not, not for each key.
             if !river.isWriting(title), (store.isEditing(title) ? store.draftHead(title) : store.tiddler(title))?.text.isEmpty ?? true {
@@ -111,6 +115,23 @@ struct CardEditor: View {
         }
         // Set again when Settings change how.
         .id("\(textSize) \(face)")
+        #if os(macOS)
+        if mode == .outline {
+            // Its gutter its own: the outline draws its marks — the page's ring
+            // among them — there. Its first line, as it says it is.
+            body.alignmentGuide(.cardFirstLine) { firstLine ?? $0[VerticalAlignment.center] }
+        } else {
+            // Text has no gutter of its own: the card's, the ring in it.
+            HStack(alignment: .cardFirstLine, spacing: 0) {
+                GutterMark(kind: lead.map { .ring(done: $0 == .done) }) {
+                    withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, lead == .done ? .todo : .done) }
+                }
+                body.alignmentGuide(.cardFirstLine) { _ in Measures.textFirstLine }
+            }
+        }
+        #else
+        body
+        #endif
     }
 
     private func placeholder(_ page: Tiddler?) -> String {
@@ -322,10 +343,19 @@ private struct BodyEditor: View {
     let wants: Bool
     let taken: () -> Void
     let focused: (Bool) -> Void
+    var lead: Tiddler.TaskState? = nil
+    var onFirstLine: (CGFloat) -> Void = { _ in }
 
     var body: some View {
         if mode == .outline {
+            #if os(macOS)
+            OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused,
+                              lead: lead, onLead: { [store, title, lead] in
+                                  withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, lead == .done ? .todo : .done) }
+                              }, onFirstLine: onFirstLine)
+            #else
             OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused)
+            #endif
         } else {
             TiddlerEditor(text: text, controller: controller, card: title,
                           suggest: { store.linkSuggestions($0) }, exists: { store.linkExists($0) },

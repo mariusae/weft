@@ -1,4 +1,8 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+import ReflectUI
+#endif
 
 /// The river's measures, in one place: spacing on one scale, two corners,
 /// and the sizes a card's title and ring take from the text's — so cards,
@@ -40,6 +44,17 @@ enum Measures {
     /// bullets go in it — title, words and what is under them all begin
     /// after it, at the one edge.
     static var gutter: CGFloat { OutlineCardEditor.textIndent }
+    /// A mark's size — a ring, an icon — as the outline draws its checkboxes.
+    static var markSize: CGFloat { OutlineCardEditor.markSize }
+    /// A mark's colour, open: as the outline draws its checkboxes.
+    @MainActor static var markColor: Color { Color(nsColor: PageOutlineEditor.markColor) }
+    /// The column before the gutter, in a card's side: its fold, a row's handle.
+    static var margin: CGFloat { cardSides }
+    /// The middle of a text editor's first line, down from its top.
+    static var textFirstLine: CGFloat {
+        let font = NSFont.systemFont(ofSize: TextSettings.size)
+        return 2 + font.ascender - font.capHeight / 2
+    }
 
     /// Between cards in a river, open and peeking.
     static let cardGap: CGFloat = m
@@ -57,15 +72,129 @@ enum Measures {
     #endif
 }
 
+
 #if os(macOS)
-extension View {
-    /// A ring, an icon, in a card's gutter: centred where an outline's
-    /// bullets are, a little before the words — into the card's side if
-    /// it must — the gutter's width kept.
-    func gutterMark() -> some View {
-        frame(width: 28)
-            .offset(x: Measures.gutter - 28)
-            .frame(width: Measures.gutter, alignment: .leading)
+// MARK: A card's rows
+
+extension VerticalAlignment {
+    private enum CardFirstLine: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[VerticalAlignment.center] }
+    }
+
+    /// The middle of a card row's first line: what stands beside it — its
+    /// fold, its mark, its controls — centred on it. An editor says where
+    /// its own first line is; anything else, its middle.
+    static let cardFirstLine = VerticalAlignment(CardFirstLine.self)
+}
+
+/// Every line of a card, alike: its margin — the card's side, for its fold
+/// or a row's handle — its gutter, for its mark, then what it says, and
+/// what follows it. Each in its column, on the first line's middle: what
+/// is beside what lines up because it is laid out so, not moved there.
+struct CardRow<Margin: View, Mark: View, Content: View>: View {
+    /// Whether it has a gutter of its own: not when what it holds draws its
+    /// own there, as the outline does.
+    var gutter = true
+    @ViewBuilder var margin: () -> Margin
+    @ViewBuilder var mark: () -> Mark
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        HStack(alignment: .cardFirstLine, spacing: 0) {
+            // Each column its width, whether anything is in it or not: an
+            // empty one is kept by nothing as tall as nothing.
+            ZStack {
+                Color.clear.frame(width: Measures.margin, height: 0)
+                margin()
+            }
+            .frame(width: Measures.margin)
+            if gutter {
+                ZStack {
+                    Color.clear.frame(width: Measures.gutter, height: 0)
+                    mark()
+                }
+                .frame(width: Measures.gutter)
+            }
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .overlay(alignment: .leading) { if CardGrid.shown { CardGrid(gutter: gutter) } }
+    }
+}
+
+extension CardRow where Margin == EmptyView {
+    init(gutter: Bool = true, @ViewBuilder mark: @escaping () -> Mark, @ViewBuilder content: @escaping () -> Content) {
+        self.init(gutter: gutter, margin: { EmptyView() }, mark: mark, content: content)
+    }
+}
+
+extension CardRow where Margin == EmptyView, Mark == EmptyView {
+    init(gutter: Bool = true, @ViewBuilder content: @escaping () -> Content) {
+        self.init(gutter: gutter, margin: { EmptyView() }, mark: { EmptyView() }, content: content)
+    }
+}
+
+/// `WEFT_GRID=1`: each row's columns drawn over it — its margin's edge and
+/// its gutter's — to see that what should line up does.
+struct CardGrid: View {
+    static let shown = ProcessInfo.processInfo.environment["WEFT_GRID"] != nil
+    let gutter: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: Measures.margin)
+            Rectangle().fill(.red.opacity(0.5)).frame(width: 1)
+            Color.clear.frame(width: Measures.gutter - 1)
+            Rectangle().fill(.blue.opacity(0.5)).frame(width: 1)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// What goes in a card's gutter: a thing to do's ring — round, as a page
+/// is, not square as a checklist's row — or the page's icon; sized and
+/// centred as the outline's checkboxes and bullets are.
+struct GutterMark: View {
+    enum Kind: Equatable {
+        case ring(done: Bool)
+        case icon(String)
+    }
+    let kind: Kind?
+    var help: String? = nil
+    var action: (() -> Void)? = nil
+
+    var body: some View {
+        Group {
+            switch kind {
+            case .ring(let done):
+                Button { action?() } label: {
+                    Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: Measures.markSize))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(done ? Color.white : Measures.markColor, Ink.accent.color)
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(width: Measures.gutter)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(help ?? (done ? "Done — click to open again" : "To do — click when done"))
+                .accessibilityLabel(done ? "Done" : "To do")
+            case .icon(let symbol):
+                Button { action?() } label: {
+                    Image(systemName: symbol)
+                        .font(.system(size: Measures.markSize * 0.9))
+                        .foregroundStyle(Ink.secondary.color)
+                        .frame(width: Measures.gutter)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(action == nil)
+                .help(help ?? "")
+            case nil:
+                Color.clear
+            }
+        }
+        .frame(width: Measures.gutter)
     }
 }
 #endif

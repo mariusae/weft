@@ -708,6 +708,16 @@ public final class River: Identifiable {
         edit(title, inTitle: tag != nil)
     }
 
+    /// ⌘⇧N: a new thing to do, untitled, at the top of the river — what
+    /// the river's query asks of a new page given it too.
+    public func newTodo() {
+        var seed = query ?? Query()
+        seed.excludedFlags.removeAll { $0 == .todo }
+        if !seed.flags.contains(.todo) { seed.flags.append(.todo) }
+        guard let title = store.makeTiddler(untitled: true, seed: seed) else { return }
+        edit(title)
+    }
+
     /// The card ⌃⌘T titles: the one being written in, else the one
     /// selected — any but a day's or a week's, or one of Weft's own.
     public var titleableCard: String? {
