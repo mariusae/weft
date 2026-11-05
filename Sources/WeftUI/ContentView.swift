@@ -221,8 +221,17 @@ private struct RiverToolbar: ToolbarContent {
             #endif
             Button("Today", systemImage: "calendar") { river.openToday() }
                 .help("Today's Note (⇧⌘T)")
-            Button("New Tiddler", systemImage: "plus") { river.newTiddler() }
-                .help("New Tiddler (⌘N)")
+            // Clicked, a new tiddler; held, one of what is on the pasteboard.
+            Menu {
+                Button("New Tiddler from Pasteboard", systemImage: "doc.on.clipboard") { river.newTiddlerFromPasteboard() }
+                    .disabled(!Platform.pasteboardHasContents)
+            } label: {
+                Label("New Tiddler", systemImage: "plus")
+            } primaryAction: {
+                river.newTiddler()
+            }
+            .menuIndicator(.hidden)
+            .help("New Tiddler (⌘N) — hold for one of what is on the pasteboard")
             Button("Close All", systemImage: "rectangle.stack.badge.minus") { river.closeAll() }
                 .help("Close All Cards (⇧⌘W)")
             #if os(macOS)
@@ -1099,6 +1108,9 @@ private struct RiverRail: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .fixedSize(horizontal: true, vertical: false)
+        // Closed, as narrow as its ticks: else its scroll view reaches across
+        // the river, and what is under it — a picture's grip — loses the pointer.
+        .frame(width: open ? nil : 26, alignment: .trailing)
         .frame(height: min(max(height, 1), 520))
         .background {
             if open { RoundedRectangle(cornerRadius: 14).fill(.regularMaterial).shadow(color: .black.opacity(0.12), radius: 12, y: 4) }

@@ -46,6 +46,8 @@ struct RiverWindow: View {
                 window.tabbingMode = .disallowed
                 // A snapshot's windows are not put back when Weft opens next.
                 if Snapshot.isAsked { window.isRestorable = false }
+                // Two fingers swept across the trackpad: the river beside this one.
+                TabSwipe.follow(window, rivers: rivers)
                 for river in rivers.rivers { river.present = { [weak window, rivers] in
                     rivers.select(river)
                     window?.makeKeyAndOrderFront(nil)
@@ -215,12 +217,48 @@ struct RiverCommands: Commands {
             Button("Unfold Card") { if let river, let card = river.selected { withAnimation(.snappy(duration: 0.22)) { river.setFolded(card, false) } } }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .control])
                 .disabled(river?.selected == nil)
+            Button("Fold or Unfold Card") {
+                if let river, let card = river.selected { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(card) } }
+            }
+            .keyboardShortcut(".", modifiers: [.command, .control])
+            .disabled(river?.selected == nil)
             Button("Fold All Cards") { withAnimation(.snappy) { river?.foldAll() } }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .control, .option])
                 .disabled(river?.cards.isEmpty ?? true)
             Button("Unfold All Cards") { withAnimation(.snappy) { river?.unfoldAll() } }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .control, .option])
                 .disabled(river?.cards.isEmpty ?? true)
+            Divider()
+            // The selected card, as its menu and swipes have it.
+            let card = river?.selected
+            let task = card.flatMap { store.taskState($0) }
+            Button(task == .todo ? "Mark Done" : task == .done ? "Mark Not Done" : "Make a To-Do") {
+                guard let card else { return }
+                withAnimation(.snappy(duration: 0.2)) { store.setTaskState(card, task == .todo ? .done : .todo) }
+            }
+            .keyboardShortcut("k", modifiers: [.command, .control])
+            .disabled(card == nil || card.map { store.kind($0) == .day } ?? true)
+            Button(card.map { store.isInInbox($0) } == true ? "Done with It" : "Add to Inbox") {
+                guard let card else { return }
+                store.setInbox(card, !store.isInInbox(card))
+            }
+            .keyboardShortcut("i", modifiers: [.command, .control])
+            .disabled(card.map { store.tiddler($0) == nil } ?? true)
+            Button(card.map { store.isPinned($0) } == true ? "Unpin" : "Pin") {
+                guard let card else { return }
+                store.setPinned(card, !store.isPinned(card))
+            }
+            .keyboardShortcut("p", modifiers: [.command, .control])
+            .disabled(card.map { store.tiddler($0) == nil } ?? true)
+            Button("Read") { if let card { river?.reading = card } }
+                .keyboardShortcut("r", modifiers: [.command, .control])
+                .disabled(card.map { !store.canRead($0) } ?? true)
+            Button("Close Card") { if let card { withAnimation { river?.close(card) } } }
+                .keyboardShortcut("w", modifiers: [.command, .control])
+                .disabled(card == nil)
+            Button("Delete Tiddler") { if let card { withAnimation { store.delete(card) } } }
+                .keyboardShortcut(.delete, modifiers: [.command, .control])
+                .disabled(card.map { store.tiddler($0) == nil || store.isShadow($0) } ?? true)
             Divider()
             Button("Back") { river?.goBack() }
                 .keyboardShortcut("[")
@@ -266,5 +304,55 @@ struct ConnectMenuItem: View {
 
     var body: some View {
         Button("Connect to GitHub…") { openWindow(id: "github") }
+    }
+}
+
+/// Two fingers swept left or right across the trackpad, as Safari goes back
+/// and forward: the river beside the one shown — fingers to the left, the
+/// next; to the right, the one before. Only a sweep clearly across, and far
+/// enough, once for each; a scroll down the river is left alone.
+@MainActor
+enum TabSwipe {
+    private final class Gesture {
+        weak var rivers: RiverSet?
+        var across: CGFloat = 0
+        var down: CGFloat = 0
+        var done = false
+        init(rivers: RiverSet) { self.rivers = rivers }
+    }
+
+    private static var gestures: [ObjectIdentifier: Gesture] = [:]
+    private static var monitor: Any?
+
+    static func follow(_ window: NSWindow, rivers: RiverSet) {
+        let key = ObjectIdentifier(window)
+        if let known = gestures[key] { known.rivers = rivers; return }
+        gestures[key] = Gesture(rivers: rivers)
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            MainActor.assumeIsolated { handle(event) }
+            return event
+        }
+    }
+
+    private static func handle(_ event: NSEvent) {
+        guard event.hasPreciseScrollingDeltas, event.momentumPhase.isEmpty, let window = event.window,
+              let gesture = gestures[ObjectIdentifier(window)], let rivers = gesture.rivers else { return }
+        if event.phase.contains(.began) {
+            gesture.across = 0
+            gesture.down = 0
+            gesture.done = false
+        }
+        guard event.phase.contains(.changed) || event.phase.contains(.began), !gesture.done else { return }
+        // Which way the fingers went, whichever way scrolling goes.
+        let fingers = event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
+        gesture.across += fingers
+        gesture.down += abs(event.scrollingDeltaY)
+        guard abs(gesture.across) > 110, abs(gesture.across) > gesture.down * 2.5 else { return }
+        gesture.done = true
+        let by = gesture.across > 0 ? -1 : 1
+        let index = rivers.currentIndex + by
+        guard rivers.rivers.indices.contains(index) else { return }
+        withAnimation(.snappy(duration: 0.2)) { rivers.step(by) }
     }
 }

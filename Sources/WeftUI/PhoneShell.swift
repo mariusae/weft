@@ -111,14 +111,23 @@ struct PhoneBar: View {
     }
 
     /// A new tiddler, at the top of the river.
+    /// Tapped, a new tiddler; held, one of what is on the pasteboard.
     private var new: some View {
-        Button { river.newTiddler() } label: {
+        Menu {
+            Button("New Tiddler from Pasteboard", systemImage: "doc.on.clipboard") { river.newTiddlerFromPasteboard() }
+                .disabled(!Platform.pasteboardHasContents)
+            Button("New Tiddler", systemImage: "plus") { river.newTiddler() }
+        } label: {
             Image(systemName: "plus")
                 .font(.system(size: 20, weight: .medium))
                 .frame(width: 48, height: 48)
+        } primaryAction: {
+            river.newTiddler()
         }
+        .menuIndicator(.hidden)
         .glassEffect(.regular.interactive(), in: .circle)
         .accessibilityLabel("New Tiddler")
+        .accessibilityHint("Hold for a new tiddler of what is on the pasteboard")
     }
 
     /// The river by name — its icon before it — the start page a tap away.

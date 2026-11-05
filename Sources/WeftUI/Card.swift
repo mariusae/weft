@@ -9,10 +9,6 @@ struct Card: View {
     @Environment(River.self) private var river
     let title: String
     @State private var hovering = false
-    @State private var confirmingDelete = false
-    /// How many pages refer to it, counted when its deletion is asked for —
-    /// not each time the card is drawn.
-    @State private var referring = 0
     /// The title being typed in: renaming.
     @State private var renaming = false
     @FocusState private var titleFocused: Bool
@@ -39,6 +35,19 @@ struct Card: View {
                 relinking
                 if store.needsReview(title) {
                     ConflictView(title: title)
+                } else if let task = ringBeside, ringInIndent {
+                    // Untitled, a thing to do, written as an outline with a plain
+                    // first row: its ring where that row's bullet would be — its
+                    // words where every card's start.
+                    CardEditor(title: title, controller: controller, addingTag: $addingTag,
+                               addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
+                        .overlay(alignment: .topLeading) {
+                            taskRing(task)
+                                .frame(width: ringColumn)
+                                // A little into the margin: room before the words.
+                                .offset(x: -6)
+                                .padding(.top, TextSettings.size * 0.12)
+                        }
                 } else if let task = ringBeside {
                     // Untitled, a thing to do: its ring beside its first line, as a
                     // checklist's row has it — not a row of its own over it.
@@ -70,9 +79,23 @@ struct Card: View {
         .animation(Self.drawerSpring, value: drawerShown)
         #if os(macOS)
         // No title: its controls and its fold in the corners, over its words.
+        // Under the pointer, over the end of its first line, on a fade of its
+        // own card — taking no room from its words otherwise.
         .overlay(alignment: .topTrailing) {
-            if !peeking, !showsHeader { macControls.offset(y: -26) }
+            if !peeking, !showsHeader, hovering {
+                macControls
+                    .padding(.leading, 28)
+                    .background {
+                        LinearGradient(stops: [.init(color: Color.card.opacity(0), location: 0),
+                                               .init(color: Color.card, location: 0.35)],
+                                       startPoint: .leading, endPoint: .trailing)
+                    }
+                    .padding(.top, 18)
+                    .padding(.trailing, 24)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeOut(duration: 0.15), value: hovering)
         .overlay(alignment: .topLeading) {
             if !peeking, !showsHeader { foldChevron.offset(x: -23, y: -3) }
         }
@@ -116,12 +139,6 @@ struct Card: View {
         // A click makes it the card ⌘↩ goes to.
         .simultaneousGesture(TapGesture().onEnded { river.select(title) })
         .sheet(isPresented: $historyShown) { HistorySheet(title: title).environment(store) }
-        .confirmationDialog("Delete “\(store.shownTitle(title))”?", isPresented: $confirmingDelete) {
-            Button("Delete", role: .destructive) { withAnimation { store.delete(title) } }
-        } message: {
-            Text(referring == 0 ? "Its file is removed; the graph's history keeps it."
-                 : "\(referring) \(referring == 1 ? "page refers" : "pages refer") to it. Its file is removed; the graph's history keeps it.")
-        }
         .environment(\.openURL, OpenURLAction { url in
             if let target = InlineMarkdown.title(from: url) {
                 river.open(target, from: title)
@@ -311,8 +328,8 @@ struct Card: View {
         }]
         if store.tiddler(title) != nil, !store.isShadow(title) {
             actions.append(SwipeAction(name: "Delete", symbol: "trash", tint: .red) {
-                referring = store.references(to: title).count
-                confirmingDelete = true
+                // At once: Undo brings it back.
+                withAnimation { store.delete(title) }
             })
         }
         return actions
@@ -396,6 +413,29 @@ struct Card: View {
         showsHeader ? nil : store.taskState(title)
     }
 
+    /// Whether an untitled to-do's ring goes in its outline's indent: written
+    /// as an outline, its first row with no bullet of its own there.
+    private var ringInIndent: Bool {
+        #if os(macOS)
+        guard store.editorMode(title) == .outline else { return false }
+        let text = (store.draftHead(title) ?? store.tiddler(title))?.text ?? ""
+        let first = text.split(separator: "\n").first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.map(String.init) ?? ""
+        let trimmed = first.trimmingCharacters(in: .whitespaces)
+        return !(["- ", "* ", "+ "].contains { trimmed.hasPrefix($0) } || trimmed.first?.isNumber == true)
+        #else
+        return false
+        #endif
+    }
+
+    /// How wide the column before an outline's top rows is.
+    private var ringColumn: CGFloat {
+        #if os(macOS)
+        OutlineCardEditor.textIndent
+        #else
+        28
+        #endif
+    }
+
     /// A thing to do's ring, to check it off — or open it again.
     private func taskRing(_ task: Tiddler.TaskState) -> some View {
         Button {
@@ -422,20 +462,20 @@ struct Card: View {
     /// its controls to stand in.
     private var headerlessTop: CGFloat {
         #if os(macOS)
-        showsHeader ? 22 : 34
+        22
         #else
         22
         #endif
     }
 
-    /// Whether its drawer of controls is out under it: on the phone, while
-    /// it is open, always; peeking, when its ⋯ is tapped. The Mac's are
-    /// over it.
+    /// Whether its drawer of controls is out under it: on the phone, the
+    /// active card's — written in, or tapped last. The Mac's are over it.
     private var drawerShown: Bool {
         #if os(macOS)
         false
         #else
-        !river.isFolded(title) || river.isDrawerOut(title)
+        // The active card's alone: the one written in, or tapped last.
+        river.isDrawerOut(title) || (!river.isFolded(title) && river.isSelected(title))
         #endif
     }
 
@@ -817,9 +857,9 @@ struct Card: View {
         }
         if store.tiddler(title) != nil, !store.isShadow(title) {
             Divider()
-            Button("Delete Tiddler…", role: .destructive) {
-                referring = store.references(to: title).count
-                confirmingDelete = true
+            Button("Delete Tiddler", role: .destructive) {
+                // At once: Undo brings it back.
+                withAnimation { store.delete(title) }
             }
         }
     }
@@ -990,7 +1030,10 @@ private struct DrawerIcon: View {
         Image(systemName: symbol)
             .font(.system(size: 22, weight: .regular))
             .foregroundStyle(.white)
-            .frame(width: 44, height: 40)
+            // As wide as there is room for, up to a full tap's: many — a day's
+            // in a query river — narrower, not the card pushed wider than its
+            // column.
+            .frame(minWidth: 26, idealWidth: 44, maxWidth: 44, minHeight: 40, maxHeight: 40)
             .contentShape(Rectangle())
     }
 }

@@ -22,6 +22,16 @@ enum Platform {
         #endif
     }
 
+    /// Whether the pasteboard has words, an address or a picture — asked
+    /// without reading them, which on the phone would ask to paste.
+    static var pasteboardHasContents: Bool {
+        #if os(macOS)
+        !(NSPasteboard.general.types ?? []).isEmpty
+        #else
+        UIPasteboard.general.hasStrings || UIPasteboard.general.hasURLs || UIPasteboard.general.hasImages
+        #endif
+    }
+
     static func copy(_ string: String) {
         #if os(macOS)
         NSPasteboard.general.clearContents()
