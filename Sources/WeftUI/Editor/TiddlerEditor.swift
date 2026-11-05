@@ -317,6 +317,15 @@ extension TiddlerTextView {
 /// the titles that fit are listed under the caret, ↑ and ↓ choosing,
 /// Return taking one, Escape putting them away.
 final class TiddlerTextView: NSTextView {
+    /// Told of an edit about to be made: where, and with what.
+    var onWillEdit: (([NSRange], [String]?) -> Void)?
+
+    override func shouldChangeText(inRanges affectedRanges: [NSValue], replacementStrings: [String]?) -> Bool {
+        let changes = super.shouldChangeText(inRanges: affectedRanges, replacementStrings: replacementStrings)
+        if changes { onWillEdit?(affectedRanges.map(\.rangeValue), replacementStrings) }
+        return changes
+    }
+
     var suggest: (String) -> [LinkTarget] = { _ in [] }
     var onEscape: () -> Void = {}
     var onFocusChange: (Bool) -> Void = { _ in }
@@ -706,16 +715,28 @@ private struct EditorRepresentable: NSViewRepresentable {
         view.onResize = { [weak live] in live?.attachments.place() }
         view.onFocusChange = { [weak view, weak coordinator = context.coordinator] focused in
             guard let view, let coordinator else { return }
+            if !focused { coordinator.flush() }
             coordinator.live?.focusChanged(focused, selection: view.selectedRange())
             coordinator.parent.onFocusChange(focused)
         }
         view.delegate = context.coordinator
         storage.delegate = context.coordinator
+        view.onWillEdit = { [weak view, weak live] ranges, strings in
+            guard let view else { return }
+            live?.willEdit(ranges, strings, in: view.string as NSString)
+        }
+        context.coordinator.view = view
         view.string = text
         live.restyleAll()
         controller.textView = view
         return view
     }
+
+    /// Taken away: nothing typed in it left untold.
+    static func dismantleNSView(_ view: TiddlerTextView, coordinator: Coordinator) { coordinator.flush() }
+
+    /// How long after the last key what was typed is told.
+    static let flushDelay: TimeInterval = 0.15
 
     func updateNSView(_ view: TiddlerTextView, context: Context) {
         context.coordinator.parent = self
@@ -724,6 +745,7 @@ private struct EditorRepresentable: NSViewRepresentable {
         controller.textView = view
         // What it was last given or told, the same: not looked at again.
         if !text.isSameText(as: context.coordinator.shown), !(view.string as NSString).isEqual(to: text) {
+            context.coordinator.dropPending()
             view.string = text
             context.coordinator.live?.changed()
         }
@@ -766,20 +788,50 @@ private struct EditorRepresentable: NSViewRepresentable {
         var live: LiveMarkdown?
         /// The text the view was last given, or told it has.
         var shown = ""
+        weak var view: NSTextView?
+        /// What was typed, not yet told: told a moment after typing stops.
+        private var pending: DispatchWorkItem?
+        private var flushing: NSObjectProtocol?
 
         init(_ parent: EditorRepresentable) {
             self.parent = parent
+            super.init()
+            flushing = NotificationCenter.default.addObserver(forName: .weftFlushEdits, object: nil, queue: nil) { [weak self] _ in
+                MainActor.assumeIsolated { self?.flush() }
+            }
         }
 
-        func textDidChange(_ notification: Notification) {
-            guard let view = notification.object as? NSTextView else { return }
+        /// What was typed told now, if anything is waiting.
+        func flush() {
+            guard let work = pending else { return }
+            work.cancel()
+            pending = nil
+            guard let view else { return }
             // Swift's own, once: an NSString's words, bridged, are slow to
             // go through for all that reads them after — the store, the index.
             var text = view.string
             text.makeContiguousUTF8()
             shown = text
             parent.text = text
+        }
+
+        /// Another text given the view: what was typed in the one before goes with it.
+        func dropPending() {
+            pending?.cancel()
+            pending = nil
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let view = notification.object as? NSTextView else { return }
+            self.view = view
             live?.changed()
+            live?.typed()
+            // The whole text copied and told — the store, all that hears of
+            // it — a moment after typing stops, not for each key.
+            pending?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.flush() }
+            pending = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + EditorRepresentable.flushDelay, execute: work)
         }
 
         /// No word marked misspelled where what is written is not shown:
@@ -1047,12 +1099,18 @@ private struct EditorRepresentable: UIViewRepresentable {
         return view
     }
 
+    static func dismantleUIView(_ view: TiddlerTextView, coordinator: Coordinator) { coordinator.flush() }
+
+    /// How long after the last key what was typed is told.
+    static let flushDelay: TimeInterval = 0.15
+
     func updateUIView(_ view: TiddlerTextView, context: Context) {
         context.coordinator.parent = self
         view.suggest = suggest
         controller.textView = view
         // What it was last given or told, the same: not looked at again.
         if !text.isSameText(as: context.coordinator.shown), !(view.text as NSString).isEqual(to: text) {
+            context.coordinator.dropPending()
             view.text = text
             context.coordinator.live?.changed()
         }
@@ -1080,17 +1138,50 @@ private struct EditorRepresentable: UIViewRepresentable {
         var live: LiveMarkdown?
         /// The text the view was last given, or told it has.
         var shown = ""
+        weak var view: UITextView?
+        /// What was typed, not yet told: told a moment after typing stops.
+        private var pending: DispatchWorkItem?
+        private var flushing: NSObjectProtocol?
 
         init(_ parent: EditorRepresentable) {
             self.parent = parent
+            super.init()
+            flushing = NotificationCenter.default.addObserver(forName: .weftFlushEdits, object: nil, queue: nil) { [weak self] _ in
+                MainActor.assumeIsolated { self?.flush() }
+            }
         }
 
-        func textViewDidChange(_ view: UITextView) {
+        /// What was typed told now, if anything is waiting.
+        func flush() {
+            guard let work = pending else { return }
+            work.cancel()
+            pending = nil
+            guard let view else { return }
             var text = view.text ?? ""
             text.makeContiguousUTF8()
             shown = text
             parent.text = text
+        }
+
+        /// Another text given the view: what was typed in the one before goes with it.
+        func dropPending() {
+            pending?.cancel()
+            pending = nil
+        }
+
+        func textView(_ view: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            live?.willEdit([range], [text], in: (view.text ?? "") as NSString)
+            return true
+        }
+
+        func textViewDidChange(_ view: UITextView) {
+            self.view = view
             live?.changed()
+            live?.typed()
+            pending?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.flush() }
+            pending = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + EditorRepresentable.flushDelay, execute: work)
             (view as? TiddlerTextView)?.offerCompletions()
             (view as? TiddlerTextView)?.showUndoState()
         }
@@ -1106,6 +1197,7 @@ private struct EditorRepresentable: UIViewRepresentable {
         }
 
         func textViewDidEndEditing(_ view: UITextView) {
+            flush()
             live?.focusChanged(false, selection: view.selectedRange)
             parent.onFocusChange(false)
         }

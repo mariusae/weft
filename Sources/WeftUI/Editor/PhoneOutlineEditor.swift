@@ -40,7 +40,39 @@ struct OutlineCardEditor: UIViewRepresentable {
         /// The folds the river had, last looked: a change is from elsewhere.
         private(set) var asked: [OutlineFolds.Mark] = []
 
+        /// What was typed, not yet written back: written a moment after typing stops.
+        private var pending: DispatchWorkItem?
+        private weak var editing: OutlineEditor?
+        private var flushing: NSObjectProtocol?
+
+        init() {
+            flushing = NotificationCenter.default.addObserver(forName: .weftFlushEdits, object: nil, queue: nil) { [weak self] _ in
+                MainActor.assumeIsolated { self?.flush() }
+            }
+        }
+
+        /// Typed: written back once typing stops — the whole body read and
+        /// written as Markdown, and all that hears of it — not for each key.
+        func scheduleSave(_ editor: OutlineEditor) {
+            editing = editor
+            pending?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.flush() }
+            pending = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+        }
+
+        /// What was typed written back now, if anything is waiting.
+        func flush() {
+            guard let work = pending else { return }
+            work.cancel()
+            pending = nil
+            if let editing { save(editing) }
+        }
+
         func load(_ text: String, into editor: OutlineEditor) {
+            // Another body: what was typed in this one goes with it.
+            pending?.cancel()
+            pending = nil
             loaded = text
             shell = OutlineMarkdown.parse(text)
             // Folded as it was left.
@@ -93,11 +125,15 @@ struct OutlineCardEditor: UIViewRepresentable {
         coordinator.keepFolds = { [river, title] in river.setRowFolds($0, of: title) }
         editor.onChange = { [weak editor] in
             guard let editor else { return }
-            coordinator.save(editor)
+            coordinator.scheduleSave(editor)
         }
         editor.onOpenLink = { [river, title] in followOutline($0, in: river, from: title) }
         editor.onHeightChange = { [weak editor] in editor?.invalidateIntrinsicContentSize() }
-        editor.onFocusChange = { coordinator.onFocusChange($0) }
+        editor.onFocusChange = { focused in
+            // Leaving: what was typed written back first.
+            if !focused { coordinator.flush() }
+            coordinator.onFocusChange(focused)
+        }
         // `[[` completes from the graph's notes, as Prism's does; dictation
         // listens for their names.
         store.prepareLinkNotes { notes in
@@ -116,6 +152,8 @@ struct OutlineCardEditor: UIViewRepresentable {
         coordinator.load(text, into: editor)
         return editor
     }
+
+    static func dismantleUIView(_ editor: OutlineEditor, coordinator: Coordinator) { coordinator.flush() }
 
     func updateUIView(_ editor: OutlineEditor, context: Context) {
         let coordinator = context.coordinator

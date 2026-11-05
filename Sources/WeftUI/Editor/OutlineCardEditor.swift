@@ -31,6 +31,8 @@ struct OutlineCardEditor: NSViewRepresentable {
         var asks = false
         /// The folds the river had for it, last looked: a change is from elsewhere.
         var folds: [OutlineFolds.Mark] = []
+        /// Heard: the app about to write what is being edited.
+        var flushing: NSObjectProtocol?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -82,6 +84,9 @@ struct OutlineCardEditor: NSViewRepresentable {
         editor.onTitle = { [store, title] name in store.change(title) { $0.title = name } }
         editor.onAskTitle = { [river, title] in river.edit(title, inTitle: true) }
         editor.onFocusChange = { [coordinator = context.coordinator] in coordinator.onFocusChange($0) }
+        context.coordinator.flushing = NotificationCenter.default.addObserver(forName: .weftFlushEdits, object: nil, queue: nil) { [weak editor] _ in
+            MainActor.assumeIsolated { editor?.flushEdits() }
+        }
         store.prepareLinkNotes { PageOutlineEditor.completeLinks(from: $0) }
         return editor
     }

@@ -249,6 +249,37 @@ final class LiveMarkdown {
     private(set) var focused = false
     /// Fence lines in the text as last styled.
     private var fences = -1
+    /// Whether the text has any query block, whose whole shows its markup
+    /// while the caret is in it: without one, a line's is all that shows.
+    private var hasQueries = true
+    /// The edit about to be made can't make or unmake a fence — no backtick
+    /// typed, no fence in the lines it touches — nor a query block.
+    private var quiet = false
+
+    /// An edit about to be made: whether it is one of those.
+    func willEdit(_ ranges: [NSRange], _ strings: [String]?, in text: NSString) {
+        guard ranges.count == 1, let range = ranges.first, NSMaxRange(range) <= text.length else { quiet = false; return }
+        let lines = text.paragraphRange(for: range)
+        quiet = !(strings ?? []).contains { $0.contains("`") }
+            && text.range(of: "```", options: .literal, range: lines).location == NSNotFound
+    }
+
+    /// Typed: what was asked of the edit forgotten.
+    func typed() { quiet = false }
+
+    /// The lines whose markup shows for a selection.
+    private func reveal(_ selection: NSRange, in text: NSString) -> NSRange {
+        guard hasQueries else {
+            let clamped = NSRange(location: min(selection.location, text.length), length: min(selection.length, text.length - min(selection.location, text.length)))
+            return text.paragraphRange(for: clamped)
+        }
+        return MarkdownStyler.revealed(for: selection, in: text)
+    }
+
+    private func countFences(_ text: NSString) -> Int {
+        hasQueries = text.range(of: "```query", options: .literal).location != NSNotFound
+        return MarkdownStyler.fences(in: text)
+    }
     /// Told when the height the text needs may have changed.
     var onResize: () -> Void = {}
     private let glyphs = LiveGlyphs()
@@ -272,8 +303,10 @@ final class LiveMarkdown {
     /// one, when a fence came or went.
     func edited(_ range: NSRange, in storage: NSTextStorage) {
         let text = storage.string as NSString
-        let count = MarkdownStyler.fences(in: text)
-        if focused { revealed = MarkdownStyler.revealed(for: NSRange(location: NSMaxRange(range), length: 0), in: text) }
+        // Typed with no backtick, in lines with no fence: the fences as they were.
+        let count = quiet && fences >= 0 ? fences : countFences(text)
+        quiet = false
+        if focused { revealed = reveal(NSRange(location: NSMaxRange(range), length: 0), in: text) }
         style(around: count == fences ? (revealed.map { NSUnionRange($0, range) } ?? range) : nil)
         fences = count
     }
@@ -286,7 +319,7 @@ final class LiveMarkdown {
 
     func selectionChanged(_ selection: NSRange) {
         guard let storage else { return }
-        let now = focused ? MarkdownStyler.revealed(for: selection, in: storage.string as NSString) : nil
+        let now = focused ? reveal(selection, in: storage.string as NSString) : nil
         guard now != revealed else { return }
         let before = revealed
         revealed = now
@@ -303,7 +336,7 @@ final class LiveMarkdown {
     /// Styles the whole text, as it is first shown or put back.
     func restyleAll() {
         guard let storage else { return }
-        fences = MarkdownStyler.fences(in: storage.string as NSString)
+        fences = countFences(storage.string as NSString)
         style(around: nil)
     }
 

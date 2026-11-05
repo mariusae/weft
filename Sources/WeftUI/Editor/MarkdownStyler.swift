@@ -45,12 +45,21 @@ struct MarkdownStyler {
         var fence: String?
         var fenceStart = 0
         if range.location > 0 {
-            // Inside a fence or not: the fences before say.
-            text.enumerateSubstrings(in: NSRange(location: 0, length: range.location), options: [.byParagraphs]) { line, lineRange, _, _ in
-                guard let line, line.hasPrefix("```") else { return }
+            // Inside a fence or not: the fences before say — found by their
+            // backticks, not by reading every line before as words.
+            var at = 0
+            while at < range.location {
+                let found = text.range(of: "```", options: .literal, range: NSRange(location: at, length: range.location - at))
+                guard found.location != NSNotFound else { break }
+                let line = text.paragraphRange(for: NSRange(location: found.location, length: 0))
+                at = max(NSMaxRange(line), found.location + 3)
+                // Only backticks starting a line make a fence.
+                guard line.location == found.location else { continue }
                 if fence == nil {
-                    fence = line.drop { $0 == "`" }.trimmingCharacters(in: .whitespaces)
-                    fenceStart = lineRange.location
+                    var words = line
+                    while words.length > 0, [10, 13].contains(text.character(at: NSMaxRange(words) - 1)) { words.length -= 1 }
+                    fence = text.substring(with: words).drop { $0 == "`" }.trimmingCharacters(in: .whitespaces)
+                    fenceStart = line.location
                 } else {
                     fence = nil
                 }

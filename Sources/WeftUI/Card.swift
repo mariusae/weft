@@ -665,6 +665,7 @@ struct Card: View {
             CardButton(river.isQuery ? "Remove from River" : "Close", "xmark") { withAnimation { river.close(title) } }
         }
         .foregroundStyle(Ink.secondary.color)
+        .environment(\.cardHovered, hovering)
         .opacity(hovering ? 1 : !peeking && (river.isWriting(title) || river.isSelected(title)) ? 0.45 : 0)
         .animation(.easeOut(duration: 0.15), value: hovering)
     }
@@ -929,14 +930,33 @@ private struct CardButton: View {
 private struct CardButtonFace: View {
     let symbol: String
     @State private var hovered = false
+    /// Whether the pointer is over the card: only then is it followed over
+    /// each button — not, for every card, at every layout.
+    @Environment(\.cardHovered) private var cardHovered
 
     var body: some View {
-        Image(systemName: symbol)
+        let face = Image(systemName: symbol)
             .font(.system(size: 12, weight: .semibold))
             .frame(width: 26, height: 24)
-            .background(Color.primary.opacity(hovered ? 0.08 : 0), in: .rect(cornerRadius: 6))
+            .background(Color.primary.opacity(hovered && cardHovered ? 0.08 : 0), in: .rect(cornerRadius: 6))
             .contentShape(.rect)
-            .onHover { hovered = $0 }
+        if cardHovered {
+            face.onHover { hovered = $0 }
+        } else {
+            face
+        }
+    }
+}
+
+private struct CardHoveredKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Whether the pointer is over the card this is in.
+    var cardHovered: Bool {
+        get { self[CardHoveredKey.self] }
+        set { self[CardHoveredKey.self] = newValue }
     }
 }
 #endif

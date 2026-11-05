@@ -496,7 +496,7 @@ public final class WikiStore {
         guard let root, let text = tiddler(title)?.text, text.containsText("http") || text.containsText(".pdf") else { return false }
         // Asked each time its card is drawn: the page read once for each text it has.
         if let known = readable[title], known.text == text { return known.can }
-        let can = !ReaderSource.all(in: text, root: root).isEmpty
+        let can = ReaderSource.any(in: text, root: root)
         readable[title] = (text, can)
         return can
     }
@@ -1435,6 +1435,8 @@ public final class WikiStore {
     /// Writes what every card being edited says, now: before the app goes
     /// to the background, or quits.
     public func saveEditing() {
+        // What editors hold back as typing goes on, told first.
+        NotificationCenter.default.post(name: .weftFlushEdits, object: nil)
         for title in editing {
             // A title given it and not yet taken — its first line made its
             // title, that line gone from what it says — taken now: the app
@@ -1808,4 +1810,10 @@ extension WikiStore {
         }
         return LinkTarget(title: title, shown: shownTitle(title), kind: .day, icon: icon(of: title))
     }
+}
+
+extension Notification.Name {
+    /// Editors: what was typed and not yet told, told now — the app is
+    /// about to write what is being edited.
+    public static let weftFlushEdits = Notification.Name("WeftFlushEdits")
 }
