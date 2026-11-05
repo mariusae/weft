@@ -248,7 +248,7 @@ struct PhoneBar: View {
 /// Where everything is found, as Safari's start page is: at its foot the
 /// field to find a page by, the keys up; over what it shows, glass to
 /// choose among the rivers, what was written lately, the inbox and the
-/// pinned, what is to do, and the wiki. Something typed: what it finds.
+/// pinned, what is to be read, what is to do, and the wiki. Something typed: what it finds.
 struct StartPage: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
@@ -258,13 +258,14 @@ struct StartPage: View {
     @FocusState private var typing: Bool
 
     enum Part: String, CaseIterable, Identifiable {
-        case rivers, recent, inbox, tasks, wiki
+        case rivers, recent, inbox, reading, tasks, wiki
         var id: String { rawValue }
         var symbol: String {
             switch self {
             case .rivers: "square.stack.3d.up"
             case .recent: "clock"
             case .inbox: "tray"
+            case .reading: "eyeglasses"
             case .tasks: "checklist"
             case .wiki: "book.closed"
             }
@@ -274,6 +275,7 @@ struct StartPage: View {
             case .rivers: "Rivers"
             case .recent: "Recent"
             case .inbox: "Inbox and Pinned"
+            case .reading: "Reading"
             case .tasks: "Tasks"
             case .wiki: "Wiki"
             }
@@ -384,6 +386,8 @@ struct StartPage: View {
                 section("Inbox", store.inbox())
             }
             .overlay { if store.pinned().isEmpty && store.inbox().isEmpty { empty("Nothing pinned, and nothing in the inbox") } }
+        case .reading:
+            ReadingList().onChange(of: river.focusRequest) { close() }
         case .tasks:
             TaskList().onChange(of: river.focusRequest) { close() }
         case .wiki:
@@ -391,9 +395,6 @@ struct StartPage: View {
                 section(nil, store.wikiPages())
                 Section("More") {
                     NavigationLink { tags } label: { Label("Tags", systemImage: "tag") }
-                    NavigationLink { ReadingList().navigationTitle("Reading").onChange(of: river.focusRequest) { close() } } label: {
-                        Label("Reading", systemImage: "eyeglasses")
-                    }
                     NavigationLink { pages(store.missing(), empty: "No links to missing tiddlers").navigationTitle("Missing") } label: {
                         Label("Missing Pages", systemImage: "questionmark.square.dashed")
                     }
