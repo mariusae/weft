@@ -239,6 +239,7 @@ struct QueryBuilder: View {
                     TextField("Linked from", text: $query.linkedFrom, prompt: Text("Tiddlers this one links to"))
                     TextField("Title has", text: $query.titleContains)
                     TextField("Text has", text: $query.textContains)
+                    TextField("About", text: $query.about, prompt: Text("By meaning: words like these"))
                     TextField("Has fields", text: list(\.hasFields), prompt: Text("Fields, separated by commas"))
                     EditedSincePicker(days: $query.editedSinceDaysAgo)
                 } header: {

@@ -576,7 +576,9 @@ private struct Sidebar: View {
     /// search as a river.
     private var searchResults: some View {
         let typed = river.search
-        let hits = store.searchHits(typed)
+        // The best of them — the rest a river away — then those by meaning.
+        let hits = store.searchHits(typed, limit: 20)
+        let about = store.meaningHits(typed, excluding: Set(hits.map(\.title)))
         let terms = SearchMarks.terms(typed)
         return List {
             Button {
@@ -606,23 +608,52 @@ private struct Sidebar: View {
                     }
                     .buttonStyle(.plain)
                     ForEach(hit.lines, id: \.number) { line in
-                        Button { river.find(in: hit.title, words: line.firstMarked) } label: {
-                            Text(line.attributed)
-                                .font(.caption)
-                                .foregroundStyle(Ink.secondary.color)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.leading, 23)
-                                .contentShape(Rectangle())
+                        Button {
+                            if line.picture != nil { river.open(hit.title) } else { river.find(in: hit.title, words: line.firstMarked) }
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                // In a picture it shows, not in its words.
+                                if line.picture != nil { Image(systemName: "photo").imageScale(.small) }
+                                Text(line.attributed).lineLimit(2)
+                            }
+                            .font(.caption)
+                            .foregroundStyle(Ink.secondary.color)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, 23)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .help("Open it, this found in it")
+                        .help(line.picture != nil ? "In a picture it shows" : "Open it, this found in it")
                     }
                 }
             }
+            aboutSection(about)
         }
         .overlay {
-            if hits.isEmpty { Text("Nothing matches").foregroundStyle(.secondary) }
+            if hits.isEmpty && about.isEmpty { Text("Nothing matches").foregroundStyle(.secondary) }
+        }
+    }
+
+    /// Pages about what is typed — by meaning, not its words — not found by them.
+    @ViewBuilder private func aboutSection(_ about: [String]) -> some View {
+        if !about.isEmpty {
+            Section("By Meaning") {
+                ForEach(about, id: \.self) { title in
+                    Button { river.open(title) } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 7) {
+                            Image(systemName: store.symbol(of: title))
+                                .font(.caption)
+                                .foregroundStyle(Ink.secondary.color)
+                                .frame(width: 16)
+                            Text(store.shownTitle(title)).lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("About what was typed, though it may not say it")
+                }
+            }
         }
     }
 

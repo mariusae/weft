@@ -72,6 +72,8 @@ public final class WikiStore {
     /// name came or went, every link written with it.
     private func changed(_ before: Wiki.Entry?, _ after: Wiki.Entry?) {
         guard let wiki else { return }
+        // A picture shown, perhaps new: read, if it is.
+        if let after, after.page.text.contains("assets/"), after.page.text != before?.page.text { pictureReader?.update() }
         var told = Set<String>()
         func tell(_ name: String) { if told.insert(NoteIndex.foldKey(name)).inserted { signal(name).version += 1 } }
         var links: [Set<String>] = []
@@ -182,6 +184,15 @@ public final class WikiStore {
         // Its words on disk, in this app's caches: ranked, and ready at once
         // when the graph was opened before.
         wiki.textIndex = TextIndex.shared(at: TextIndex.location(for: url, app: "Weft"))
+        // What its pictures say, as read before — read here, the rest, once it is open.
+        let pictures = ImageTextIndex(root: url, cache: TextIndex.cache(for: url, app: "Weft", kind: "Pictures"))
+        wiki.pictures = pictures
+        // The system's search told of its pages — unless asked not to, or
+        // the graph was given to try something on.
+        if Self.showsInSpotlight { wiki.spotlight = SpotlightIndex(root: url, app: "Weft") }
+        spotlightChanges = spotlightChanges ?? NotificationCenter.default.addObserver(forName: .weftSpotlightChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.spotlightChanged() }
+        }
         loads += 1
         let load = loads
         root = url.standardizedFileURL
@@ -201,6 +212,7 @@ public final class WikiStore {
         Task {
             let failure: String? = await Task.detached(priority: .userInitiated) {
                 do {
+                    _ = pictures.refresh()
                     try wiki.load()
                     return nil
                 } catch {
@@ -222,6 +234,20 @@ public final class WikiStore {
     private func loaded(_ wiki: Wiki, at url: URL) {
         self.wiki = wiki
         wiki.onChanged = { [weak self] before, after in self?.changed(before, after) }
+        // The pictures not read yet, read in the background: what they say
+        // found as their pages' words once it is.
+        if let pictures = wiki.pictures {
+            let reader = ImageTextReader(index: pictures)
+            reader.onRead = { [weak self, weak wiki] in
+                DispatchQueue.main.async {
+                    guard let self, let wiki, self.wiki === wiki else { return }
+                    wiki.picturesRead()
+                    self.listsVersion += 1
+                }
+            }
+            pictureReader = reader
+            reader.update()
+        }
         if !Self.isGivenGraph { UserDefaults.standard.set(url.path, forKey: "GraphPath") }
         loadedRoot = root
         namesVersion += 1
@@ -238,6 +264,26 @@ public final class WikiStore {
 
     /// The graph whose pages are read, once they are: the rivers show its cards then.
     public private(set) var loadedRoot: URL?
+    /// Reads the text in the graph's pictures, as they come.
+    @ObservationIgnored private var pictureReader: ImageTextReader?
+    @ObservationIgnored private var spotlightChanges: NSObjectProtocol?
+
+    /// Whether pages are shown in the system's search: Settings says.
+    public static let spotlightKey = "Spotlight"
+    static var showsInSpotlight: Bool {
+        !isGivenGraph && (UserDefaults.standard.object(forKey: spotlightKey) as? Bool ?? true)
+    }
+
+    /// Settings changed: the pages told to the system's search — or taken out of it.
+    private func spotlightChanged() {
+        guard let wiki, let root else { return }
+        if Self.showsInSpotlight {
+            if wiki.spotlight == nil { wiki.spotlight = SpotlightIndex(root: root, app: "Weft") }
+        } else if !Self.isGivenGraph {
+            (wiki.spotlight ?? SpotlightIndex(root: root, app: "Weft")).removeAll()
+            wiki.spotlight = nil
+        }
+    }
 
     /// Whether the graph's pages are being read.
     public private(set) var isLoading = false
@@ -936,6 +982,16 @@ public final class WikiStore {
     public var count: Int {
         _ = namesVersion
         return wiki?.entries.count ?? 0
+    }
+
+    /// Pages about what is typed, by meaning — words like its words — the
+    /// nearest first, leaving out those already found.
+    public func meaningHits(_ search: String, excluding found: Set<String> = [], limit: Int = 6) -> [String] {
+        _ = listsVersion
+        _ = textVersion
+        let words = Query(search: search).textContains.trimmingCharacters(in: .whitespaces)
+        guard words.count >= 3 else { return [] }
+        return (wiki?.meaningMatches(words, limit: limit + found.count) ?? []).filter { !found.contains($0) }.prefix(limit).map { $0 }
     }
 
     /// Pages by what is typed — words, `"phrases"`, `-left out`, `#tag`,
@@ -1806,4 +1862,6 @@ extension Notification.Name {
     /// Editors: what was typed and not yet told, told now — the app is
     /// about to write what is being edited.
     public static let weftFlushEdits = Notification.Name("WeftFlushEdits")
+    /// Settings changed whether pages are shown in the system's search.
+    public static let weftSpotlightChanged = Notification.Name("WeftSpotlightChanged")
 }

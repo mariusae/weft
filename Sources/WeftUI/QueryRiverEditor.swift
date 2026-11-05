@@ -60,6 +60,12 @@ struct QueryRiverEditor: View {
                     if from == .linking { Text("Pages linking to it, and pages related to it either way.") }
                 }
                 Section {
+                    TextField("Saying", text: $query.textContains, prompt: Text("Words, \"phrases\", -left out"))
+                    TextField("About", text: $query.about, prompt: Text("What they are about"))
+                } footer: {
+                    Text("Saying: pages with these words, best first. About: pages about this by meaning — with words like these, not only these.")
+                }
+                Section {
                     NavigationLink { TagsChooser(title: "High-Priority Tags", tags: $query.highPriority, ordered: query.priorityMode == .ranked) } label: {
                         LabeledContent("High-Priority Tags", value: listed(query.highPriority, none: "None"))
                     }

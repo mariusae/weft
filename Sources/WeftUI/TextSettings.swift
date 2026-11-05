@@ -35,6 +35,7 @@ public enum TextSettings {
 /// the GitHub account, which the app gives as `account`.
 public struct SettingsForm<Account: View>: View {
     @AppStorage(TextSettings.sizeKey) private var size = TextSettings.standardSize
+    @AppStorage(WikiStore.spotlightKey) private var spotlight = true
     #if os(iOS)
     @AppStorage("Typeface") private var face = TextSettings.face.rawValue
     #endif
@@ -62,6 +63,14 @@ public struct SettingsForm<Account: View>: View {
                     .foregroundStyle(.secondary)
             } header: {
                 Text("Text")
+            }
+            Section {
+                Toggle("Show pages in system search", isOn: $spotlight)
+                    .onChange(of: spotlight) { NotificationCenter.default.post(name: .weftSpotlightChanged, object: nil) }
+            } header: {
+                Text("Search")
+            } footer: {
+                Text("Pages are found in Spotlight by their titles, tags and words, and open here when chosen. Private notes never are.")
             }
             account
         }

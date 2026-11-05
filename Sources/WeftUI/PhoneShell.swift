@@ -518,7 +518,7 @@ struct StartPage: View {
     /// tiddler — then, under them, pages by what they say, each with the
     /// line saying it; last, every page searched, as a river.
     private var found: some View {
-        let said = store.searchHits(typed, limit: 30, lines: 1).filter { !$0.byName && !$0.lines.isEmpty }
+        let said = store.searchHits(typed, limit: 20, lines: 1).filter { !$0.byName && !$0.lines.isEmpty }
         let saying = Set(said.map(\.title))
         let named = results.filter { !saying.contains($0.title) }
         return List {
@@ -545,7 +545,11 @@ struct StartPage: View {
                     ForEach(said, id: \.title) { hit in
                         Button {
                             close()
-                            river.find(in: hit.title, words: hit.lines.first?.firstMarked)
+                            if hit.lines.first?.picture != nil {
+                                withAnimation(.snappy(duration: 0.28)) { river.open(hit.title) }
+                            } else {
+                                river.find(in: hit.title, words: hit.lines.first?.firstMarked)
+                            }
                         } label: {
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack(spacing: 10) {
@@ -556,14 +560,36 @@ struct StartPage: View {
                                     Text(store.shownTitle(hit.title)).foregroundStyle(Ink.text.color).lineLimit(1)
                                 }
                                 if let line = hit.lines.first {
-                                    Text(line.attributed)
-                                        .font(.footnote)
-                                        .foregroundStyle(Ink.secondary.color)
-                                        .lineLimit(2)
-                                        .padding(.leading, 32)
+                                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                        // In a picture it shows, not in its words.
+                                        if line.picture != nil { Image(systemName: "photo").imageScale(.small) }
+                                        Text(line.attributed).lineLimit(2)
+                                    }
+                                    .font(.footnote)
+                                    .foregroundStyle(Ink.secondary.color)
+                                    .padding(.leading, 32)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            let about = store.meaningHits(typed, excluding: saying.union(named.map(\.title)))
+            if !about.isEmpty {
+                Section("By Meaning") {
+                    ForEach(about, id: \.self) { title in
+                        Button { open(title) } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: store.symbol(of: title))
+                                    .font(.callout)
+                                    .foregroundStyle(Ink.secondary.color)
+                                    .frame(width: 22)
+                                Text(store.shownTitle(title)).foregroundStyle(Ink.text.color).lineLimit(1)
+                                Spacer()
+                            }
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)

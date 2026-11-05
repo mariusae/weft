@@ -570,12 +570,13 @@ private struct RiverNaming: ViewModifier {
 }
 
 /// `weft://river/Name`, opened from anywhere: that saved river brought back
-/// from this window's rivers — once the graph is read, for an address that
-/// opened Weft.
+/// from this window's rivers — and a page chosen in the system's search,
+/// opened in the river shown — once the graph is read, for what opened Weft.
 struct RiverAddresses: ViewModifier {
     @Environment(WikiStore.self) private var store
     let rivers: RiverSet
     @State private var waiting: String?
+    @State private var waitingPage: String?
 
     func body(content: Content) -> some View {
         content
@@ -584,16 +585,27 @@ struct RiverAddresses: ViewModifier {
                 waiting = name
                 follow()
             }
+            .onContinueUserActivity(SpotlightIndex.activityType) { activity in
+                guard let root = store.root, let path = SpotlightIndex.path(of: activity, in: root) else { return }
+                waitingPage = path
+                follow()
+            }
             .onChange(of: store.loadedRoot) { follow() }
     }
 
     private func follow() {
-        guard waiting != nil, store.loadedRoot != nil else { return }
+        guard waiting != nil || waitingPage != nil, store.loadedRoot != nil else { return }
         // After the window's rivers are put back, which the graph read also asks.
         DispatchQueue.main.async {
-            guard let name = waiting else { return }
-            waiting = nil
-            rivers.current.follow(river: name)
+            if let name = waiting {
+                waiting = nil
+                rivers.current.follow(river: name)
+            }
+            if let path = waitingPage {
+                waitingPage = nil
+                guard let title = store.title(atPath: path) else { return }
+                withAnimation(.snappy(duration: 0.28)) { rivers.current.open(title) }
+            }
         }
     }
 }
