@@ -1,10 +1,12 @@
-#if os(iOS)
 import SwiftUI
+#if os(iOS)
 import UIKit
+#endif
 
 /// A card's actions under it, revealed by swiping it aside, as Overcast's
 /// and Tweetbot's rows have them: a short swipe opens it to show two, to
-/// tap; a long one does the outer — the first given — at once.
+/// tap; a long one does the outer — the first given — at once. On the
+/// phone a finger swipes it; on the Mac, two on the trackpad.
 struct SwipeAction {
     let name: String
     let symbol: String
@@ -52,12 +54,21 @@ private struct CardSwipe: ViewModifier {
                 }
             }
             // Over all of it: a swipe back on an open card closes it.
+            #if os(iOS)
             .gesture(HorizontalPan(enabled: enabled) { dx in
                 drag(dx)
             } ended: { dx, velocity in
                 end(dx, velocity: velocity)
             })
             .sensoryFeedback(.impact(weight: .medium), trigger: committing) { _, now in now }
+            #else
+            .background(TrackpadSwipe(enabled: enabled) { dx in
+                drag(dx)
+            } ended: { dx, velocity in
+                end(dx, velocity: velocity)
+            })
+            .sensoryFeedback(.levelChange, trigger: committing) { _, now in now }
+            #endif
             .onChange(of: enabled) { _, now in if !now { settle(0) } }
     }
 
@@ -147,6 +158,7 @@ private struct CardSwipe: ViewModifier {
     }
 }
 
+#if os(iOS)
 /// A pan that begins only when it goes across more than down — so the
 /// river still scrolls under a finger moving down a card.
 private struct HorizontalPan: UIGestureRecognizerRepresentable {

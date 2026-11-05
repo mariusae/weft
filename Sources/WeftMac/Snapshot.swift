@@ -279,6 +279,31 @@ enum Snapshot {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: move)
                 // Once more, after a river brought back has settled.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: move)
+                // `WEFT_SWIPE=x,y,dx`: two fingers swiped across the trackpad
+                // there, `dx` points the way they went — a trackpad's
+                // scrolling, begun, moved and ended, as the app is sent it.
+                if let swipe = environment["WEFT_SWIPE"]?.split(separator: ",").compactMap({ Double($0) }), swipe.count == 3,
+                   let window = NSApp.windows.first(where: { $0.isVisible }) {
+                    let point = NSPoint(x: swipe[0], y: window.frame.height - swipe[1])
+                    let screen = window.convertPoint(toScreen: point)
+                    let flipped = CGPoint(x: screen.x, y: (NSScreen.screens.first?.frame.height ?? 0) - screen.y)
+                    let steps = 8
+                    for step in 0...(steps + 1) {
+                        let phase: Int64 = step == 0 ? 1 : step == steps + 1 ? 4 : 2
+                        // As a trackpad scrolls with natural scrolling off: the content
+                        // against the fingers, which a made-up event can't say otherwise.
+                        let delta = step == 0 || step == steps + 1 ? 0 : -swipe[2] / Double(steps)
+                        guard let scroll = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0) else { continue }
+                        scroll.location = flipped
+                        scroll.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+                        scroll.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+                        scroll.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: delta)
+                        scroll.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: delta)
+                        if let event = NSEvent(cgEvent: scroll) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6 + Double(step) * 0.016) { NSApp.sendEvent(event) }
+                        }
+                    }
+                }
                 // `WEFT_CLICK=x,y`: a click there, in points from the window's
                 // top left, as the pointer would make it.
                 if let click = environment["WEFT_CLICK"]?.split(separator: ",").compactMap({ Double($0) }), click.count == 2,

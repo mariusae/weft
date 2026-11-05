@@ -109,10 +109,9 @@ struct Card: View {
         .overlay(RoundedRectangle(cornerRadius: Measures.cardRadius).strokeBorder(Ink.rule.color.opacity(river.isSelected(title) ? 0 : 1)))
         .overlay(RoundedRectangle(cornerRadius: Measures.cardRadius).strokeBorder(Ink.accent.color.opacity(river.isSelected(title) ? 0.45 : 0)))
         .shadow(color: .black.opacity(peeking ? 0.03 : 0.07), radius: peeking ? 4 : 10, y: peeking ? 1 : 3)
-        #if os(iOS)
-        // Swiped aside, its actions under it — not while it is written in.
+        // Swiped aside — a finger on the phone, two on the Mac's trackpad —
+        // its actions under it; not while it is written in.
         .cardSwipe(leading: leadingSwipe, trailing: trailingSwipe, enabled: !river.isWriting(title) && !renaming)
-        #endif
         .onHover { hovering = $0 }
         // A click makes it the card ⌘↩ goes to.
         .simultaneousGesture(TapGesture().onEnded { river.select(title) })
@@ -282,6 +281,8 @@ struct Card: View {
         Menu("More", systemImage: "ellipsis.circle") { menuItems }
     }
 
+    #endif
+
     /// Swiped from the left: what it is, moved on — a to-do checked off, or
     /// open again; out of the inbox; else made a to-do — and, inside that,
     /// the inbox, or a to-do, the other way.
@@ -319,7 +320,6 @@ struct Card: View {
         }
         return actions
     }
-    #endif
 
     /// How the card opens for its drawer, and the drawer grows into it.
     static let drawerSpring = Animation.spring(response: 0.34, dampingFraction: 0.82)

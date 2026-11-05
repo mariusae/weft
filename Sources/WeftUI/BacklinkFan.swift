@@ -6,7 +6,9 @@ import WeftCore
 /// recent in front and the edges of two more behind it. The pointer on
 /// them deals them out in a row; resting on one shows its summary above
 /// it, with the words around its link; a click opens it beside the card.
-/// More than fit, the last is a stack of the rest, a menu of them.
+/// More than fit, the last is a stack of the rest, a menu of them. On the
+/// phone, with no pointer, a tap deals them out, and another opens one.
+/// Dealt out, Open All opens every one of them beside the card.
 struct BacklinkFan: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
@@ -38,7 +40,13 @@ struct BacklinkFan: View {
                         .opacity(fanned || index < 3 ? 1 : 0)
                         .zIndex(Double(links.count - index))
                         .onHover { inside in rest(inside ? index : nil) }
-                        .onTapGesture { river.open(link.title, from: card) }
+                        .onTapGesture {
+                            #if os(iOS)
+                            // Bunched, a tap deals them out; dealt out, it opens the one tapped.
+                            guard fanned else { return withAnimation(.snappy(duration: 0.25)) { fanned = true } }
+                            #endif
+                            river.open(link.title, from: card)
+                        }
                         .help(link.shown)
                 }
                 if overflow > 0 {
@@ -74,18 +82,46 @@ struct BacklinkFan: View {
                         .allowsHitTesting(false)
                 }
             }
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(Ink.secondary.color)
-                .opacity(fanned ? 0 : 1)
+            ZStack(alignment: .leading) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(Ink.secondary.color)
+                    .opacity(fanned ? 0 : 1)
+                // Dealt out, every one of them a tap away.
+                if fanned, links.count > 1 {
+                    Button(action: openAll) {
+                        Label("Open All", systemImage: "rectangle.stack")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .foregroundStyle(Ink.accent.color)
+                            .background(Ink.accent.color.opacity(0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open every page linking here, after this card")
+                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
+                }
+            }
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
+        #if os(iOS)
+        // On the phone: a tap by them, dealt out, gathers them again; bunched, deals them out.
+        .onTapGesture { withAnimation(.snappy(duration: 0.25)) { fanned.toggle() } }
+        #endif
         .onHover { inside in
             withAnimation(.snappy(duration: inside ? 0.25 : 0.2)) { fanned = inside }
             if !inside { rest(nil) }
         }
         .zIndex(resting == nil ? 0 : 1)
+    }
+
+    /// Every page linking here, opened after the card, in their order.
+    private func openAll() {
+        withAnimation(.snappy(duration: 0.28)) {
+            for link in links.reversed() { river.open(link.title, from: card) }
+            fanned = false
+        }
     }
 
     private var label: String {

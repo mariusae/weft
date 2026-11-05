@@ -344,7 +344,8 @@ enum TabSwipe {
         if event.phase.contains(.began) {
             gesture.across = 0
             gesture.down = 0
-            gesture.done = false
+            // Begun over a card: the card's to swipe, not the rivers' to change.
+            gesture.done = TrackpadSwipes.claims(event)
         }
         guard event.phase.contains(.changed) || event.phase.contains(.began), !gesture.done else { return }
         // Which way the fingers went, whichever way scrolling goes.
