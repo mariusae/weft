@@ -558,6 +558,7 @@ private struct RiversGrid: View {
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4), spacing: 18) {
                     ForEach(saved, id: \.self) { name in tile(name) }
+                    newRiver
                     newQuery
                 }
             }
@@ -599,22 +600,37 @@ private struct RiversGrid: View {
         .accessibilityLabel(name + (open ? ", open" : ""))
     }
 
+    /// An empty river, after this one — or, this one empty already, as a
+    /// new tab's start page is, this one as it is.
+    private var newRiver: some View {
+        newTile("New River", "plus.square.on.square") {
+            close()
+            if river.cards.isEmpty, !river.isQuery { return }
+            withAnimation(.snappy(duration: 0.28)) { rivers?.add(River.State(graph: store.root?.path ?? "", cards: [])) }
+        }
+    }
+
     private var newQuery: some View {
-        Button {
+        newTile("Query River", "line.3.horizontal.decrease") {
             close()
             river.queryEditor = .new
-        } label: {
+        }
+    }
+
+    /// A tile for something new: its symbol faint, on grey.
+    private func newTile(_ name: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             VStack(spacing: 6) {
-                Image(systemName: "plus")
+                Image(systemName: symbol)
                     .font(.system(size: 24, weight: .medium))
                     .foregroundStyle(Ink.secondary.color)
                     .frame(width: 64, height: 64)
                     .background(Ink.text.color.opacity(0.06), in: .rect(cornerRadius: 16))
-                Text("Query River").font(.caption).foregroundStyle(Ink.secondary.color)
+                Text(name).font(.caption).foregroundStyle(Ink.secondary.color)
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("New Query River")
+        .accessibilityLabel("New " + name)
     }
 }
 
@@ -654,8 +670,10 @@ struct RiverOverview: View {
         .background(Color.river.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
             HStack {
+                // As Safari's: a new tab, its start page in it — a saved
+                // river, a page, or a query to fill it with.
                 Button {
-                    rivers.add()
+                    rivers.add(browsing: true)
                     rivers.overviewShown = false
                 } label: {
                     Image(systemName: "plus").font(.system(size: 19, weight: .medium)).frame(width: 48, height: 48)

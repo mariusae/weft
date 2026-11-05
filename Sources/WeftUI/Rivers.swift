@@ -105,14 +105,15 @@ public final class RiverSet {
     }
 
     /// Another river, after this one: empty, with Quick Open showing — or
-    /// a saved one recalled.
-    public func add(_ state: River.State? = nil) {
+    /// a saved one recalled. `browsing`, as a new tab in Safari: the start
+    /// page in it to look through, not the keys up to find a page.
+    public func add(_ state: River.State? = nil, browsing: Bool = false) {
         let river = make(state)
         let index = rivers.firstIndex { $0 === current }.map { $0 + 1 } ?? rivers.count
         rivers.insert(river, at: index)
         current = river
         if state == nil {
-            startTyping = true
+            startTyping = !browsing
             river.quickOpenShown = true
         }
         keep()
