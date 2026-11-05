@@ -151,10 +151,6 @@ public struct ContentView: View {
                 .environment(store)
                 .environment(river)
         }
-        .fullScreenCover(isPresented: Binding(get: { riverSet?.overviewShown == true && sizeClass == .compact },
-                                              set: { riverSet?.overviewShown = $0 })) {
-            if let riverSet { RiverOverview(rivers: riverSet).environment(store) }
-        }
         .sheet(isPresented: Binding(get: { river.quickOpenShown && store.root != nil && sizeClass != .compact }, set: { river.quickOpenShown = $0 })) {
             QuickOpen()
                 .environment(store)
@@ -676,12 +672,14 @@ private struct KeptRivers: View {
         #if os(macOS)
         KeptRiverViews(store: store, rivers: riverSet?.rivers ?? [river], shown: river, riverSet: riverSet)
         #else
-        RiverColumn(showSidebar: showSidebar)
-            // Its scroll and the card in view, each river's own.
-            .id(river.id)
-            // Following the bar under it, dragged aside toward the river beside it.
-            .offset(x: riverSet?.swipe ?? 0)
-            .opacity(1 - min(0.35, abs(Double(riverSet?.swipe ?? 0)) / 900))
+        if showSidebar != nil, let riverSet {
+            // On the phone: the river shrinking into the overview of them all, as Safari's page does.
+            PhoneRivers(rivers: riverSet, showSidebar: showSidebar)
+        } else {
+            RiverColumn(showSidebar: showSidebar)
+                // Its scroll and the card in view, each river's own.
+                .id(river.id)
+        }
         #endif
     }
 }
@@ -728,6 +726,126 @@ private struct KeptRiverViews: NSViewRepresentable {
         view.frame = host.bounds
         host.addSubview(view)
         host.current = view
+    }
+}
+#endif
+
+#if os(iOS)
+/// The phone's river, and under it — shown as it shrinks away — the
+/// overview of them all: as Safari's page does, the river drawn smaller,
+/// its corners rounding, into its own tile, the others coming into focus
+/// round it; a tile chosen, that river growing out of it to fill the screen.
+private struct PhoneRivers: View {
+    @Environment(River.self) private var river
+    let rivers: RiverSet
+    let showSidebar: (() -> Void)?
+    /// How far into its tile the river is: 0 filling the screen, 1 its tile's size.
+    @State private var progress: CGFloat = 0
+    /// The overview there, under the river: while it is shown, and as it goes.
+    @State private var mounted = false
+    /// Shrunk into its tile: the tile itself showing, the river not.
+    @State private var settled = false
+    /// Where the river is, filling the screen.
+    @State private var frame: CGRect = .zero
+
+    private static let spring = Animation.spring(response: 0.42, dampingFraction: 0.86)
+
+    var body: some View {
+        ZStack {
+            if mounted {
+                RiverOverview(rivers: rivers)
+                    .opacity(Double(progress))
+                    .blur(radius: (1 - progress) * 10)
+                    .allowsHitTesting(settled)
+            }
+            RiverColumn(showSidebar: showSidebar)
+                // Its scroll and the card in view, each river's own.
+                .id(river.id)
+                .modifier(IntoTile(progress: progress, from: frame, to: tile))
+                // Following the bar under it, dragged aside toward the river beside it.
+                .offset(x: rivers.swipe)
+                .opacity(settled ? 0 : 1 - min(0.35, abs(Double(rivers.swipe)) / 900))
+                .allowsHitTesting(progress == 0)
+        }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+        .onChange(of: rivers.overviewShown) { _, shown in shown ? open() : close() }
+    }
+
+    /// The tile of the river shown: where it was laid out — or, a river just
+    /// made, not yet there, a small card in the middle.
+    private var tile: CGRect {
+        if let tile = rivers.tileFrames[river.id] { return tile }
+        return frame.insetBy(dx: frame.width * 0.3, dy: frame.height * 0.3)
+    }
+
+    private func open() {
+        settled = false
+        mounted = true
+        Task { @MainActor in
+            // Once the overview is laid out, its tiles where they will be.
+            try? await Task.sleep(for: .milliseconds(30))
+            withAnimation(Self.spring) { progress = 1 } completion: {
+                guard rivers.overviewShown else { return }
+                withAnimation(.easeOut(duration: 0.12)) { settled = true }
+            }
+        }
+    }
+
+    private func close() {
+        // From the tile chosen: the river shown now grows out of it.
+        settled = false
+        withAnimation(Self.spring) { progress = 0 } completion: {
+            guard !rivers.overviewShown else { return }
+            mounted = false
+        }
+    }
+}
+
+/// A view drawn into a smaller card: scaled to its width, cut to its
+/// height, its corners rounded, and moved to where it is — `progress` of
+/// the way there.
+private struct IntoTile: ViewModifier, Animatable {
+    var progress: CGFloat
+    let from: CGRect
+    let to: CGRect
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let p = max(0, progress)
+        let fit = from.width > 0 ? to.width / from.width : 1
+        let scale = 1 + (fit - 1) * p
+        // Cut to the tile's height, as seen once scaled.
+        let height = from.height + (to.height / max(fit, 0.01) - from.height) * p
+        let radius = 18 / max(fit, 0.01) * p
+        content
+            .clipShape(TopCard(height: height, radius: radius, cuts: p > 0.001))
+            // Lifted off what is under it, as a card is, while it moves.
+            .overlay {
+                TopCard(height: height, radius: radius, cuts: p > 0.001)
+                    .stroke(Ink.rule.color.opacity(Double(p)), lineWidth: 1 / max(scale, 0.01))
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: .black.opacity(0.18 * Double(min(1, p * 3))), radius: 24 * p, y: 8 * p)
+            .scaleEffect(scale, anchor: .topLeading)
+            .offset(x: (to.minX - from.minX) * p, y: (to.minY - from.minY) * p)
+    }
+}
+
+/// The top of a view, so high, its corners rounded — or, not cutting,
+/// all of it and more.
+private struct TopCard: Shape {
+    var height: CGFloat
+    var radius: CGFloat
+    var cuts: Bool
+
+    func path(in rect: CGRect) -> Path {
+        guard cuts else { return Path(rect.insetBy(dx: -4000, dy: -4000)) }
+        return Path(roundedRect: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: min(height, rect.height)),
+                    cornerRadius: radius, style: .continuous)
     }
 }
 #endif

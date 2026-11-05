@@ -618,12 +618,12 @@ struct RiverOverview: View {
             }
             .onAppear { proxy.scrollTo(rivers.current.id, anchor: .center) }
         }
-        .background(Color.river)
+        .background(Color.river.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Button {
-                    rivers.overviewShown = false
                     rivers.add()
+                    rivers.overviewShown = false
                 } label: {
                     Image(systemName: "plus").font(.system(size: 19, weight: .medium)).frame(width: 48, height: 48)
                 }
@@ -691,6 +691,8 @@ struct RiverOverview: View {
             .frame(maxWidth: .infinity, minHeight: 190, maxHeight: 190, alignment: .topLeading)
             .background(Color.card)
             .clipShape(.rect(cornerRadius: 18))
+            // Where it is, for its river to shrink into and grow out of.
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { rivers.tileFrames[river.id] = $0 }
             .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(current ? Ink.accent.color : Ink.rule.color, lineWidth: current ? 2.5 : 1))
             .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
             .contentShape(.rect(cornerRadius: 18))

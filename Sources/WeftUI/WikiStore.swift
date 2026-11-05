@@ -593,6 +593,14 @@ public final class WikiStore {
         return (name, words.joined(separator: " · "))
     }
 
+    /// The first pictures a page shows — their sources, as written — for
+    /// its peek: a page of pictures alone says something, peeking.
+    public func peekPictures(of title: String, limit: Int = 2) -> [String] {
+        let text = (drafts[title] ?? tiddler(title))?.text ?? ""
+        guard text.contains("![") else { return [] }
+        return text.matches(of: #/!\[[^\]]*\]\(<?([^)\s>]+)>?/#).prefix(limit).map { String($0.1) }
+    }
+
     // MARK: Folds
 
     /// Which rows of a page's outline were folded last on this device — as
@@ -672,7 +680,10 @@ public final class WikiStore {
     /// its draft has it; nil for none. A link's target, by any of its names.
     public func icon(of title: String) -> String? {
         let page = drafts[title] ?? tiddler(title) ?? wiki?.title(for: title).flatMap { drafts[$0] ?? tiddler($0) }
-        return page.flatMap(PageIcon.symbol(of:))
+        if let own = page.flatMap(PageIcon.symbol(of:)) { return own }
+        // None of its own: a captured link's, as its note in the index has it.
+        let name = wiki?.title(for: title) ?? title
+        return wiki?.entries[name]?.note.icon
     }
 
     /// What a link leads to's own icon: a saved river's, or a page's.

@@ -35,8 +35,8 @@ struct QueryRiverEditor: View {
                     }
                 }
                 Section {
-                    Picker("Include", selection: includeChoice) {
-                        ForEach(IncludeChoice.allCases) { Text($0.label).tag($0) }
+                    NavigationLink { KindsChooser(query: $query) } label: {
+                        LabeledContent("Kinds of Pages", value: KindsChooser.said(query))
                     }
                     Picker("From", selection: $from) {
                         ForEach(From.allCases) { Text($0.label).tag($0) }
@@ -192,36 +192,77 @@ struct QueryRiverEditor: View {
         }
     }
 
-    enum IncludeChoice: String, CaseIterable, Identifiable {
-        case all, notes, wiki, todo, days
+}
+
+/// Which kinds of page a query finds: each — in the inbox, a thing to do,
+/// done, pinned, a wiki page, a day — any, only those, or none of those.
+struct KindsChooser: View {
+    @Binding var query: Query
+
+    enum Want: String, CaseIterable, Identifiable {
+        case any, only, not
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .all: "All Matching Pages"
-            case .notes: "Notes and Tiddlers"
-            case .wiki: "Wiki Pages"
-            case .todo: "Still To Do"
-            case .days: "Days"
-            }
-        }
-        var flag: Query.Flag? {
-            switch self {
-            case .all: nil
-            case .notes: .note
-            case .wiki: .wiki
-            case .todo: .todo
-            case .days: .day
+            case .any: "Any"
+            case .only: "Only"
+            case .not: "Not"
             }
         }
     }
 
-    private var includeChoice: Binding<IncludeChoice> {
-        let owned: Set<Query.Flag> = [.note, .wiki, .todo, .day]
-        return Binding {
-            IncludeChoice.allCases.first { $0.flag.map(query.flags.contains) ?? false } ?? .all
-        } set: { choice in
-            query.flags.removeAll { owned.contains($0) }
-            if let flag = choice.flag { query.flags.append(flag) }
+    static let kinds: [Query.Flag] = [.inbox, .todo, .done, .pinned, .wiki, .note, .topic, .day, .week, .template]
+
+    static func name(_ flag: Query.Flag) -> String {
+        switch flag {
+        case .inbox: "In the Inbox"
+        case .todo: "Still To Do"
+        case .done: "Done"
+        case .pinned: "Pinned"
+        case .wiki: "Wiki Pages"
+        case .note: "Notes and Tiddlers"
+        case .topic: "Topics"
+        case .day: "Days"
+        case .week: "Weeks"
+        case .template: "Templates"
+        }
+    }
+
+    /// What the query asks of kinds, in a few words: "Only Still To Do, not In the Inbox".
+    static func said(_ query: Query) -> String {
+        var parts: [String] = []
+        if !query.flags.isEmpty { parts.append("Only " + query.flags.map(name).joined(separator: ", ")) }
+        if !query.excludedFlags.isEmpty { parts.append("Not " + query.excludedFlags.map(name).joined(separator: ", ")) }
+        return parts.isEmpty ? "All" : parts.joined(separator: "; ")
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(Self.kinds, id: \.self) { kind in
+                    Picker(Self.name(kind), selection: want(kind)) {
+                        ForEach(Want.allCases) { Text($0.label).tag($0) }
+                    }
+                }
+            } footer: {
+                Text("Only: pages of every kind marked so. Not: no page of any kind marked so.")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Kinds of Pages")
+    }
+
+    private func want(_ kind: Query.Flag) -> Binding<Want> {
+        Binding {
+            query.flags.contains(kind) ? .only : query.excludedFlags.contains(kind) ? .not : .any
+        } set: { want in
+            query.flags.removeAll { $0 == kind }
+            query.excludedFlags.removeAll { $0 == kind }
+            switch want {
+            case .any: break
+            case .only: query.flags.append(kind)
+            case .not: query.excludedFlags.append(kind)
+            }
         }
     }
 }

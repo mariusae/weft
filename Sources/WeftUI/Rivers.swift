@@ -26,6 +26,9 @@ public final class RiverSet {
 
     /// On the phone: the rivers all shown, as Safari shows its tabs.
     public var overviewShown = false
+    /// On the phone: where each river's tile is in the overview, on screen —
+    /// for the river shown to shrink into its own, and grow out of it again.
+    @ObservationIgnored public var tileFrames: [UUID: CGRect] = [:]
     /// On the phone: whether the start page opens with the keys up — asked
     /// to find a page — or to look through.
     public var startTyping = true

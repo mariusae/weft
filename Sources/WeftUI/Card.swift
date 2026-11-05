@@ -39,6 +39,15 @@ struct Card: View {
                 relinking
                 if store.needsReview(title) {
                     ConflictView(title: title)
+                } else if let task = ringBeside {
+                    // Untitled, a thing to do: its ring beside its first line, as a
+                    // checklist's row has it — not a row of its own over it.
+                    HStack(alignment: .top, spacing: 10) {
+                        taskRing(task)
+                            .padding(.top, TextSettings.size * 0.18)
+                        CardEditor(title: title, controller: controller, addingTag: $addingTag,
+                                   addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
+                    }
                 } else {
                     CardEditor(title: title, controller: controller, addingTag: $addingTag,
                                addingField: $addingField, addingRelated: $addingRelated, definingFields: $definingFields)
@@ -165,6 +174,22 @@ struct Card: View {
                 }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Opens the card")
+            // Its first pictures, small, at the end of its lines: a page of
+            // pictures alone shows what it is, peeking.
+            let pictures = store.peekPictures(of: title)
+            if !pictures.isEmpty {
+                let side = (TextSettings.size * 1.3 * CGFloat(Self.peekLines)).rounded()
+                HStack(spacing: 6) {
+                    ForEach(pictures, id: \.self) { source in
+                        PictureView(reference: ImageReference(source: source, width: Double(side * 2)), filling: side)
+                            .frame(width: side, height: side)
+                    }
+                }
+                .alignmentGuide(.firstTextBaseline) { $0[.top] + TextSettings.size }
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
+                .accessibilityHidden(true)
+            }
             #if os(macOS)
             macControls
             #else
@@ -259,9 +284,30 @@ struct Card: View {
 
     /// Whether it has a row for its title: not, untitled — its words are
     /// all there is of it, till it is given a title — but while one is
-    /// typed, or with a ring to check off or a home river to show.
+    /// typed, or with a home river to show.
     private var showsHeader: Bool {
-        !isUntitled || renaming || store.taskState(title) != nil || homeElsewhere != nil
+        !isUntitled || renaming || homeElsewhere != nil
+    }
+
+    /// Untitled and a thing to do, with no title row: its ring, to go beside its words.
+    private var ringBeside: Tiddler.TaskState? {
+        showsHeader ? nil : store.taskState(title)
+    }
+
+    /// A thing to do's ring, to check it off — or open it again.
+    private func taskRing(_ task: Tiddler.TaskState) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
+        } label: {
+            Image(systemName: task == .done ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 21, weight: .regular))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(task == .done ? Color.white : Ink.secondary.color, Ink.accent.color)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+        .help(task == .done ? "Done — click to open again" : "To do — click when done")
+        .accessibilityLabel(task == .done ? "Done" : "To do")
     }
 
     /// Its home river, when that is not this one.
@@ -338,20 +384,7 @@ struct Card: View {
                 .accessibilityLabel(PageIcon.name(of: symbol))
             }
             // A page that is a thing to do: its ring, to check it off.
-            if let task {
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
-                } label: {
-                    Image(systemName: task == .done ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 21, weight: .regular))
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(task == .done ? Color.white : Ink.secondary.color, Ink.accent.color)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                .buttonStyle(.plain)
-                .help(task == .done ? "Done — click to open again" : "To do — click when done")
-                .accessibilityLabel(task == .done ? "Done" : "To do")
-            }
+            if let task { taskRing(task) }
             if renaming {
                 // Untitled: empty, what it begins with offered — taken with
                 // Return, typed over, or left, and it stays untitled.
@@ -504,6 +537,10 @@ struct Card: View {
                     CardButton("The Day Before", "chevron.left") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: -1) } }
                     CardButton("The Day After", "chevron.right") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: 1) } }
                 }
+                // Its pages to read: the reader beside the river, a click away.
+                if store.canRead(title) {
+                    CardButton("Read", "doc.richtext") { river.reading = title }
+                }
                 if river.isQuery {
                     if river.isHeld(title) {
                         CardButton("Release to Query", "arrow.uturn.down") { withAnimation { river.releaseToQuery(title) } }
@@ -557,6 +594,10 @@ struct Card: View {
             }
             DrawerButton("Write as \(other.rawValue)", other == .outline ? "list.bullet.circle" : "line.3.horizontal.circle") {
                 store.setEditorMode(other, for: title)
+            }
+            // Its pages to read: the reader, back again, a tap away.
+            if store.canRead(title) {
+                DrawerButton("Read", "doc.richtext") { river.reading = title }
             }
             if store.kind(title) == .day {
                 DrawerButton("The Day Before", "chevron.backward.circle") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: -1) } }
