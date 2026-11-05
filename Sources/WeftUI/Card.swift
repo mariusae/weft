@@ -201,11 +201,9 @@ struct Card: View {
                 .onTapGesture { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
                 .accessibilityHidden(true)
             }
-            // On the phone, nothing at its end: tapped it opens with its
-            // controls, swiped it shows its actions, held its menu.
-            #if os(macOS)
-            macControls
-            #endif
+            // Nothing at its end: on the phone, tapped it opens with its
+            // controls, swiped it shows its actions, held its menu; on the
+            // Mac, under the pointer its controls float over its end.
         }
         .font(.system(size: TextSettings.size))
         .draggingCard(title, shown: peek.title)
@@ -215,6 +213,22 @@ struct Card: View {
         #endif
         #if os(macOS)
         .overlay(alignment: .topLeading) { foldChevron.offset(x: -23, y: -3) }
+        // Under the pointer, its controls over the end of its words, on a
+        // fade of its own paper — taking no room from them otherwise.
+        .overlay(alignment: .topTrailing) {
+            if hovering {
+                macControls
+                    .padding(.leading, 28)
+                    .background {
+                        LinearGradient(stops: [.init(color: Ink.paper.color.opacity(0), location: 0),
+                                               .init(color: Ink.paper.color, location: 0.35)],
+                                       startPoint: .leading, endPoint: .trailing)
+                    }
+                    .offset(y: -3)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: hovering)
         #endif
     }
 
