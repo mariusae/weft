@@ -45,6 +45,11 @@ struct PhoneBar: View {
                 }
                 .glassEffect(.regular.interactive(), in: .capsule)
                 .glassEffectID("name", in: glass)
+                // Pulled down: every card folded to its peek — the river at a glance.
+                .highPriorityGesture(DragGesture(minimumDistance: 10).onEnded { drag in
+                    guard drag.translation.height > 18, drag.translation.height > abs(drag.translation.width) else { return }
+                    withAnimation(.snappy(duration: 0.3)) { river.foldAll() }
+                })
                 .frame(maxWidth: width * 0.6)
                 .padding(.top, 14)
                 .accessibilityLabel(river.title)
@@ -191,45 +196,50 @@ struct PhoneBar: View {
     /// The name dragged aside: the river follows it, and let go far enough,
     /// slides away for the one beside it — at an end, it springs back.
     private var swipe: some Gesture {
-        DragGesture(minimumDistance: 12)
+        // Measured on the screen, not on the bar — which moves with the river under the finger.
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
             .onChanged { drag in
-                guard let rivers, abs(drag.translation.width) > abs(drag.translation.height) else { return }
-                // Not up: aside.
+                guard let rivers, abs(drag.translation.width) > abs(drag.translation.height) || rivers.swipe != 0 else { return }
+                // Toward a river there is: as far as the finger; past the last, held back.
                 let toward = drag.translation.width < 0 ? 1 : -1
                 let beside = rivers.rivers.indices.contains(rivers.currentIndex + toward)
-                rivers.swipe = beside ? drag.translation.width : drag.translation.width * 0.25
+                var still = Transaction()
+                still.disablesAnimations = true
+                withTransaction(still) {
+                    rivers.swipe = beside ? drag.translation.width : drag.translation.width / 3
+                }
             }
             .onEnded { drag in
                 guard let rivers else { return }
                 // Up, and more up than aside: the rivers all shown, as Safari's tabs.
-                if drag.translation.height < -24, abs(drag.translation.height) > abs(drag.translation.width) {
-                    withAnimation(.spring(duration: 0.3, bounce: 0.2)) { rivers.swipe = 0 }
+                if drag.translation.height < -24, abs(drag.translation.height) > abs(drag.translation.width), rivers.swipe == 0 {
                     rivers.overviewShown = true
                     return
                 }
                 let moved = drag.predictedEndTranslation.width
-                let toward = moved < 0 ? 1 : -1
-                if abs(drag.translation.width) > abs(drag.translation.height), abs(moved) > width * 0.3,
-                   rivers.rivers.indices.contains(rivers.currentIndex + toward) {
+                let toward = drag.translation.width < 0 ? 1 : -1
+                let far = abs(drag.translation.width) > width * 0.4 || (abs(moved) > width * 0.5 && (moved < 0) == (toward > 0))
+                if far, rivers.rivers.indices.contains(rivers.currentIndex + toward) {
                     Self.slide(rivers, by: toward, width: width)
                 } else {
-                    withAnimation(.spring(duration: 0.3, bounce: 0.2)) { rivers.swipe = 0 }
+                    withAnimation(.interpolatingSpring(stiffness: 260, damping: 28)) { rivers.swipe = 0 }
                 }
             }
     }
 
-    /// The river shown slid away, and the one beside it in from the other side.
+    /// The river beside this one slid the rest of the way in — the one
+    /// shown going off the other side — and then the one shown.
     static func slide(_ rivers: RiverSet, by: Int, width: CGFloat) {
-        withAnimation(.easeIn(duration: 0.12)) {
-            rivers.swipe = by > 0 ? -width : width
+        let page = width + 28 + 14
+        withAnimation(.interpolatingSpring(stiffness: 260, damping: 30)) {
+            rivers.swipe = by > 0 ? -page : page
         } completion: {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) {
                 rivers.step(by)
-                rivers.swipe = by > 0 ? width : -width
+                rivers.swipe = 0
             }
-            withAnimation(.snappy(duration: 0.28)) { rivers.swipe = 0 }
         }
     }
 
@@ -611,6 +621,17 @@ struct RiverOverview: View {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                     ForEach(rivers.rivers) { river in
                         tile(river).id(river.id)
+                            // Held and dragged: put elsewhere among them.
+                            .draggable(river.id.uuidString) {
+                                tile(river).frame(width: 170).opacity(0.9)
+                            }
+                            .dropDestination(for: String.self) { ids, _ in
+                                guard let id = ids.first.flatMap(UUID.init(uuidString:)),
+                                      let moved = rivers.rivers.first(where: { $0.id == id }), moved !== river,
+                                      let to = rivers.rivers.firstIndex(where: { $0 === river }) else { return false }
+                                withAnimation(.snappy(duration: 0.25)) { rivers.move(moved, to: to) }
+                                return true
+                            }
                     }
                 }
                 .padding(16)

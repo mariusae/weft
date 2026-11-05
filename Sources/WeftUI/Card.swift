@@ -108,6 +108,10 @@ struct Card: View {
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.rule.color.opacity(river.isSelected(title) ? 0 : 1)))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Ink.accent.color.opacity(river.isSelected(title) ? 0.45 : 0)))
         .shadow(color: .black.opacity(peeking ? 0.03 : 0.07), radius: peeking ? 4 : 10, y: peeking ? 1 : 3)
+        #if os(iOS)
+        // Swiped aside, its actions under it — not while it is written in.
+        .cardSwipe(leading: leadingSwipe, trailing: trailingSwipe, enabled: !river.isWriting(title) && !renaming)
+        #endif
         .onHover { hovering = $0 }
         // A click makes it the card ⌘↩ goes to.
         .simultaneousGesture(TapGesture().onEnded { river.select(title) })
@@ -159,7 +163,14 @@ struct Card: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
+                #if os(iOS)
+                // Tapped twice, opened and written in at once; once, opened to read.
+                .gesture(TapGesture(count: 2).onEnded { writeAtOnce() }.exclusively(before: TapGesture().onEnded {
+                    withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) }
+                }))
+                #else
                 .onTapGesture { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
+                #endif
                 // The ring, first in the line, checked off where it is drawn.
                 .overlay(alignment: .topLeading) {
                     if let task {
@@ -198,6 +209,10 @@ struct Card: View {
         }
         .font(.system(size: TextSettings.size))
         .draggingCard(title, shown: peek.title)
+        #if os(iOS)
+        // Held: what can be done with it, as a menu over it.
+        .contextMenu { longPressMenu }
+        #endif
         #if os(macOS)
         .overlay(alignment: .topLeading) { foldChevron.offset(x: -23, y: -3) }
         #endif
@@ -216,6 +231,79 @@ struct Card: View {
         }
         return lead
     }
+
+    #if os(iOS)
+    /// Opened, and the caret put at the start of what it says.
+    private func writeAtOnce() {
+        withAnimation(.snappy(duration: 0.22)) {
+            if river.isFolded(title) { river.toggleFold(title) }
+            river.edit(title)
+        }
+    }
+
+    /// Held on the phone: the actions most reached for, then the rest of its menu.
+    @ViewBuilder private var longPressMenu: some View {
+        Section {
+            Button("Open in New River", systemImage: "plus.square.on.square") {
+                river.openNew(River.State(graph: store.root?.path ?? "", cards: [title]))
+            }
+            if store.tiddler(title) != nil, store.kind(title) != .day {
+                let pinned = store.isPinned(title), inbox = store.isInInbox(title)
+                Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") { store.setPinned(title, !pinned) }
+                Button(inbox ? "Done with It" : "Add to Inbox", systemImage: inbox ? "tray.and.arrow.up" : "tray.and.arrow.down") {
+                    store.setInbox(title, !inbox)
+                }
+            }
+            if canChooseIcon {
+                Button("Choose Icon…", systemImage: store.icon(of: title) ?? "square.grid.3x3") { choosingIcon = true }
+            }
+            Button("Copy Link", systemImage: "link") { Platform.copy("[[\(title)]]") }
+            ShareLink(item: (store.draft(title) ?? store.tiddler(title))?.text ?? store.shownTitle(title),
+                      subject: Text(store.shownTitle(title))) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+        }
+        Menu("More", systemImage: "ellipsis.circle") { menuItems }
+    }
+
+    /// Swiped from the left: what it is, moved on — a to-do checked off, or
+    /// open again; out of the inbox; else made a to-do — and, inside that,
+    /// the inbox, or a to-do, the other way.
+    private var leadingSwipe: [SwipeAction] {
+        guard store.kind(title) != .day, !store.isShadow(title), store.exists(title) || store.isEditing(title) else { return [] }
+        let inbox = store.isInInbox(title)
+        let inboxAction = inbox
+            ? SwipeAction(name: "Out of Inbox", symbol: "tray.and.arrow.up", tint: .blue) { store.setInbox(title, false) }
+            : SwipeAction(name: "Inbox", symbol: "tray.and.arrow.down", tint: .blue) { store.setInbox(title, true) }
+        let toDo = SwipeAction(name: "To Do", symbol: "circle", tint: .orange) {
+            withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, .todo) }
+        }
+        switch store.taskState(title) {
+        case .todo:
+            return [SwipeAction(name: "Done", symbol: "checkmark.circle.fill", tint: .green) {
+                withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, .done) }
+            }, inboxAction]
+        case .done:
+            return [toDo, inboxAction]
+        case nil:
+            return inbox ? [inboxAction, toDo] : [toDo, inboxAction]
+        }
+    }
+
+    /// Swiped from the right: out of the river; inside that, deleted.
+    private var trailingSwipe: [SwipeAction] {
+        var actions = [SwipeAction(name: river.isQuery ? "Remove" : "Close", symbol: "xmark", tint: .gray) {
+            withAnimation { river.close(title) }
+        }]
+        if store.tiddler(title) != nil, !store.isShadow(title) {
+            actions.append(SwipeAction(name: "Delete", symbol: "trash", tint: .red) {
+                referring = store.references(to: title).count
+                confirmingDelete = true
+            })
+        }
+        return actions
+    }
+    #endif
 
     /// How the card opens for its drawer, and the drawer grows into it.
     static let drawerSpring = Animation.spring(response: 0.34, dampingFraction: 0.82)
@@ -466,6 +554,10 @@ struct Card: View {
         .clipped()
         // Dragged by its title to elsewhere in the river; on the phone, held first.
         .draggingCard(title, shown: shown, enabled: !renaming)
+        #if os(iOS)
+        // Held by its title: what can be done with it, as a menu over it.
+        .contextMenu { if !renaming { longPressMenu } }
+        #endif
         #if os(macOS)
         // In the margin before the title: fold or unfold — ⌥, every card.
         // Over the drag, not in it: its shape, the title's, would take the

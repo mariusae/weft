@@ -758,18 +758,38 @@ private struct PhoneRivers: View {
                     .blur(radius: (1 - progress) * 10)
                     .allowsHitTesting(settled)
             }
-            RiverColumn(showSidebar: showSidebar)
-                // Its scroll and the card in view, each river's own.
-                .id(river.id)
-                .modifier(IntoTile(progress: progress, from: frame, to: tile))
-                // Following the bar under it, dragged aside toward the river beside it.
-                .offset(x: rivers.swipe)
-                .opacity(settled ? 0 : 1 - min(0.35, abs(Double(rivers.swipe)) / 900))
-                .allowsHitTesting(progress == 0)
+            // The rivers side by side, as Safari's pages are: the one shown,
+            // and — while it is dragged aside — those beside it, sliding in
+            // with it, as paper does. Each kept by its id, so the one slid
+            // in is the same view once it is the one shown.
+            ForEach(shownRivers, id: \.id) { each in
+                let place = CGFloat(index(of: each) - rivers.currentIndex)
+                RiverColumn(showSidebar: showSidebar)
+                    .environment(each)
+                    .modifier(IntoTile(progress: each === river ? progress : 0, from: frame, to: tile))
+                    .offset(x: place * (frame.width + Self.gutter) + rivers.swipe)
+                    .opacity(each === river && settled ? 0 : 1)
+                    .allowsHitTesting(each === river && progress == 0 && rivers.swipe == 0)
+                    .zIndex(each === river ? 1 : 0)
+            }
         }
+        // Between rivers slid side by side: a shade under them, as Safari's.
+        .background(Color.river.overlay(Color.black.opacity(0.08)).ignoresSafeArea())
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
         .onChange(of: rivers.overviewShown) { _, shown in shown ? open() : close() }
     }
+
+    /// Between rivers side by side, as Safari leaves between its pages.
+    static let gutter: CGFloat = 14
+
+    /// The river shown — and, being dragged aside, those beside it.
+    private var shownRivers: [River] {
+        let at = rivers.currentIndex
+        guard rivers.swipe != 0 else { return [river] }
+        return [at - 1, at, at + 1].filter(rivers.rivers.indices.contains).map { rivers.rivers[$0] }
+    }
+
+    private func index(of each: River) -> Int { rivers.rivers.firstIndex { $0 === each } ?? rivers.currentIndex }
 
     /// The tile of the river shown: where it was laid out — or, a river just
     /// made, not yet there, a small card in the middle.
