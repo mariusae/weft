@@ -201,10 +201,10 @@ struct Card: View {
                 .onTapGesture { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
                 .accessibilityHidden(true)
             }
+            // On the phone, nothing at its end: tapped it opens with its
+            // controls, swiped it shows its actions, held its menu.
             #if os(macOS)
             macControls
-            #else
-            dots
             #endif
         }
         .font(.system(size: TextSettings.size))
@@ -655,22 +655,6 @@ struct Card: View {
         .animation(.easeOut(duration: 0.15), value: hovering)
     }
     #endif
-
-    /// The card's ⋯ on the phone, peeking: its drawer out, or in again.
-    private var dots: some View {
-        let out = river.isDrawerOut(title)
-        return Button { withAnimation(Self.drawerSpring) { river.toggleDrawer(title) } } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .bold))
-                .frame(width: 30, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(out ? Ink.accent.color : Ink.secondary.color)
-        .opacity(out ? 1 : 0.5)
-        .help("Controls")
-        .accessibilityLabel(out ? "Hide Controls" : "Controls")
-    }
 
     /// The card's controls, slid out under it: open or peek, text or
     /// outline, the days beside a day's, what a query river does with it,

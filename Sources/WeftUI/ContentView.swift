@@ -1012,8 +1012,10 @@ private struct RiverColumn: View {
                         }
                     }
                 }
-                // Gathered to its name, the bar sits low, as Safari's does.
-                .padding(.bottom, showSidebar != nil && tucked ? -10 : 4)
+                // As tall gathered as not: the river's room under it never
+                // changes as it is scrolled — which moved what was scrolled,
+                // which gathered or opened the bar again, and shook the river.
+                .padding(.bottom, 4)
             }
             #endif
             .overlay(alignment: .bottom) {

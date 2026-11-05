@@ -51,7 +51,8 @@ struct PhoneBar: View {
                     withAnimation(.snappy(duration: 0.3)) { river.foldAll() }
                 })
                 .frame(maxWidth: width * 0.6)
-                .padding(.top, 14)
+                // Low, as Safari's: drawn lower, not laid out lower.
+                .offset(y: 14)
                 .accessibilityLabel(river.title)
                 .accessibilityHint("Shows the river's controls")
             } else {
@@ -74,6 +75,8 @@ struct PhoneBar: View {
                 .highPriorityGesture(swipe)
             }
         }
+        // Its room the same, gathered or not.
+        .frame(height: 48)
         .buttonStyle(.plain)
         .foregroundStyle(Ink.accent.color)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = max($0, 320) }
