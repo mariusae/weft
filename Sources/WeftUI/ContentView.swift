@@ -144,8 +144,18 @@ public struct ContentView: View {
         }
         .animation(.easeOut(duration: 0.12), value: river.quickOpenShown)
         #else
-        // A sheet, as Prism's Go to is on the phone.
-        .sheet(isPresented: Binding(get: { river.quickOpenShown && store.root != nil }, set: { river.quickOpenShown = $0 })) {
+        // On the phone, the start page, as Safari's; else a sheet, as Prism's Go to is.
+        .fullScreenCover(isPresented: Binding(get: { river.quickOpenShown && store.root != nil && sizeClass == .compact },
+                                              set: { river.quickOpenShown = $0 })) {
+            StartPage(rivers: riverSet)
+                .environment(store)
+                .environment(river)
+        }
+        .fullScreenCover(isPresented: Binding(get: { riverSet?.overviewShown == true && sizeClass == .compact },
+                                              set: { riverSet?.overviewShown = $0 })) {
+            if let riverSet { RiverOverview(rivers: riverSet).environment(store) }
+        }
+        .sheet(isPresented: Binding(get: { river.quickOpenShown && store.root != nil && sizeClass != .compact }, set: { river.quickOpenShown = $0 })) {
             QuickOpen()
                 .environment(store)
                 .environment(river)
@@ -228,7 +238,7 @@ private struct RiverToolbar: ToolbarContent {
 
 /// Every open task in the graph, as Prism's Tasks lens groups them: each
 /// ticked off where it stands, or its page opened.
-private struct TaskList: View {
+struct TaskList: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
 
@@ -299,7 +309,7 @@ private struct TaskList: View {
 
 /// Prism's Reading Queue: the pages saved to read, oldest first — each
 /// opened with its page read beside it; done with, or put off.
-private struct ReadingList: View {
+struct ReadingList: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
 
@@ -353,7 +363,7 @@ extension NoteTask {
 
 /// At the foot of the river, a moment after something is done that typing
 /// can't undo — a page deleted, cards closed, a tag taken off: Undo.
-private struct UndoOfferView: View {
+struct UndoOfferView: View {
     @Environment(WikiStore.self) private var store
 
     var body: some View {
@@ -381,7 +391,7 @@ private struct UndoOfferView: View {
 
 /// At the foot of the river: syncing, then what it did — or, until
 /// tapped, why it failed.
-private struct SyncNoticeView: View {
+struct SyncNoticeView: View {
     @Environment(WikiStore.self) private var store
     @State private var detailsShown = false
 
@@ -669,6 +679,9 @@ private struct KeptRivers: View {
         RiverColumn(showSidebar: showSidebar)
             // Its scroll and the card in view, each river's own.
             .id(river.id)
+            // Following the bar under it, dragged aside toward the river beside it.
+            .offset(x: riverSet?.swipe ?? 0)
+            .opacity(1 - min(0.35, abs(Double(riverSet?.swipe ?? 0)) / 900))
         #endif
     }
 }
@@ -768,9 +781,6 @@ private struct RiverColumn: View {
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, y in
                 if let now = scrolling.follow(y), now != tucked { tucked = now }
             }
-            .safeAreaBar(edge: .top) {
-                if let showSidebar { RiverControls(showSidebar: showSidebar, tucked: tucked) }
-            }
             // Not over what is over the keys: a find bar, a card's own bar.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keysUp = true }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keysUp = false }
@@ -836,7 +846,7 @@ private struct RiverColumn: View {
                         ContentUnavailableView {
                             Label("Nothing Open", systemImage: "rectangle.stack")
                         } description: {
-                            Text("Find a page with the search above, open today's with the calendar, or start one from ⋯.")
+                            Text("Tap the river's name below to find a page, or + to start one.")
                         }
                     } else {
                         Text("Open a tiddler from the sidebar, or make one with ⌘N.")
@@ -855,9 +865,17 @@ private struct RiverColumn: View {
                 VStack(spacing: 8) {
                     SyncNoticeView()
                     UndoOfferView()
-                    if let riverSet, !river.isWritingAny, !keysUp { RiverSwitcher(rivers: riverSet, small: tucked) }
+                    if !river.isWritingAny, !keysUp {
+                        // On the phone, Safari's bar; on the iPad, the rivers' switcher.
+                        if showSidebar != nil {
+                            PhoneBar(rivers: riverSet, tucked: tucked) { tucked = false }
+                        } else if let riverSet {
+                            RiverSwitcher(rivers: riverSet, small: tucked)
+                        }
+                    }
                 }
-                .padding(.bottom, 4)
+                // Gathered to its name, the bar sits low, as Safari's does.
+                .padding(.bottom, showSidebar != nil && tucked ? -10 : 4)
             }
             #endif
             .overlay(alignment: .bottom) {
@@ -906,119 +924,6 @@ private final class ScrollFollower {
     }
 }
 
-/// Over the top of the river, on the phone, on glass: back to the sidebar,
-/// and at the right what is done with the river — tucked away while it is
-/// read down.
-private struct RiverControls: View {
-    @Environment(WikiStore.self) private var store
-    @Environment(River.self) private var river
-    @Environment(\.accountSettings) private var accountSettings
-    let showSidebar: () -> Void
-    let tucked: Bool
-    @State private var settingsShown = false
-
-    var body: some View {
-        HStack {
-            // Tapped, the sidebar; held, the cards the river was at before,
-            // to go back to — as Prism's ‹ holds the places it has been.
-            Menu {
-                Section("Back To") {
-                    ForEach(river.places, id: \.self) { place in
-                        Button(store.shownTitle(place)) { river.goBack(to: place) }
-                    }
-                }
-            } label: {
-                Image(systemName: "chevron.backward")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 44, height: 44)
-            } primaryAction: {
-                showSidebar()
-            }
-            .menuIndicator(.hidden)
-            .accessibilityLabel("Sidebar")
-            .accessibilityHint("Hold for the cards gone to before")
-            .glassEffect(.regular.interactive(), in: .circle)
-            Spacer()
-            HStack(spacing: 2) {
-                let conflicts = store.conflicted()
-                if !conflicts.isEmpty {
-                    control("\(conflicts.count) to Review", "exclamationmark.triangle") { river.openConflicts() }
-                        .foregroundStyle(.orange)
-                }
-                if let sync = store.sync, sync.status != .idle, !isSynced(sync) { SyncButton(sync: sync).labelStyle(.iconOnly).frame(width: 44, height: 44) }
-                control("Quick Open", "magnifyingglass") { river.quickOpenShown = true }
-                control("Today", "calendar") { river.openToday() }
-                Menu {
-                    Button("New Tiddler", systemImage: "plus") { river.newTiddler() }
-                    Button("New Tiddler from Pasteboard", systemImage: "doc.on.clipboard") { river.newTiddlerFromPasteboard() }
-                    Button("Close All", systemImage: "rectangle.stack.badge.minus") { river.closeAll() }
-                    if river.allFolded {
-                        Button("Unfold All", systemImage: "rectangle.expand.vertical") { withAnimation(.snappy) { river.unfoldAll() } }
-                    } else {
-                        Button("Fold All", systemImage: "rectangle.compress.vertical") { withAnimation(.snappy) { river.foldAll() } }
-                    }
-                    if let sync = store.sync {
-                        Section(syncState(sync)) {
-                            Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { store.syncNow() }
-                        }
-                    }
-                    Button("Recently Deleted…", systemImage: "trash") { river.deletedShown = true }
-                    Button("Settings…", systemImage: "gearshape") { settingsShown = true }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("More")
-            }
-            .padding(.horizontal, 6)
-            .glassEffect(.regular.interactive(), in: .capsule)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Ink.accent.color)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 4)
-        .sheet(isPresented: $settingsShown) {
-            NavigationStack {
-                SettingsForm { accountSettings }
-                    .navigationTitle("Settings")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) { Button("Done") { settingsShown = false } }
-                    }
-            }
-        }
-        .opacity(tucked ? 0 : 1)
-        .scaleEffect(tucked ? 0.92 : 1)
-        .offset(y: tucked ? -12 : 0)
-        .allowsHitTesting(!tucked)
-        .animation(.spring(duration: 0.32, bounce: 0.14), value: tucked)
-    }
-
-    private func control(_ name: String, _ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .medium))
-                .frame(width: 44, height: 44)
-        }
-        .accessibilityLabel(name)
-    }
-
-    /// How syncing goes, said over Sync Now, as Prism's menu says it.
-    private func syncState(_ sync: WikiSync) -> String {
-        switch sync.status {
-        case .idle: "Not synced yet"
-        case .syncing: "Syncing…"
-        case .synced(let date): "Synced \(date.formatted(.relative(presentation: .named)))"
-        case .failed(let message): "Last sync failed: \(message)"
-        }
-    }
-
-    private func isSynced(_ sync: WikiSync) -> Bool {
-        if case .synced = sync.status { return true }
-        return false
-    }
-}
 #endif
 
 #if os(macOS)

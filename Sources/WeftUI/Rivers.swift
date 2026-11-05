@@ -24,6 +24,18 @@ public final class RiverSet {
         }
     }
 
+    /// On the phone: the rivers all shown, as Safari shows its tabs.
+    public var overviewShown = false
+    /// On the phone: whether the start page opens with the keys up — asked
+    /// to find a page — or to look through.
+    public var startTyping = true
+    /// On the phone: how far the river has been dragged aside by the bar
+    /// under it, toward the one beside it.
+    public var swipe: CGFloat = 0
+
+    /// Where the river shown is among them.
+    public var currentIndex: Int { rivers.firstIndex { $0 === current } ?? 0 }
+
     /// The window these are the rivers of, on the iPad: each keeps its
     /// own. Empty for the first, which keeps them as the phone does.
     public var scene = "" {
@@ -96,7 +108,10 @@ public final class RiverSet {
         let index = rivers.firstIndex { $0 === current }.map { $0 + 1 } ?? rivers.count
         rivers.insert(river, at: index)
         current = river
-        if state == nil { river.quickOpenShown = true }
+        if state == nil {
+            startTyping = true
+            river.quickOpenShown = true
+        }
         keep()
     }
 
