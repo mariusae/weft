@@ -331,7 +331,11 @@ struct StartPage: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            // One view round what it shows, not a Group: a Group gives each of
+            // its parts the field below as its own, and the first letter
+            // typed — what it finds shown, not what was written lately — made
+            // the field anew, taking the keys away from it.
+            ZStack {
                 if !typed.isEmpty {
                     found
                 } else if adding {
