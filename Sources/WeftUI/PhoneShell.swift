@@ -514,22 +514,74 @@ struct StartPage: View {
         return found
     }
 
+    /// What is typed finds: pages by their names — and days, rivers, a new
+    /// tiddler — then, under them, pages by what they say, each with the
+    /// line saying it; last, every page searched, as a river.
     private var found: some View {
-        List(results, id: \.self) { target in
-            Button { open(target) } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: target.symbol)
-                        .font(.callout)
-                        .foregroundStyle(target.kind == .new ? Ink.accent.color : Ink.secondary.color)
-                        .frame(width: 22)
-                    Text(target.kind == .new ? "New Tiddler “\(target.title)”" : target.shown)
-                        .foregroundStyle(target.kind == .new ? Ink.accent.color : Ink.text.color)
-                        .lineLimit(1)
-                    Spacer()
+        let said = store.searchHits(typed, limit: 30, lines: 1).filter { !$0.byName && !$0.lines.isEmpty }
+        let saying = Set(said.map(\.title))
+        let named = results.filter { !saying.contains($0.title) }
+        return List {
+            Section {
+                ForEach(named, id: \.self) { target in
+                    Button { open(target) } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: target.symbol)
+                                .font(.callout)
+                                .foregroundStyle(target.kind == .new ? Ink.accent.color : Ink.secondary.color)
+                                .frame(width: 22)
+                            Text(target.kind == .new ? "New Tiddler “\(target.title)”" : target.shown)
+                                .foregroundStyle(target.kind == .new ? Ink.accent.color : Ink.text.color)
+                                .lineLimit(1)
+                            Spacer()
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .contentShape(.rect)
             }
-            .buttonStyle(.plain)
+            if !said.isEmpty {
+                Section("In Text") {
+                    ForEach(said, id: \.title) { hit in
+                        Button {
+                            close()
+                            river.find(in: hit.title, words: hit.lines.first?.firstMarked)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: store.symbol(of: hit.title))
+                                        .font(.callout)
+                                        .foregroundStyle(Ink.secondary.color)
+                                        .frame(width: 22)
+                                    Text(store.shownTitle(hit.title)).foregroundStyle(Ink.text.color).lineLimit(1)
+                                }
+                                if let line = hit.lines.first {
+                                    Text(line.attributed)
+                                        .font(.footnote)
+                                        .foregroundStyle(Ink.secondary.color)
+                                        .lineLimit(2)
+                                        .padding(.leading, 32)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            Section {
+                Button {
+                    close()
+                    river.showSearch(typed)
+                } label: {
+                    Label("Search All Text for “\(typed)”", systemImage: "text.magnifyingglass")
+                        .foregroundStyle(Ink.accent.color)
+                        .lineLimit(1)
+                }
+            } footer: {
+                Text("Every page saying it, best first, as a river.")
+            }
         }
     }
 

@@ -57,14 +57,32 @@ enum Platform {
         #endif
     }
 
-    /// The find bar of the text the caret is in: words found in a card.
-    static func findInCard() {
+    /// The find bar of the text the caret is in: words found in a card —
+    /// given `words`, those, the first found shown.
+    static func findInCard(_ words: String? = nil) {
         #if os(macOS)
-        let item = NSMenuItem()
-        item.tag = NSTextFinder.Action.showFindInterface.rawValue
-        NSApp.sendAction(#selector(NSResponder.performTextFinderAction(_:)), to: nil, from: item)
+        if let words, !words.isEmpty {
+            // The find bar takes what the find pasteboard has, as every Mac app's.
+            let find = NSPasteboard(name: .find)
+            find.clearContents()
+            find.setString(words, forType: .string)
+        }
+        for action in [NSTextFinder.Action.showFindInterface] + (words?.isEmpty == false ? [.nextMatch] : []) {
+            let item = NSMenuItem()
+            item.tag = action.rawValue
+            NSApp.sendAction(#selector(NSResponder.performTextFinderAction(_:)), to: nil, from: item)
+        }
         #else
-        UIApplication.shared.sendAction(#selector(UIResponder.find(_:)), to: nil, from: nil, for: nil)
+        guard let words, !words.isEmpty, let find = (UIResponder.current as? UITextView)?.findInteraction else {
+            UIApplication.shared.sendAction(#selector(UIResponder.find(_:)), to: nil, from: nil, for: nil)
+            return
+        }
+        find.presentFindNavigator(showingReplace: false)
+        // Once its bar is up: the words in it, the first found shown.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            find.searchText = words
+            find.findNext()
+        }
         #endif
     }
 
@@ -164,5 +182,20 @@ public struct WindowReader: NSViewRepresentable {
             if let window { found(window) }
         }
     }
+}
+#endif
+
+#if os(iOS)
+extension UIResponder {
+    nonisolated(unsafe) private static weak var found: UIResponder?
+
+    /// What has the keys now: asked of the responder chain, as nothing else says.
+    static var current: UIResponder? {
+        found = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.takeFound), to: nil, from: nil, for: nil)
+        return found
+    }
+
+    @objc private func takeFound() { UIResponder.found = self }
 }
 #endif

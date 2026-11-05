@@ -179,6 +179,9 @@ public final class WikiStore {
     /// are read — off the main thread, so nothing waits on them.
     public func open(graph url: URL) {
         let wiki = Wiki(root: url)
+        // Its words on disk, in this app's caches: ranked, and ready at once
+        // when the graph was opened before.
+        wiki.textIndex = TextIndex.shared(at: TextIndex.location(for: url, app: "Weft"))
         loads += 1
         let load = loads
         root = url.standardizedFileURL
@@ -935,11 +938,13 @@ public final class WikiStore {
         return wiki?.entries.count ?? 0
     }
 
-    /// Titles matching what is typed — those with it in the title first,
-    /// starting with it before containing it — then those with it in the text.
-    public func searchResults(_ search: String, limit: Int = 200) -> [String] {
+    /// Pages by what is typed — words, `"phrases"`, `-left out`, `#tag`,
+    /// `is:todo`, `edited:today` — those named so first, then by what they
+    /// say, best first: each with the lines saying it.
+    public func searchHits(_ search: String, limit: Int = 60, lines: Int = 2) -> [PageIndex.TextHit] {
         _ = listsVersion
-        return wiki?.search(search, limit: limit) ?? []
+        _ = textVersion
+        return wiki?.searchText(search, limit: limit, lines: lines) ?? []
     }
 
     /// A tiddler's file.
@@ -1669,6 +1674,8 @@ public struct LinkTarget: Hashable, Sendable {
 
     public enum Kind: Sendable {
         case wiki, note, day, river, new
+        /// Not a page: every page searched for what is typed, as a river.
+        case search
 
         public var symbol: String {
             switch self {
@@ -1677,6 +1684,7 @@ public struct LinkTarget: Hashable, Sendable {
             case .day: "calendar"
             case .river: RiverLink.symbol
             case .new: "plus.circle"
+            case .search: "text.magnifyingglass"
             }
         }
 
@@ -1687,6 +1695,7 @@ public struct LinkTarget: Hashable, Sendable {
             case .day: "Day"
             case .river: "River"
             case .new: "New page"
+            case .search: "Search"
             }
         }
     }
@@ -1714,25 +1723,6 @@ extension WikiStore {
             return names.contains { lower.contains($0 + "]]") || lower.contains($0 + "|") }
         }) else { return nil }
         return Self.plain(line)
-    }
-
-    /// The line of a page's text where what is searched for is, as words,
-    /// cut to show the words around it: under the page in what is found.
-    public func searchSnippet(for title: String, matching query: String) -> String? {
-        let query = query.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty, let text = tiddler(title)?.text else { return nil }
-        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) where line.range(of: query, options: options) != nil {
-            let words = Self.plain(String(line))
-            guard let found = words.range(of: query, options: options) else { continue }
-            // Some words before it, so it is not lost at the end of a long line.
-            let lead = words.distance(from: words.startIndex, to: found.lowerBound)
-            guard lead > 40 else { return words }
-            let start = words.index(found.lowerBound, offsetBy: -30)
-            let from = words[start...].firstIndex(of: " ").map { words.index(after: $0) } ?? start
-            return "…" + words[from...]
-        }
-        return nil
     }
 
     /// Every name a page answers to: its title and aliases.

@@ -88,6 +88,10 @@ enum Snapshot {
             river.closeAll()
         }
         for title in titles.reversed() { river.open(title) }
+        // `WEFT_SHOW_SEARCH=words`: every page searched for them, as a river.
+        if let typed = environment["WEFT_SHOW_SEARCH"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { river.showSearch(typed) }
+        }
         // `WEFT_EMPTY`: one river, empty — its start page showing, as a new tab's.
         if environment["WEFT_EMPTY"] != nil {
             if let rivers { rivers.closeOthers(river) }
@@ -166,6 +170,20 @@ enum Snapshot {
             }
         }
         if let search = environment["WEFT_SEARCH"] { river.search = search }
+        // `WEFT_SIDEBAR`: the sidebar toggled — shown, when it was not.
+        if environment["WEFT_SIDEBAR"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                // The split view's own controller: the window, drawn unseen, has no keys to send it by.
+                func split(in view: NSView) -> NSSplitView? {
+                    if let found = view as? NSSplitView { return found }
+                    return view.subviews.lazy.compactMap(split).first
+                }
+                if let view = NSApp.windows.first(where: { $0.isVisible })?.contentView, let found = split(in: view),
+                   let controller = found.delegate as? NSSplitViewController {
+                    controller.toggleSidebar(nil)
+                }
+            }
+        }
         if let name = environment["WEFT_SAVE_RIVER"] { river.save(as: name) }
         // `WEFT_RECALL`: a saved river brought back, folded as its file says;
         // `WEFT_PULL=<file>`, a moment later its file as a sync would bring it.

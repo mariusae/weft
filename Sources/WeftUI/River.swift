@@ -183,14 +183,18 @@ public final class River: Identifiable {
         public var folded: [String]?
         /// The rows folded in each card; none, in what was kept before.
         public var rows: [String: [OutlineFolds.Mark]]?
+        /// A query river's query, when it is not saved under a name: a
+        /// search's, as a river.
+        public var query: String?
 
         public init(graph: String, name: String? = nil, cards: [String], folded: [String]? = nil,
-                    rows: [String: [OutlineFolds.Mark]]? = nil) {
+                    rows: [String: [OutlineFolds.Mark]]? = nil, query: String? = nil) {
             self.graph = graph
             self.name = name
             self.cards = cards
             self.folded = folded
             self.rows = rows
+            self.query = query
         }
     }
 
@@ -200,7 +204,7 @@ public final class River: Identifiable {
         let cards = query == nil ? cards : head
         let kept = rows.filter { cards.contains($0.key) }
         return State(graph: store.loadedRoot?.path ?? "", name: name, cards: cards, folded: folded.isEmpty ? nil : cards.filter(folded.contains),
-                     rows: kept.isEmpty ? nil : kept)
+                     rows: kept.isEmpty ? nil : kept, query: name == nil ? query?.text : nil)
     }
 
     /// Shows what was kept: a saved river as its file has it now, which
@@ -221,6 +225,8 @@ public final class River: Identifiable {
             cards = state.cards
             folded = Set(state.folded ?? []).intersection(cards)
             rows = state.rows ?? [:]
+            // A search, as a river: found again.
+            if let asked = state.query { setQuery(Query(text: asked), icon: "text.magnifyingglass", color: nil) }
         }
         holding = false
         for title in cards { cardChanged(title) }
@@ -243,9 +249,13 @@ public final class River: Identifiable {
         historyVersion += 1
     }
 
-    /// The display name: its name when saved, else the card at its top.
+    /// The display name: its name when saved, a search's words, else the
+    /// card at its top.
     public var title: String {
         if let name { return name }
+        if let query, !query.textContains.isEmpty {
+            return "“" + query.textContains.trimmingCharacters(in: .whitespaces) + "”"
+        }
         return cards.first.map(store.shownTitle) ?? "New River"
     }
 
@@ -658,10 +668,25 @@ public final class River: Identifiable {
         if writing != nil { Platform.findInCard() } else { searchFocusRequest += 1 }
     }
 
-    /// A card's words searched: the caret put in it, then its find bar.
-    public func find(in title: String) {
+    /// A card's words searched: the caret put in it, then its find bar —
+    /// with `words`, those found in it, the first of them shown.
+    public func find(in title: String, words: String? = nil) {
+        if !cards.contains(title) { open(title) }
         if writing != title { edit(title) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { Platform.findInCard() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { Platform.findInCard(words) }
+    }
+
+    /// Every page searched for what is typed — `#tag`, `is:todo` and the like
+    /// among the words — shown as a river of what is found, best first: this
+    /// one, when it is empty; else one beside it. Not saved till asked to be.
+    public func showSearch(_ typed: String) {
+        let query = Query(search: typed.trimmingCharacters(in: .whitespaces))
+        guard !query.text.isEmpty else { return }
+        if cards.isEmpty, self.query == nil, name == nil {
+            setQuery(query, icon: "text.magnifyingglass", color: nil)
+        } else {
+            openNew(State(graph: store.root?.path ?? "", cards: [], query: query.text))
+        }
     }
 
     /// The caret into the selected card, or out of the one it is in.

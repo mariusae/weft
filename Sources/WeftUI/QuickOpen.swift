@@ -77,11 +77,17 @@ struct QuickOpen: View {
         if !typed.isEmpty, !results.contains(where: { $0.title.caseInsensitiveCompare(typed) == .orderedSame }) {
             results.append(LinkTarget(title: typed, shown: typed, kind: .new))
         }
+        // Last: every page searched for it, as a river.
+        if !typed.isEmpty { results.append(LinkTarget(title: typed, shown: typed, kind: .search)) }
         return results
     }
 
     private func name(_ target: LinkTarget) -> String {
-        target.kind == .new ? "New page “\(target.title)”" : target.shown
+        switch target.kind {
+        case .new: "New page “\(target.title)”"
+        case .search: "Search all text for “\(target.title)”"
+        default: target.shown
+        }
     }
 
     /// What is said of a row beside its name: a day's name for it, and
@@ -89,6 +95,7 @@ struct QuickOpen: View {
     /// open in the river already.
     private func detail(_ target: LinkTarget) -> String {
         if target.kind == .new { return "New page" }
+        if target.kind == .search { return "As a river" }
         if target.kind == .river, let name = RiverLink.name(target.title) {
             let count = store.savedCards(name)?.count ?? 0
             let showing = store.river(named: name) != nil
@@ -116,6 +123,7 @@ struct QuickOpen: View {
     private func open(_ target: LinkTarget, inNewTab: Bool = false) {
         river.quickOpenShown = false
         river.startShown = false
+        if target.kind == .search { return river.showSearch(target.title) }
         if inNewTab, target.kind != .new, target.kind != .river {
             river.openNew(River.State(graph: store.root?.path ?? "", cards: [target.title]))
             return

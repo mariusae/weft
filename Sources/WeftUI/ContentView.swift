@@ -529,7 +529,7 @@ private struct Sidebar: View {
                     .textFieldStyle(.plain)
                     .focused($searchFocused)
                     .onSubmit {
-                        if let first = store.searchResults(river.search, limit: 1).first { river.open(first) }
+                        if let first = store.searchHits(river.search, limit: 1, lines: 0).first { river.open(first.title) }
                     }
                 if !river.search.isEmpty {
                     Button { river.search = "" } label: { Image(systemName: "xmark.circle.fill") }
@@ -571,49 +571,59 @@ private struct Sidebar: View {
     }
 
     /// Pages matching what is typed: by title or alias, then by what they
-    /// say — the line it is in under each, what was typed marked.
+    /// say, best first — under each, the lines saying it, what was asked
+    /// marked; clicked, the card opened with it found. At the top, the
+    /// search as a river.
     private var searchResults: some View {
-        let query = river.search.trimmingCharacters(in: .whitespaces)
-        let found = store.searchResults(query)
-        return List(found, id: \.self) { title in
-            Button { river.open(title) } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Image(systemName: store.symbol(of: title))
-                        .font(.caption)
-                        .foregroundStyle(Ink.secondary.color)
-                        .frame(width: 16)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(Self.marked(store.shownTitle(title), query))
-                            .lineLimit(1)
-                        if let snippet = store.searchSnippet(for: title, matching: query) {
-                            Text(Self.marked(snippet, query))
+        let typed = river.search
+        let hits = store.searchHits(typed)
+        let terms = SearchMarks.terms(typed)
+        return List {
+            Button {
+                river.showSearch(typed)
+                river.search = ""
+            } label: {
+                Label("Show as River", systemImage: "text.magnifyingglass")
+                    .foregroundStyle(Ink.accent.color)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Every page saying it, best first, as a river kept up as pages change")
+            ForEach(hits, id: \.title) { hit in
+                VStack(alignment: .leading, spacing: 3) {
+                    Button { river.open(hit.title) } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 7) {
+                            Image(systemName: store.symbol(of: hit.title))
+                                .font(.caption)
+                                .foregroundStyle(Ink.secondary.color)
+                                .frame(width: 16)
+                            Text(SearchMarks.marked(store.shownTitle(hit.title), terms))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    ForEach(hit.lines, id: \.number) { line in
+                        Button { river.find(in: hit.title, words: line.firstMarked) } label: {
+                            Text(line.attributed)
                                 .font(.caption)
                                 .foregroundStyle(Ink.secondary.color)
                                 .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.leading, 23)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .help("Open it, this found in it")
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
         }
         .overlay {
-            if found.isEmpty { Text("Nothing matches").foregroundStyle(.secondary) }
+            if hits.isEmpty { Text("Nothing matches").foregroundStyle(.secondary) }
         }
-    }
-
-    /// Words with what was searched for marked in them.
-    private static func marked(_ words: String, _ query: String) -> AttributedString {
-        var marked = AttributedString(words)
-        guard !query.isEmpty else { return marked }
-        var rest = marked.startIndex..<marked.endIndex
-        while let found = marked[rest].range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) {
-            marked[found].backgroundColor = Ink.accent.color.opacity(0.18)
-            marked[found].foregroundColor = Ink.text.color
-            rest = found.upperBound..<marked.endIndex
-        }
-        return marked
     }
 
     @ViewBuilder private var list: some View {
