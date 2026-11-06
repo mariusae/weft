@@ -219,7 +219,7 @@ extension River {
     }
 
     /// A card closed: out of the river — and, being one it finds, kept out.
-    func closeFound(_ title: String) {
+    func closeFound(_ title: String, quietly: Bool = false) {
         let was = held
         head.removeAll { $0 == title }
         placed[title] = nil
@@ -230,6 +230,7 @@ extension River {
         store.cardClosed(title)
         compose()
         keep()
+        guard !quietly else { return }
         store.undoable("Remove “\(store.shownTitle(title))”") { [weak self] in self?.hold(was) }
     }
 

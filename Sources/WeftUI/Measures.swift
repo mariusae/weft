@@ -48,8 +48,9 @@ enum Measures {
     static var markSize: CGFloat { OutlineCardEditor.markSize }
     /// A mark's colour, open: as the outline draws its checkboxes.
     @MainActor static var markColor: Color { Color(nsColor: PageOutlineEditor.markColor) }
-    /// The column before the gutter, in a card's side: its fold, a row's handle.
-    static var margin: CGFloat { cardSides }
+    /// The column before the gutter, in a card's side: its fold, a row's
+    /// handle — room for them clear of the card's edge.
+    static var margin: CGFloat { cardSides + xs }
     /// The middle of a text editor's first line, down from its top.
     static var textFirstLine: CGFloat {
         let font = NSFont.systemFont(ofSize: TextSettings.size)

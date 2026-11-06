@@ -376,9 +376,11 @@ public final class River: Identifiable {
         bringIntoView(cards[index])
     }
 
+    /// Whether a card is the one marked chosen: the one written in, while
+    /// one is — where the keys go — else the one gone to last.
     public func isSelected(_ title: String) -> Bool {
         watch(title)
-        return focus == title
+        return (writing ?? focus) == title
     }
 
     /// A card dragged to just before or after another, and selected; one
@@ -399,11 +401,13 @@ public final class River: Identifiable {
         if focus != title { focus = title }
     }
 
-    public func close(_ title: String) {
-        if query != nil { return closeFound(title) }
+    /// Closes a card — `quietly`, with nothing to undo: one made and left
+    /// untouched, gone with its page, was never anything to close.
+    public func close(_ title: String, quietly: Bool = false) {
+        if query != nil { return closeFound(title, quietly: quietly) }
         let was = (cards: cards, folded: folded)
         shut(title)
-        offerReopening(was, "Close “\(store.shownTitle(title))”")
+        if !quietly { offerReopening(was, "Close “\(store.shownTitle(title))”") }
     }
 
     private func shut(_ title: String) {
@@ -453,6 +457,7 @@ public final class River: Identifiable {
     /// The card the keys act on: the one selected, else the one at the top
     /// of the river as it is scrolled.
     public var selected: String? {
+        if let writing, cards.contains(writing) { return writing }
         if let focus, cards.contains(focus) { return focus }
         return cardInView.flatMap { cards.contains($0) ? $0 : nil }
     }

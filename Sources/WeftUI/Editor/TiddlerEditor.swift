@@ -237,13 +237,15 @@ struct TiddlerEditor: View {
     var onCaretTaken: () -> Void = {}
     /// Told when the caret comes in, and when it leaves.
     var onFocusChange: (Bool) -> Void = { _ in }
+    /// Told as it is typed in when it comes to have words, or none.
+    var onEmptinessChange: (Bool) -> Void = { _ in }
 
     var body: some View {
         EditorRepresentable(text: $text, controller: controller, store: store, river: river, card: card, suggest: suggest,
                             styler: MarkdownStyler(size: MarkdownStyler.defaultSize, exists: exists, describe: { store.riverNote($0) },
                                                    untitledName: { store.untitledName($0) }, icon: { store.linkIcon($0) }),
                             onEscape: onEscape, wantsCaret: wantsCaret, onCaretTaken: onCaretTaken,
-                            onFocusChange: onFocusChange)
+                            onFocusChange: onFocusChange, onEmptinessChange: onEmptinessChange)
     }
 }
 
@@ -678,6 +680,7 @@ private struct EditorRepresentable: NSViewRepresentable {
     let wantsCaret: Bool
     let onCaretTaken: () -> Void
     let onFocusChange: (Bool) -> Void
+    var onEmptinessChange: (Bool) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -751,6 +754,11 @@ private struct EditorRepresentable: NSViewRepresentable {
             context.coordinator.live?.changed()
         }
         context.coordinator.shown = text
+        // The graph's own words not underlined, nor corrected to others.
+        if context.coordinator.wordsVersion != store.namesVersion {
+            context.coordinator.wordsVersion = store.namesVersion
+            NSSpellChecker.shared.setIgnoredWords(store.ownWords, inSpellDocumentWithTag: view.spellCheckerDocumentTag)
+        }
         if wantsCaret, !context.coordinator.takingCaret {
             context.coordinator.takingCaret = true
             Self.takeCaret(view, coordinator: context.coordinator, then: onCaretTaken)
@@ -799,11 +807,15 @@ private struct EditorRepresentable: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         /// Taking the caret, asked for: once at a time.
         var takingCaret = false
+        /// The graph's names as last told its spelling.
+        var wordsVersion = -1
         var parent: EditorRepresentable
         var live: LiveMarkdown?
         /// The text the view was last given, or told it has.
         var shown = ""
         weak var view: NSTextView?
+        /// Whether it was last told empty, as typed.
+        private var toldEmpty: Bool?
         /// What was typed, not yet told: told a moment after typing stops.
         private var pending: DispatchWorkItem?
         private var flushing: NSObjectProtocol?
@@ -839,6 +851,11 @@ private struct EditorRepresentable: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }
             self.view = view
+            let empty = view.string.isEmpty
+            if empty != toldEmpty {
+                toldEmpty = empty
+                parent.onEmptinessChange(empty)
+            }
             live?.changed()
             live?.typed()
             // The whole text copied and told — the store, all that hears of
@@ -855,7 +872,12 @@ private struct EditorRepresentable: NSViewRepresentable {
             guard value != 0, let storage = view.textStorage, NSMaxRange(range) <= storage.length else { return value }
             var shown = true
             storage.enumerateAttributes(in: range) { attributes, _, stop in
-                if attributes[.weftLabel] != nil || ((attributes[.font] as? NSFont)?.pointSize ?? 12) < 1 { shown = false; stop.pointee = true }
+                // A link's words are a page's name, not prose.
+                if attributes[.weftLabel] != nil || attributes[.weftLink] != nil || attributes[.weftPill] != nil
+                    || ((attributes[.font] as? NSFont)?.pointSize ?? 12) < 1 {
+                    shown = false
+                    stop.pointee = true
+                }
             }
             return shown ? value : 0
         }
@@ -1073,6 +1095,7 @@ private struct EditorRepresentable: UIViewRepresentable {
     let wantsCaret: Bool
     let onCaretTaken: () -> Void
     let onFocusChange: (Bool) -> Void
+    var onEmptinessChange: (Bool) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 

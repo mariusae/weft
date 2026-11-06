@@ -36,8 +36,9 @@ struct QueryRiverHeader: View {
                     .foregroundStyle(Ink.accent.color)
             }
             #if os(macOS)
-            // A card's shape and sides, as the cards under it.
-            .padding(.horizontal, Measures.cardSides)
+            // A card's shape and sides, as the cards under it: its margin before.
+            .padding(.leading, Measures.margin)
+            .padding(.trailing, Measures.cardSides)
             .padding(.vertical, 7)
             .background(Ink.paper.color, in: RoundedRectangle(cornerRadius: Measures.cardRadius))
             .contentShape(RoundedRectangle(cornerRadius: Measures.cardRadius))

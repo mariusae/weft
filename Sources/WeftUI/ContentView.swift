@@ -38,11 +38,11 @@ public struct ContentView: View {
         var buttons: CGFloat = 4
         if store.sync != nil { buttons += 1 }
         let review: CGFloat = store.conflicted().isEmpty ? 0 : 130
-        let right = buttons * 38 + 30 + review
+        let right = buttons * (TabLayout.buttonGuess + TabLayout.buttonSlot) + 30 + review
         // A little short, till the buttons are placed and the tabs take the
         // room up to them: too wide at first, the toolbar would put the
         // buttons away in its overflow, and they'd never be placed.
-        return max(TabLayout.shownMin + 2 * TabLayout.bunched, detailWidth - left - right - 40)
+        return max(TabLayout.shownMin, detailWidth - left - right - 40)
     }
 
     private var hasTabs: Bool { (riverSet?.rivers.count ?? 0) > 1 }
@@ -1024,6 +1024,9 @@ private struct RiverColumn: View {
     var showSidebar: (() -> Void)?
     /// The card at the top of the river, as it is scrolled.
     @State private var inView: String?
+    /// The query river's header, scrolled to with its first card.
+    private static let headerID = "\u{1}header"
+
     /// Read down into the river: the controls over it out of the way, the
     /// bar at its foot gathered to the river's name — as Prism does.
     @State private var tucked = false
@@ -1048,15 +1051,19 @@ private struct RiverColumn: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    if river.isQuery { QueryRiverHeader().padding(.bottom, Self.cardGap) }
+                    if river.isQuery { QueryRiverHeader().padding(.bottom, Self.cardGap).id(Self.headerID) }
                     ForEach(river.cards, id: \.self) { title in
                         // Peeking cards closer together: a list to glance down, still of cards.
                         let gap: CGFloat = river.isFolded(title) ? Self.peekGap : Self.cardGap
                         DroppableCard(title: title, drop: $drop, gap: gap)
                             .padding(.bottom, gap)
                             .id(title)
-                            .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity),
-                                                    removal: .opacity.combined(with: .scale(scale: 0.97))))
+                            // Coming and going in its own place: faded, the
+                            // cards round it moving apart or together — none
+                            // slid over another, nor over the header. Gone
+                            // quickly, before those after it close up over it.
+                            .transition(.asymmetric(insertion: .opacity,
+                                                    removal: .opacity.animation(.easeOut(duration: 0.12))))
                     }
                 }
                 .scrollTargetLayout()
@@ -1072,7 +1079,12 @@ private struct RiverColumn: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollPosition(id: $inView, anchor: .top)
-            .onChange(of: inView) { river.cardInView = inView }
+            #if os(macOS)
+            // The rail of its cards stands for the scroll bar: not both.
+            .scrollIndicators(river.cards.count > 1 ? .hidden : .automatic)
+            #endif
+            // The header in view: its first card is, for what asks which.
+            .onChange(of: inView) { river.cardInView = inView == Self.headerID ? river.cards.first : inView }
             #if os(iOS)
             .onScrollPhaseChange { _, phase in scrolling.byHand = phase == .interacting || phase == .decelerating }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, y in
@@ -1127,7 +1139,7 @@ private struct RiverColumn: View {
             #if os(macOS)
             .overlay(alignment: .trailing) {
                 if river.cards.count > 1 {
-                    RiverRail(inView: inView ?? river.cards.first) { title in
+                    RiverRail(inView: inView == Self.headerID ? river.cards.first : inView ?? river.cards.first) { title in
                         river.select(title)
                         withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(title, anchor: .top) }
                     }
@@ -1195,16 +1207,19 @@ private struct RiverColumn: View {
             .onChange(of: river.focusRequest) {
                 guard let focus = river.focus else { return }
                 let asked = river.focusRequest
+                // The first card: the river's top, its header with it — not
+                // scrolled out of sight for the card just under it.
+                let target: String = river.isQuery && focus == river.cards.first ? Self.headerID : focus
                 // Once a card just opened is among the stack's: scrolled to in
                 // the change that put it there, it is not found to scroll to.
                 DispatchQueue.main.async {
-                    withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(focus, anchor: .top) }
+                    withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(target, anchor: .top) }
                 }
                 // And again once the cards round it are laid out: the river's
                 // height only reckoned till they are, it can stop short of it.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     guard river.focusRequest == asked, river.focus == focus else { return }
-                    withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(focus, anchor: .top) }
+                    withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(target, anchor: .top) }
                 }
             }
         }

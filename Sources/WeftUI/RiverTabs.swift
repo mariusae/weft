@@ -24,6 +24,12 @@ enum TabLayout {
     static let pointed: CGFloat = 150
     /// A bunched tab at its tightest.
     static let tightest: CGFloat = 24
+    /// What the toolbar puts round each of its buttons besides the button:
+    /// its glass, and the space between.
+    static let buttonSlot: CGFloat = 12
+    /// A toolbar button not yet measured — or measured, then put away in
+    /// the toolbar's overflow, where it is not.
+    static let buttonGuess: CGFloat = 32
 
     /// A saved river's tab: at its widest, its name cut short past it; at
     /// its narrowest still showing the start of it — narrower, bunched.
@@ -107,8 +113,13 @@ struct RiverTabs: View {
     /// packs them after the tabs, so they move as the tabs widen.
     private var room: CGFloat {
         guard let spot, !rivers.toolbarButtons.isEmpty else { return width }
-        let buttons = rivers.toolbarButtons.values.reduce(0, +)
-        return max(TabLayout.shownMin + 2 * TabLayout.bunched, spot.window - spot.minX - TabLayout.gap - buttons - TabLayout.trailing)
+        // Every button the toolbar has, shown or not: one put away in its
+        // overflow counted still, so the tabs give its room back.
+        var shown = ["today", "new", "close all", "rivers"]
+        if store.sync != nil { shown.append("sync") }
+        if !store.conflicted().isEmpty { shown.append("review") }
+        let buttons = shown.reduce(0) { $0 + (rivers.toolbarButtons[$1] ?? TabLayout.buttonGuess) + TabLayout.buttonSlot }
+        return max(TabLayout.shownMin, spot.window - spot.minX - TabLayout.gap - buttons - TabLayout.trailing)
     }
 
     var body: some View {
@@ -390,8 +401,8 @@ extension View {
     /// Says how wide it is, as one of the toolbar's buttons after the tabs:
     /// what they take of the room — gone, nothing.
     func toolbarButton(_ name: String, in rivers: RiverSet?) -> some View {
+        // Kept when it goes — into the overflow, say — to give it its room back.
         onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rivers?.toolbarButtons[name] = $0 }
-            .onDisappear { rivers?.toolbarButtons[name] = nil }
     }
 }
 #endif

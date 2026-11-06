@@ -23,6 +23,8 @@ struct CardEditor: View {
     @State private var newTag = ""
     /// Where its words' first line's middle is, down from the editor's top.
     @State private var firstLine: CGFloat?
+    /// Empty or not as the editor last said, typed in, until the store hears.
+    @State private var typedEmpty: Bool?
     @State private var newField = ""
     @FocusState private var focus: Field?
 
@@ -101,18 +103,24 @@ struct CardEditor: View {
         let focused: (Bool) -> Void = { $0 ? river.caretEntered(title, in: .body) : river.caretLeft(title, from: .body) }
         let body = ZStack(alignment: .topLeading) {
             BodyEditor(title: title, mode: mode, controller: controller, wants: wants, taken: taken, focused: focused,
-                       lead: lead, onFirstLine: { firstLine = $0 })
-            // Asked of its head, not its words: told when it comes to be
-            // empty or not, not for each key.
-            if !river.isWriting(title), (store.isEditing(title) ? store.draftHead(title) : store.tiddler(title))?.text.isEmpty ?? true {
+                       lead: lead, onFirstLine: { firstLine = $0 }, onEmptinessChange: { typedEmpty = $0 })
+            if showsPlaceholder {
                 Text(placeholder(page))
                     .foregroundStyle(Ink.faint.color)
-                    .padding(.top, 2)
                     // In line with an outline's words, clear of its bullet.
                     .padding(.leading, mode == .outline ? OutlineCardEditor.textIndent : 0)
                     .allowsHitTesting(false)
+                    #if os(macOS)
+                    // Its middle on the outline's first line, where the
+                    // editor says that is — the ring's, the words' to come.
+                    .alignmentGuide(.top) { d in mode == .outline ? d.height / 2 - (firstLine ?? d.height / 2 + 2) : -2 }
+                    #else
+                    .padding(.top, 2)
+                    #endif
             }
         }
+        // The store has heard: what it has, not what was typed, again.
+        .onChange(of: storedEmpty) { typedEmpty = nil }
         // Set again when Settings change how.
         .id("\(textSize) \(face)")
         #if os(macOS)
@@ -131,6 +139,23 @@ struct CardEditor: View {
         }
         #else
         body
+        #endif
+    }
+
+    /// Empty, as the editor says as it is typed in — at once, not a moment
+    /// later as the store hears — else as the store has it: asked of its
+    /// head, not its words, told when it comes to be empty or not.
+    private var storedEmpty: Bool {
+        (store.isEditing(title) ? store.draftHead(title) : store.tiddler(title))?.text.isEmpty ?? true
+    }
+
+    private var showsPlaceholder: Bool {
+        let stored = storedEmpty
+        #if os(macOS)
+        // The same for every card, being written in or not: a new one too.
+        return typedEmpty ?? stored
+        #else
+        return !river.isWriting(title) && stored
         #endif
     }
 
@@ -345,6 +370,7 @@ private struct BodyEditor: View {
     let focused: (Bool) -> Void
     var lead: Tiddler.TaskState? = nil
     var onFirstLine: (CGFloat) -> Void = { _ in }
+    var onEmptinessChange: (Bool) -> Void = { _ in }
 
     var body: some View {
         if mode == .outline {
@@ -352,7 +378,7 @@ private struct BodyEditor: View {
             OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused,
                               lead: lead, onLead: { [store, title, lead] in
                                   withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, lead == .done ? .todo : .done) }
-                              }, onFirstLine: onFirstLine)
+                              }, onFirstLine: onFirstLine, onEmptinessChange: onEmptinessChange)
             #else
             OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused,
                               lead: lead, onLead: { [store, title, lead] in
@@ -363,7 +389,8 @@ private struct BodyEditor: View {
             TiddlerEditor(text: text, controller: controller, card: title,
                           suggest: { store.linkSuggestions($0) }, exists: { store.linkExists($0) },
                           onEscape: { Platform.endEditing() },
-                          wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused)
+                          wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused,
+                          onEmptinessChange: onEmptinessChange)
         }
     }
 

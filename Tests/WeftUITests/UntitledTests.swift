@@ -30,6 +30,21 @@ import ReflectCore
 
     private func settle() async throws { try await Task.sleep(for: .milliseconds(400)) }
 
+    /// Folded, a card is called what it is called open: a title being
+    /// given it, not yet written, before what it begins with — a link, say.
+    @Test func foldedCalledAsOpen() async throws {
+        let river = river()
+        river.newTiddler()
+        let name = try #require(river.cards.first)
+        store.change(name) { $0.text = "- https://www.stat.cmu.edu/~cshalizi/TALR/TALR.pdf\n" }
+        #expect(store.peek(of: name).title.contains("cmu.edu"))
+        store.change(name) { $0.title = "Truth about Linear Regression" }
+        #expect(store.peek(of: name).title == "Truth about Linear Regression")
+        // A day's draft: its name as a day is shown, not its key.
+        store.change("2026-11-04") { $0.text = "- a line\n" }
+        #expect(store.peek(of: "2026-11-04").title == store.shownTitle("2026-11-04"))
+    }
+
     @Test func jottedTitledAndUntitledAgain() async throws {
         let river = river()
         river.newTiddler()

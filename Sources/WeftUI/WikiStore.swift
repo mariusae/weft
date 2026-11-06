@@ -117,6 +117,8 @@ public final class WikiStore {
 
     /// Cards being edited, by the title they are open under, and what they say so far.
     @ObservationIgnored private var drafts: [String: Tiddler] = [:]
+    /// The graph's own words, as last gathered, and for which names.
+    @ObservationIgnored fileprivate var keptWords: (version: Int, words: [String])?
     /// Which cards are being edited, apart from what their drafts say: each
     /// card told of its own beginning and ending, not the river of every one.
     @ObservationIgnored public private(set) var editing: Set<String> = [] {
@@ -618,7 +620,7 @@ public final class WikiStore {
     public func peek(of title: String) -> (title: String, summary: String) {
         let text = (drafts[title] ?? tiddler(title))?.text ?? ""
         var lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("```") }
-        let name = Untitled.isName(title) ? (Untitled.name(of: text) ?? "Untitled") : shownTitle(title)
+        let name = peekName(title)
         // Its own title — a first heading, or an untitled page's first line — says nothing more.
         if let head = lines.first, Untitled.title(from: head).caseInsensitiveCompare(name) == .orderedSame { lines.removeFirst() }
         var words: [String] = []
@@ -640,6 +642,17 @@ public final class WikiStore {
             length += plain.count
         }
         return (name, words.joined(separator: " · "))
+    }
+
+    /// What a folded card is called: what it is called open. A title given
+    /// it — in its frontmatter, or as it is being written — before what it
+    /// begins with; only an untitled draft's from its words as they are now.
+    func peekName(_ title: String) -> String {
+        guard let draft = drafts[title] else { return shownTitle(title) }
+        let given = draft.title.trimmingCharacters(in: .whitespaces)
+        if !given.isEmpty, !Untitled.isName(given), given != title { return given }
+        guard Untitled.isName(title), Untitled.isName(given) || given.isEmpty else { return shownTitle(title) }
+        return Untitled.name(of: draft.text) ?? "Untitled"
     }
 
     /// The first pictures a page shows — their sources, as written — for
@@ -1338,6 +1351,15 @@ public final class WikiStore {
     @ObservationIgnored private var offerClearing: Task<Void, Never>?
 
     /// Something done, to undo: kept with the window's undo, and offered.
+    /// What was done, as the offer to undo it says it: the menu's
+    /// “Close …”, “Remove …” told as done — “Closed …”, “Removed …”.
+    static func done(_ name: String) -> String {
+        let pasts = ["Close": "Closed", "Remove": "Removed", "Delete": "Deleted", "Restore": "Restored", "Relate": "Related",
+                     "Unrelate": "Unrelated", "Set": "Set"]
+        guard let space = name.firstIndex(of: " "), let past = pasts[String(name[..<space])] else { return name }
+        return past + name[space...]
+    }
+
     public func undoable(_ name: String, _ action: @escaping @MainActor () -> Void) {
         undo.registerUndo(withTarget: self) { _ in MainActor.assumeIsolated { action() } }
         undo.setActionName(name)
@@ -1346,7 +1368,7 @@ public final class WikiStore {
 
     private func offer(_ name: String) {
         offerClearing?.cancel()
-        undoOffer = name
+        undoOffer = Self.done(name)
         offerClearing = Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
@@ -1550,7 +1572,8 @@ public final class WikiStore {
             draftChanged(title)
             editing.remove(title)
             draftBases[title] = nil
-            if !closing, !exists(title) { for river in rivers { river.close(title) } }
+            // Quietly: nothing was made, so nothing is offered to undo.
+            if !closing, !exists(title) { for river in rivers { river.close(title, quietly: true) } }
             return
         }
         // No title: untitled — again, its title taken away.
@@ -1779,6 +1802,23 @@ extension WikiStore {
             return names.contains { lower.contains($0 + "]]") || lower.contains($0 + "|") }
         }) else { return nil }
         return Self.plain(line)
+    }
+
+    /// The graph's own words, its spelling not to be corrected: every word
+    /// of every page's name and alias, and Weft's — kept until names change.
+    public var ownWords: [String] {
+        if let kept = keptWords, kept.version == namesVersion { return kept.words }
+        var words: Set<String> = ["tiddler", "tiddlers", "Tiddler", "Tiddlers", "Weft", "TiddlyWiki"]
+        for entry in wiki?.entries.values.map({ $0 }) ?? [] {
+            for name in entry.names {
+                for word in name.split(whereSeparator: { !$0.isLetter && $0 != "'" }) where word.count > 1 {
+                    words.insert(String(word))
+                }
+            }
+        }
+        let sorted = words.sorted()
+        keptWords = (namesVersion, sorted)
+        return sorted
     }
 
     /// Every name a page answers to: its title and aliases.

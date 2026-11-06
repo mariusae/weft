@@ -50,15 +50,26 @@ enum TypeAhead {
         deadline?.cancel()
         deadline = nil
         waitingFor = nil
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
-        let events = held
-        held = []
-        guard replaying, !events.isEmpty else { return }
-        // Once the caret is settled where it went: typed there, in order.
+        guard replaying else {
+            stopHolding()
+            held = []
+            return
+        }
+        // Once the caret is settled where it went: typed there, in order —
+        // and what is typed till then held on with them, not let in ahead.
         DispatchQueue.main.async {
+            // Held again meanwhile, for another card: kept for that one.
+            guard waitingFor == nil else { return }
+            stopHolding()
+            let events = held
+            held = []
             for event in events { NSApp.sendEvent(event) }
         }
+    }
+
+    private static func stopHolding() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
     }
 }
 #endif

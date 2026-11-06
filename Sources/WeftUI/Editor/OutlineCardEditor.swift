@@ -31,9 +31,13 @@ struct OutlineCardEditor: NSViewRepresentable {
     var onLead: () -> Void = {}
     /// Told where its first line's middle is, down from its top.
     var onFirstLine: (CGFloat) -> Void = { _ in }
+    /// Told as it is typed in when it comes to have words, or none.
+    var onEmptinessChange: (Bool) -> Void = { _ in }
 
     final class Coordinator {
+        var onEmptinessChange: (Bool) -> Void = { _ in }
         var revision = -1
+        var wordsVersion = -1
         var onFocusChange: (Bool) -> Void = { _ in }
         /// The text last looked at, and whether it asks the graph anything.
         var checked: String?
@@ -110,6 +114,7 @@ struct OutlineCardEditor: NSViewRepresentable {
         editor.onTitle = { [store, title] name in store.change(title) { $0.title = name } }
         editor.onAskTitle = { [river, title] in river.edit(title, inTitle: true) }
         editor.onFocusChange = { [coordinator = context.coordinator] in coordinator.onFocusChange($0) }
+        editor.onEmptinessChange = { [coordinator = context.coordinator] in coordinator.onEmptinessChange($0) }
         context.coordinator.flushing = NotificationCenter.default.addObserver(forName: .weftFlushEdits, object: nil, queue: nil) { [weak editor] _ in
             MainActor.assumeIsolated { editor?.flushEdits() }
         }
@@ -120,6 +125,7 @@ struct OutlineCardEditor: NSViewRepresentable {
     func updateNSView(_ editor: PageOutlineEditor, context: Context) {
         context.coordinator.onFocusChange = onFocusChange
         context.coordinator.onFirstLine = onFirstLine
+        context.coordinator.onEmptinessChange = onEmptinessChange
         // The page's ring standing for its first row's mark.
         let leadMark = lead.map { $0 == .done }
         if editor.leadMark != leadMark { editor.leadMark = leadMark }
@@ -127,6 +133,11 @@ struct OutlineCardEditor: NSViewRepresentable {
         context.coordinator.tellFirstLine(editor)
         // A private page's links are not looked up on the web.
         editor.isPrivate = store.isPrivate(title)
+        // The graph's own words not underlined, nor corrected to others.
+        if context.coordinator.wordsVersion != store.namesVersion {
+            context.coordinator.wordsVersion = store.namesVersion
+            editor.acceptSpelling(of: store.ownWords)
+        }
         let folds = river.rowFolds(of: title)
         editor.load(text, folds: folds)
         // Folded elsewhere — a sync brought the river's file — and not being written in here.

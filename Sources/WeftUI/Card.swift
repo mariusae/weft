@@ -113,7 +113,9 @@ struct Card: View {
                 #endif
         }
         .overlay(RoundedRectangle(cornerRadius: Measures.cardRadius).strokeBorder(Ink.rule.color.opacity(river.isSelected(title) ? 0 : 1)))
-        .overlay(RoundedRectangle(cornerRadius: Measures.cardRadius).strokeBorder(Ink.accent.color.opacity(river.isSelected(title) ? 0.45 : 0)))
+        .overlay(RoundedRectangle(cornerRadius: Measures.cardRadius)
+            // Chosen — written in, where the keys go: plain to see, light or dark.
+            .strokeBorder(Ink.accent.color.opacity(river.isSelected(title) ? 0.85 : 0), lineWidth: river.isSelected(title) ? 1.5 : 1))
         .shadow(color: .black.opacity(peeking ? 0.03 : 0.07), radius: peeking ? 4 : 10, y: peeking ? 1 : 3)
         // Swiped aside — a finger on the phone, two on the Mac's trackpad —
         // its actions under it; not while it is written in.
@@ -215,7 +217,7 @@ struct Card: View {
         // Under the pointer, its controls over the end of its words, on a
         // fade of its own paper — taking no room from them otherwise.
         .overlay(alignment: .trailing) {
-            if hovering {
+            if controlsShown {
                 macControls
                     .padding(.leading, 28)
                     .background {
@@ -226,7 +228,7 @@ struct Card: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .animation(.easeOut(duration: 0.15), value: controlsShown)
         #endif
     }
 
@@ -461,7 +463,7 @@ struct Card: View {
                 // end, on a fade of its own card — taking no room from its words.
                 .overlay(alignment: Alignment(horizontal: .trailing, vertical: .cardFirstLine)) {
                     // Shown always to check the layout by: `WEFT_GRID=1`.
-                    if !showsHeader, hovering || CardGrid.shown {
+                    if !showsHeader, controlsShown || CardGrid.shown {
                         macControls
                             .padding(.leading, 28)
                             .background {
@@ -472,7 +474,7 @@ struct Card: View {
                             .transition(.opacity)
                     }
                 }
-                .animation(.easeOut(duration: 0.15), value: hovering)
+                .animation(.easeOut(duration: 0.15), value: controlsShown)
             }
             let links = store.backlinks(of: title)
             if !links.isEmpty {
@@ -707,8 +709,8 @@ struct Card: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(Ink.secondary.color)
-        .opacity(folded ? 0.9 : hovering ? 0.6 : 0)
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .opacity(folded ? 0.9 : controlsShown ? 0.6 : 0)
+        .animation(.easeOut(duration: 0.15), value: controlsShown)
         .help(folded ? "Unfold (⌃⌘↓) — ⌥-click unfolds every card" : "Fold to its title (⌃⌘↑) — ⌥-click folds every card")
         .accessibilityLabel(folded ? "Unfold" : "Fold")
     }
@@ -719,45 +721,14 @@ struct Card: View {
     /// faint while it is written in or chosen, else out of sight. Open:
     /// text or outline, the days beside a day's, what a query river does
     /// with it, More, and closing it. Peeking: More and closing.
+    /// Under the pointer — not while typing — what is reached for most:
+    /// the days beside a day's, More, and closing it. The rest in More.
     private var macControls: some View {
         let peeking = river.isFolded(title)
-        let shownMode = store.editorMode(title)
         return HStack(spacing: 2) {
-            if !peeking {
-                HStack(spacing: 1) {
-                    ForEach(WikiStore.EditorMode.allCases, id: \.self) { mode in
-                        Button { store.setEditorMode(mode, for: title) } label: {
-                            Image(systemName: mode.symbol)
-                                .font(.system(size: 11, weight: .medium))
-                                .frame(width: 26, height: 20)
-                                .background(mode == shownMode ? Color.primary.opacity(0.1) : .clear, in: .rect(cornerRadius: Measures.controlRadius))
-                                .contentShape(.rect)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(mode == shownMode ? Ink.text.color : Ink.secondary.color)
-                        .cardTip(mode == .outline ? "Write as an Outline" : "Write as Text")
-                        .accessibilityLabel(mode.rawValue)
-                        .accessibilityAddTraits(mode == shownMode ? .isSelected : [])
-                    }
-                }
-                .padding(2)
-                .overlay(RoundedRectangle(cornerRadius: Measures.controlRadius).strokeBorder(Ink.rule.color))
-                .padding(.trailing, 6)
-                if store.kind(title) == .day {
-                    CardButton("The Day Before", "chevron.left") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: -1) } }
-                    CardButton("The Day After", "chevron.right") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: 1) } }
-                }
-                // Its pages to read: the reader beside the river, a click away.
-                if store.canRead(title) {
-                    CardButton("Read", "doc.richtext") { river.reading = title }
-                }
-                if river.isQuery {
-                    if river.isHeld(title) {
-                        CardButton("Release to Query", "arrow.uturn.down") { withAnimation { river.releaseToQuery(title) } }
-                    } else {
-                        CardButton("Keep at Top", "pin") { withAnimation { river.keepAtTop(title) } }
-                    }
-                }
+            if !peeking, store.kind(title) == .day {
+                CardButton("The Day Before", "chevron.left") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: -1) } }
+                CardButton("The Day After", "chevron.right") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: 1) } }
             }
             Menu { menuItems } label: { CardButtonFace(symbol: "ellipsis") }
                 .menuStyle(.button)
@@ -766,13 +737,17 @@ struct Card: View {
                 .fixedSize()
                 .cardTip("More")
                 .accessibilityLabel("More")
-            CardButton(river.isQuery ? "Remove from River" : "Close", "xmark") { withAnimation { river.close(title) } }
+            CardButton("Close", "xmark") { withAnimation { river.close(title) } }
         }
         .foregroundStyle(Ink.secondary.color)
-        .environment(\.cardHovered, hovering)
-        .opacity(hovering ? 1 : !peeking && (river.isWriting(title) || river.isSelected(title)) ? 0.45 : 0)
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .environment(\.cardHovered, controlsShown)
+        .opacity(controlsShown ? 1 : 0)
+        .animation(.easeOut(duration: 0.15), value: controlsShown)
     }
+
+    /// Its controls shown: the pointer on it — and not put away by typing,
+    /// till the pointer moves again, as the Mac hides the pointer itself.
+    private var controlsShown: Bool { hovering && !TypingQuiet.shared.quiet }
     #endif
 
     /// The card's controls, slid out under it: open or peek, text or
@@ -825,105 +800,112 @@ struct Card: View {
     }
 
     /// Everything else to do with the card: in its drawer's More.
+    /// What can be done with it, in four groups and its deleting: what it is
+    /// called and how it is filed; where it stands; where it is in the river
+    /// and how it is shown; and what can be had of it. The card is always
+    /// “it”, the page a tiddler: closed from the river, deleted from the wiki.
     @ViewBuilder private var menuItems: some View {
-        if canRename {
-            if isUntitled {
-                // What it begins with, as its title: at once.
-                // As last saved: the menu not drawn again with each letter typed.
-                if let name = store.untitledName(title), name != "Untitled" {
-                    Button("Title “\(name)”", systemImage: "arrow.up.to.line") { river.titleByFirstLine(title) }
+        // Its name, and how it is filed.
+        Section {
+            if canRename {
+                if isUntitled {
+                    // Its field offers what it begins with: Return takes it.
+                    Button("Add Title…", systemImage: "character.cursor.ibeam") { startRenaming() }
+                } else {
+                    Button("Rename…", systemImage: "character.cursor.ibeam") { startRenaming() }
+                    Button("Remove Title", systemImage: "minus.circle") { removeTitle() }
                 }
-                Button("Add Title…", systemImage: "character.cursor.ibeam") { startRenaming() }
-            } else {
-                Button("Rename", systemImage: "character.cursor.ibeam") { startRenaming() }
-                Button("Remove Title", systemImage: "minus.circle") { removeTitle() }
+            }
+            if canChooseIcon {
+                Button("Choose Icon…", systemImage: store.icon(of: title) ?? "square.grid.3x3") { choosingIcon = true }
+                if store.icon(of: title) != nil {
+                    Button("Remove Icon", systemImage: "minus.circle") { store.setIcon(nil, of: title) }
+                }
+            }
+            Button("Add Tag", systemImage: "tag") { addingTag = true }
+            Button("Add Field", systemImage: "plus.rectangle") {
+                addingField = true
+                store.fieldsShown.insert(title)
+            }
+            Button("Relate To…", systemImage: "link") { addingRelated = true }
+            homeRiverMenu
+        }
+        // Where it stands: a thing to do, pinned, in the inbox, the wiki's.
+        Section {
+            if store.kind(title) != .day, !store.isShadow(title) {
+                // The page itself a thing to do: checked off on its card, listed in Tasks.
+                switch store.taskState(title) {
+                case nil:
+                    Button("Make a To-Do", systemImage: "circle") { store.setTaskState(title, .todo) }
+                case .todo:
+                    Button("Mark Done", systemImage: "checkmark.circle") { store.setTaskState(title, .done) }
+                    Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
+                case .done:
+                    Button("Mark Not Done", systemImage: "circle") { store.setTaskState(title, .todo) }
+                    Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
+                }
+            }
+            if store.tiddler(title) != nil, store.kind(title) != .day {
+                // Prism's flags: in its inbox, among its pinned.
+                let inbox = store.isInInbox(title), pinned = store.isPinned(title)
+                Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") { store.setPinned(title, !pinned) }
+                Button(inbox ? "Done with It" : "Add to Inbox", systemImage: inbox ? "tray.and.arrow.up" : "tray.and.arrow.down") {
+                    store.setInbox(title, !inbox)
+                }
+            }
+            if store.tiddler(title) != nil || store.isEditing(title) {
+                let wiki = store.draftHead(title)?.isWiki ?? store.isWiki(title)
+                Button(wiki ? "Remove from Wiki" : "Add to Wiki", systemImage: "book.closed") { store.setWiki(title, !wiki) }
             }
         }
-        Button(river.isFolded(title) ? "Unfold" : "Fold") {
-            withAnimation(.snappy(duration: 0.2)) { river.toggleFold(title) }
-        }
-        if river.isQuery {
-            // What the river finds: held at its top; what is held, let go.
-            if river.isHeld(title) {
-                Button("Release to Query", systemImage: "arrow.uturn.down") { withAnimation { river.releaseToQuery(title) } }
-            } else {
-                Button("Keep at Top", systemImage: "pin") { withAnimation { river.keepAtTop(title) } }
+        // Where it is in the river, and how it is shown.
+        Section {
+            Button(river.isFolded(title) ? "Unfold" : "Fold", systemImage: river.isFolded(title) ? "chevron.down" : "chevron.right") {
+                withAnimation(.snappy(duration: 0.2)) { river.toggleFold(title) }
             }
-            Button("Remove from River", systemImage: "minus.circle") { withAnimation { river.close(title) } }
-        } else {
-            Button("Close Other Cards") { withAnimation { river.closeOthers(title) } }
-        }
-        #if os(iOS)
-        // The Mac's switch in the header, on the phone in here: no room beside the title.
-        Picker("Write As", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
-            ForEach(WikiStore.EditorMode.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.symbol).tag($0) }
-        }
-        #endif
-        Divider()
-        if canChooseIcon {
-            Button("Choose Icon…", systemImage: store.icon(of: title) ?? "square.grid.3x3") { choosingIcon = true }
-            if store.icon(of: title) != nil {
-                Button("Remove Icon", systemImage: "minus.circle") { store.setIcon(nil, of: title) }
+            Picker("Write As", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
+                ForEach(WikiStore.EditorMode.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.symbol).tag($0) }
             }
-        }
-        Button("Add Tag", systemImage: "tag") { addingTag = true }
-        Button("Relate To…", systemImage: "link") { addingRelated = true }
-        homeRiverMenu
-        Button("Add Field", systemImage: "plus.rectangle") {
-            addingField = true
-            store.fieldsShown.insert(title)
-        }
-        Button("Insert Query…", systemImage: "line.3.horizontal.decrease.circle") { insertingQuery = true }
-        if store.tiddler(title) != nil, !store.tagged(title).isEmpty || !FieldSpec.specs(of: store.tiddler(title)!).isEmpty {
-            Button("Fields of Tiddlers Tagged “\(title)”…", systemImage: "list.bullet.rectangle") { definingFields = true }
-        }
-        if store.tiddler(title) != nil || store.isEditing(title) {
-            let wiki = store.draftHead(title)?.isWiki ?? store.isWiki(title)
-            Button(wiki ? "Remove from Wiki" : "Add to Wiki") { store.setWiki(title, !wiki) }
-        }
-        if store.tiddler(title) != nil, store.kind(title) != .day {
-            // Prism's flags: in its inbox, among its pinned.
-            let inbox = store.isInInbox(title), pinned = store.isPinned(title)
-            Button(inbox ? "Done with It" : "Add to Inbox", systemImage: inbox ? "tray.and.arrow.up" : "tray.and.arrow.down") {
-                store.setInbox(title, !inbox)
+            if store.canRead(title) {
+                Button("Read", systemImage: "doc.richtext") { river.reading = title }
             }
-            Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") { store.setPinned(title, !pinned) }
-        }
-        if store.canRead(title) {
-            Button("Read", systemImage: "doc.richtext") { river.reading = title }
-        }
-        if store.kind(title) != .day, !store.isShadow(title) {
-            // The page itself a thing to do: checked off on its card, listed in Tasks.
-            switch store.taskState(title) {
-            case nil:
-                Button("Make a To-Do", systemImage: "circle") { store.setTaskState(title, .todo) }
-            case .todo:
-                Button("Mark Done", systemImage: "checkmark.circle") { store.setTaskState(title, .done) }
-                Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
-            case .done:
-                Button("Mark Not Done", systemImage: "circle") { store.setTaskState(title, .todo) }
-                Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
+            if river.isQuery {
+                // What the river finds: held at its top; what is held, let go.
+                if river.isHeld(title) {
+                    Button("Release to Query", systemImage: "arrow.down.to.line") { withAnimation { river.releaseToQuery(title) } }
+                } else {
+                    Button("Keep at Top", systemImage: "arrow.up.to.line") { withAnimation { river.keepAtTop(title) } }
+                }
             }
+            Button("Close", systemImage: "xmark") { withAnimation { river.close(title) } }
+            Button("Close Others", systemImage: "rectangle.stack.badge.minus") { withAnimation { river.closeOthers(title) } }
         }
-        Divider()
-        Button("Find in Card", systemImage: "text.magnifyingglass") { river.find(in: title) }
-        if store.tiddler(title) != nil {
-            Button("History…", systemImage: "clock.arrow.circlepath") { historyShown = true }
-        }
-        Button("Copy Link") { Platform.copy("[[\(title)]]") }
-        // What it says, as written — the draft, while it is being written.
-        Button("Copy Contents", systemImage: "doc.on.doc") {
-            Platform.copy((store.draft(title) ?? store.tiddler(title))?.text ?? "")
-        }
-        .disabled(store.tiddler(title) == nil && !store.isEditing(title))
-        if Platform.canReveal, let path = store.path(of: title) {
-            Button("Show in Finder") { Platform.reveal(path) }
+        // What can be had of it.
+        Section {
+            Button("Find in It", systemImage: "text.magnifyingglass") { river.find(in: title) }
+            Button("Insert Query…", systemImage: "line.3.horizontal.decrease.circle") { insertingQuery = true }
+            if let page = store.tiddler(title), !store.tagged(title).isEmpty || !FieldSpec.specs(of: page).isEmpty {
+                Button("Fields of Tiddlers Tagged “\(title)”…", systemImage: "list.bullet.rectangle") { definingFields = true }
+            }
+            if store.tiddler(title) != nil {
+                Button("History…", systemImage: "clock.arrow.circlepath") { historyShown = true }
+            }
+            Button("Copy Link", systemImage: "link") { Platform.copy("[[\(title)]]") }
+            // What it says, as written — the draft, while it is being written.
+            Button("Copy Contents", systemImage: "doc.on.doc") {
+                Platform.copy((store.draft(title) ?? store.tiddler(title))?.text ?? "")
+            }
+            .disabled(store.tiddler(title) == nil && !store.isEditing(title))
+            if Platform.canReveal, let path = store.path(of: title) {
+                Button("Show in Finder", systemImage: "folder") { Platform.reveal(path) }
+            }
         }
         if store.tiddler(title) != nil, !store.isShadow(title) {
-            Divider()
-            Button("Delete Tiddler", role: .destructive) {
-                // At once: Undo brings it back.
-                withAnimation { store.delete(title) }
+            Section {
+                Button("Delete Tiddler", systemImage: "trash", role: .destructive) {
+                    // At once: Undo brings it back.
+                    withAnimation { store.delete(title) }
+                }
             }
         }
     }
@@ -1075,9 +1057,19 @@ private struct CardTip: ViewModifier {
                 if shown { withAnimation(.easeOut(duration: 0.1)) { shown = false } }
                 return
             }
-            try? await Task.sleep(for: .milliseconds(600))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.12)) { shown = true }
+            // Clicked while the pointer rests on it — its menu opened, and
+            // closed again — it said what it is already: not again till the
+            // pointer leaves it and comes back.
+            let clicks = TypingQuiet.shared.clicks
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(600))
+                guard !Task.isCancelled else { return }
+                if TypingQuiet.shared.clicks != clicks {
+                    if shown { withAnimation(.easeOut(duration: 0.1)) { shown = false } }
+                    return
+                }
+                if !shown { withAnimation(.easeOut(duration: 0.12)) { shown = true } }
+            }
         }
     }
 }
