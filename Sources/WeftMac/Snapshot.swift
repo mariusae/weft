@@ -339,6 +339,21 @@ enum Snapshot {
                     view.moveToEndOfDocument(nil)
                     view.doCommand(by: #selector(NSResponder.insertNewline(_:)))
                 }
+                // `WEFT_NEW_TYPE=words`: ⌘N, the river scrolled away from where the
+                // new card goes, and the words typed at once — as keys, before
+                // the card can have the caret.
+                if let words = environment["WEFT_NEW_TYPE"], let window = NSApp.windows.first(where: { $0.isVisible }) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        // `WEFT_NEW_TODO`: ⌘⇧N instead.
+                        if environment["WEFT_NEW_TODO"] != nil { river.newTodo() } else { river.newTiddler() }
+                        for (index, character) in words.enumerated() {
+                            guard let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                             windowNumber: window.windowNumber, context: nil, characters: String(character),
+                                                             charactersIgnoringModifiers: String(character), isARepeat: false, keyCode: 0) else { continue }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.01) { NSApp.sendEvent(key) }
+                        }
+                    }
+                }
                 // `WEFT_NEW_LATER`: a new tiddler, once the caret is in a card or the river scrolled, as ⌘N would.
                 if environment["WEFT_NEW_LATER"] != nil {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { river.newTiddler() }

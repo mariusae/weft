@@ -751,14 +751,26 @@ private struct EditorRepresentable: NSViewRepresentable {
             context.coordinator.live?.changed()
         }
         context.coordinator.shown = text
-        if wantsCaret {
-            DispatchQueue.main.async { [onCaretTaken] in
-                guard let window = view.window else { return }
-                if window.firstResponder !== view {
-                    window.makeFirstResponder(view)
-                    view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
-                }
-                onCaretTaken()
+        if wantsCaret, !context.coordinator.takingCaret {
+            context.coordinator.takingCaret = true
+            Self.takeCaret(view, coordinator: context.coordinator, then: onCaretTaken)
+        }
+    }
+
+    /// The caret taken, at the end of its words — once it is in a window to
+    /// take it in: a card just made may not be yet, still being scrolled to.
+    /// Said taken only once it is.
+    static func takeCaret(_ view: TiddlerTextView, coordinator: Coordinator, then taken: @escaping () -> Void, tries: Int = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (tries == 0 ? 0 : 0.05)) {
+            if let window = view.window, window.firstResponder !== view, window.makeFirstResponder(view) {
+                view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+            }
+            let focused = view.window?.firstResponder === view
+            if focused || tries >= 40 {
+                coordinator.takingCaret = false
+                if focused { taken() }
+            } else {
+                takeCaret(view, coordinator: coordinator, then: taken, tries: tries + 1)
             }
         }
     }
@@ -785,6 +797,8 @@ private struct EditorRepresentable: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
+        /// Taking the caret, asked for: once at a time.
+        var takingCaret = false
         var parent: EditorRepresentable
         var live: LiveMarkdown?
         /// The text the view was last given, or told it has.

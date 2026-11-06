@@ -1194,10 +1194,17 @@ private struct RiverColumn: View {
             }
             .onChange(of: river.focusRequest) {
                 guard let focus = river.focus else { return }
+                let asked = river.focusRequest
                 // Once a card just opened is among the stack's: scrolled to in
                 // the change that put it there, it is not found to scroll to.
                 DispatchQueue.main.async {
                     withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(focus, anchor: .top) }
+                }
+                // And again once the cards round it are laid out: the river's
+                // height only reckoned till they are, it can stop short of it.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    guard river.focusRequest == asked, river.focus == focus else { return }
+                    withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(focus, anchor: .top) }
                 }
             }
         }

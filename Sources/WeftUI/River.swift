@@ -580,6 +580,9 @@ public final class River: Identifiable {
 
     /// The caret came into a card: in its body, its title, or its fields.
     public func caretEntered(_ title: String, in part: CaretPart) {
+        #if os(macOS)
+        TypeAhead.arrived(title)
+        #endif
         caretParts[title, default: []].insert(part)
         leaving[title]?.cancel()
         leaving[title] = nil
@@ -647,6 +650,10 @@ public final class River: Identifiable {
     public func edit(_ title: String, inTitle: Bool = false) {
         open(title)
         let title = store.canonicalTitle(title)
+        #if os(macOS)
+        // What is typed before its editor has the caret, held for it.
+        if writing != title { TypeAhead.hold(for: title) }
+        #endif
         if let before = caretWanted?.title, before != title { cardChanged(before) }
         caretWanted = (title, inTitle)
         cardChanged(title)

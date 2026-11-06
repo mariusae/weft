@@ -42,6 +42,8 @@ struct OutlineCardEditor: NSViewRepresentable {
         var folds: [OutlineFolds.Mark] = []
         /// Heard: the app about to write what is being edited.
         var flushing: NSObjectProtocol?
+        /// Taking the caret, asked for: once at a time.
+        var takingCaret = false
         /// Where its first line's middle was last told to be.
         var firstLine: CGFloat?
         var onFirstLine: (CGFloat) -> Void = { _ in }
@@ -132,11 +134,9 @@ struct OutlineCardEditor: NSViewRepresentable {
             context.coordinator.folds = folds
             if !editor.isFocused { editor.refold(folds) }
         }
-        if wantsCaret {
-            DispatchQueue.main.async { [onCaretTaken] in
-                if !editor.isFocused { editor.focus() }
-                onCaretTaken()
-            }
+        if wantsCaret, !context.coordinator.takingCaret {
+            context.coordinator.takingCaret = true
+            Self.takeCaret(editor, coordinator: context.coordinator, then: onCaretTaken)
         }
         // Looked at again only when it changed: this runs for each key.
         let coordinator = context.coordinator
@@ -158,6 +158,20 @@ struct OutlineCardEditor: NSViewRepresentable {
         } else if coordinator.revision != -2 {
             coordinator.revision = -2
             editor.setGraph(nil, title: title, refreshing: false)
+        }
+    }
+
+    /// The caret taken — once it is in a window to take it in: a card just
+    /// made may not be yet, still being scrolled to. Said taken only once it is.
+    static func takeCaret(_ editor: PageOutlineEditor, coordinator: Coordinator, then taken: @escaping () -> Void, tries: Int = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (tries == 0 ? 0 : 0.05)) {
+            if editor.window != nil, !editor.isFocused { editor.focus() }
+            if editor.isFocused || tries >= 40 {
+                coordinator.takingCaret = false
+                if editor.isFocused { taken() }
+            } else {
+                takeCaret(editor, coordinator: coordinator, then: taken, tries: tries + 1)
+            }
         }
     }
 
