@@ -354,7 +354,10 @@ private struct BodyEditor: View {
                                   withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, lead == .done ? .todo : .done) }
                               }, onFirstLine: onFirstLine)
             #else
-            OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused)
+            OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused,
+                              lead: lead, onLead: { [store, title, lead] in
+                                  withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, lead == .done ? .todo : .done) }
+                              })
             #endif
         } else {
             TiddlerEditor(text: text, controller: controller, card: title,

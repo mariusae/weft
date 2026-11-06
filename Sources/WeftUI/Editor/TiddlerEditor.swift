@@ -1,5 +1,6 @@
 import ReflectCore
 import SwiftUI
+import UniformTypeIdentifiers
 import WeftCore
 #if os(macOS)
 import AppKit
@@ -355,11 +356,11 @@ final class TiddlerTextView: NSTextView {
         insertText(text, replacementRange: range)
     }
 
-    /// Pictures pasted, with no words with them: kept in the graph, shown
-    /// where the caret is.
+    /// Pictures pasted — files of pictures, whatever words come with them,
+    /// as the Finder gives their names; else a picture with no words — kept
+    /// in the graph, shown where the caret is. As the outline takes them.
     override func paste(_ sender: Any?) {
-        let board = NSPasteboard.general
-        if board.string(forType: .string) == nil, let shown = PastedPictures.keep(PastedPictures.pictures(on: board)) {
+        if let shown = PastedPictures.pasted(from: .general) {
             insertText(shown, replacementRange: selectedRange())
         } else {
             super.paste(sender)
@@ -379,7 +380,7 @@ final class TiddlerTextView: NSTextView {
     override init(frame: NSRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         // Pictures taken when dropped, besides words and files.
-        registerForDraggedTypes([.fileURL, .png, .tiff])
+        registerForDraggedTypes([.fileURL, .png, .tiff, NSPasteboard.PasteboardType(UTType.jpeg.identifier)])
         ghost.textColor = Palette.faint
         ghost.isHidden = true
         addSubview(ghost)

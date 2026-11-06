@@ -241,6 +241,12 @@ struct RiverCommands: Commands {
             }
             .keyboardShortcut("k", modifiers: [.command, .control])
             .disabled(card == nil || card.map { store.kind($0) == .day } ?? true)
+            Button("No Longer a To-Do") {
+                guard let card else { return }
+                withAnimation(.snappy(duration: 0.2)) { store.setTaskState(card, nil) }
+            }
+            .keyboardShortcut("k", modifiers: [.command, .control, .option])
+            .disabled(task == nil)
             Button(card.map { store.isInInbox($0) } == true ? "Done with It" : "Add to Inbox") {
                 guard let card else { return }
                 store.setInbox(card, !store.isInInbox(card))

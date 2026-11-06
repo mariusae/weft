@@ -20,6 +20,10 @@ struct OutlineCardEditor: UIViewRepresentable {
     var onCaretTaken: () -> Void = {}
     /// Told when the caret comes in, and when it leaves.
     var onFocusChange: (Bool) -> Void = { _ in }
+    /// An untitled page that is a thing to do: its ring as its first row's
+    /// mark, that row's own not shown; tapped, `onLead`.
+    var lead: Tiddler.TaskState? = nil
+    var onLead: () -> Void = {}
 
     /// Where a top-level row's words start.
     static var textIndent: CGFloat { PhoneMetrics(face: TextSettings.face, size: TextSettings.size).textIndent(for: .blank) }
@@ -159,6 +163,9 @@ struct OutlineCardEditor: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.write = { text = $0 }
         coordinator.onFocusChange = onFocusChange
+        // The page's ring standing for its first row's mark.
+        editor.leadMark = lead.map { $0 == .done }
+        editor.onLeadMark = lead == nil ? nil : onLead
         // Changed elsewhere — another river, a sync — and not being written in
         // here; or replaced, its first line made its title, even while it is.
         let replaced = store.replacements[title] ?? 0

@@ -41,6 +41,12 @@ struct Card: View {
                 relinking
                 if store.needsReview(title) {
                     ConflictView(title: title)
+                } else if let task = ringBeside, store.editorMode(title) == .outline {
+                    // Untitled, a thing to do, written as an outline: its ring
+                    // its first row's mark, that row's own not shown — its
+                    // words where every card's start, not after a column of its own.
+                    CardEditor(title: title, controller: controller, addingTag: $addingTag, addingField: $addingField,
+                               addingRelated: $addingRelated, definingFields: $definingFields, lead: task)
                 } else if let task = ringBeside {
                     // Untitled, a thing to do: its ring beside its first line, as a
                     // checklist's row has it — not a row of its own over it.

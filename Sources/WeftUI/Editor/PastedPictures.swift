@@ -28,6 +28,16 @@ import UIKit
     private static let kept: [(type: UTType, ext: String)] = [(.png, "png"), (.jpeg, "jpg"), (.gif, "gif")]
 
     #if os(macOS)
+    /// What pasting from a pasteboard writes when it is pictures, kept:
+    /// files of pictures — whatever words come with them, as the Finder
+    /// gives their names — else a picture that comes with no words. Nil,
+    /// when what is pasted is words, as the outline takes them too.
+    static func pasted(from board: NSPasteboard) -> String? {
+        let files = (board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        guard !files.isEmpty || board.string(forType: .string) == nil else { return nil }
+        return keep(pictures(on: board))
+    }
+
     /// Each picture a pasteboard holds: files of pictures, or a picture itself.
     static func pictures(on board: NSPasteboard) -> [(data: Data, ext: String)] {
         let files = (board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
