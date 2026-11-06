@@ -31,6 +31,7 @@ private struct CardSwipe: ViewModifier {
     /// Where it rests between swipes: closed, or open on a side.
     @State private var rest: CGFloat = 0
     @State private var width: CGFloat = 360
+    @State private var height: CGFloat = 120
     /// Past the point a long swipe does the outer action: told once, with a tick.
     @State private var committing = false
 
@@ -38,6 +39,8 @@ private struct CardSwipe: ViewModifier {
     private static let gap: CGFloat = 10
     private static let capsule: CGFloat = 46
     private var opened: CGFloat { Self.button * 2 + Self.gap * 3 }
+    /// Too short for a capsule with its name under it: a card folded to its line.
+    private var short: Bool { height < Self.capsule + 34 }
     /// How far a long swipe goes before letting go does the outer action.
     private var commit: CGFloat { max(opened + 40, width * 0.55) }
 
@@ -46,7 +49,7 @@ private struct CardSwipe: ViewModifier {
             .offset(x: offset)
             .background(alignment: .leading) { if offset > 0 { actions(leading, side: .leading) } }
             .background(alignment: .trailing) { if offset < 0 { actions(trailing, side: .trailing) } }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { width = $0.width; height = $0.height }
             // Open, a tap on the card closes it again — not what the tap would do.
             .overlay {
                 if rest != 0 {
@@ -88,21 +91,40 @@ private struct CardSwipe: ViewModifier {
                         settle(0)
                         action.run()
                     } label: {
-                        // As Overcast's: a capsule of the action's colour, its
-                        // symbol in it, its name under it — in the card's middle,
-                        // not as tall as it.
-                        VStack(spacing: 6) {
-                            Image(systemName: action.symbol)
-                                .font(.system(size: 19, weight: .semibold))
+                        Group {
+                            if short {
+                                // A card too short for that — one folded to its
+                                // line: the capsule its height, its name in it.
+                                HStack(spacing: 5) {
+                                    Image(systemName: action.symbol)
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text(action.name)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                }
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: Self.capsule)
+                                .frame(height: max(22, height - 8))
                                 .background(action.tint, in: Capsule())
-                            Text(action.name)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(Ink.secondary.color)
-                                .lineLimit(1)
-                                .fixedSize()
+                            } else {
+                                // As Overcast's: a capsule of the action's colour, its
+                                // symbol in it, its name under it — in the card's middle,
+                                // not as tall as it.
+                                VStack(spacing: 6) {
+                                    Image(systemName: action.symbol)
+                                        .font(.system(size: 19, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: Self.capsule)
+                                        .background(action.tint, in: Capsule())
+                                    Text(action.name)
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Ink.secondary.color)
+                                        .lineLimit(1)
+                                        .fixedSize()
+                                }
+                            }
                         }
                         .frame(maxHeight: .infinity)
                         .contentShape(Rectangle())
