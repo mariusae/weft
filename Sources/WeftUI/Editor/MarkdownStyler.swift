@@ -182,7 +182,7 @@ struct MarkdownStyler {
     private var base: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
-        return [.font: PlatformFont.systemFont(ofSize: size), .foregroundColor: Palette.text, .paragraphStyle: paragraph]
+        return [.font: TextSettings.font(ofSize: size), .foregroundColor: Palette.text, .paragraphStyle: paragraph]
     }
 
     private var mono: PlatformFont { PlatformFont.monospacedSystemFont(ofSize: size * 0.92, weight: .regular) }
@@ -206,7 +206,7 @@ struct MarkdownStyler {
         let hashes = line.prefix { $0 == "#" }.count
         if (1...6).contains(hashes), line.dropFirst(hashes).first == " " {
             let scale: CGFloat = [1.45, 1.25, 1.12, 1.05, 1, 1][hashes - 1]
-            storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size * scale, weight: .semibold), range: range)
+            storage.addAttribute(.font, value: TextSettings.font(ofSize: size * scale, weight: .semibold), range: range)
             markup(NSRange(location: 0, length: hashes + 1))
         }
         // A quote: its marker markup, its words set in and quieter, a bar
@@ -239,7 +239,7 @@ struct MarkdownStyler {
             storage.addAttribute(.foregroundColor, value: Palette.faint, range: sub(marker))
             let bullet = match.range(at: 2)
             let check = match.range(at: 3)
-            let font = PlatformFont.systemFont(ofSize: size)
+            let font = TextSettings.font(ofSize: size)
             var width = (nsLine.substring(with: marker) as NSString).size(withAttributes: [.font: font]).width
             if check.location != NSNotFound {
                 let open = nsLine.substring(with: check) == " "
@@ -274,13 +274,13 @@ struct MarkdownStyler {
             if hashes == 0, (1...6).contains(inner), content.dropFirst(inner).first == " " {
                 let scale: CGFloat = [1.45, 1.25, 1.12, 1.05, 1, 1][inner - 1]
                 let start = match.range.upperBound
-                storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size * scale, weight: .semibold),
+                storage.addAttribute(.font, value: TextSettings.font(ofSize: size * scale, weight: .semibold),
                                      range: sub(NSRange(location: start, length: nsLine.length - start)))
                 markup(NSRange(location: start, length: inner + 1))
             }
         }
         for match in Self.matches(#"\*\*(?=\S)(.+?)(?<=\S)\*\*"#, in: line) {
-            storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size, weight: .semibold), range: sub(match.range(at: 1)))
+            storage.addAttribute(.font, value: TextSettings.font(ofSize: size, weight: .semibold), range: sub(match.range(at: 1)))
             markers(match.range, inner: match.range(at: 1), markup)
         }
         for match in Self.matches(#"(?<![*\w])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?!\*)"#, in: line) {
@@ -288,7 +288,7 @@ struct MarkdownStyler {
             markers(match.range, inner: match.range(at: 1), markup)
         }
         for match in Self.matches(#"(?<![_\w])__(?=\S)(.+?)(?<=\S)__(?![_\w])"#, in: line) {
-            storage.addAttribute(.font, value: PlatformFont.systemFont(ofSize: size, weight: .semibold), range: sub(match.range(at: 1)))
+            storage.addAttribute(.font, value: TextSettings.font(ofSize: size, weight: .semibold), range: sub(match.range(at: 1)))
             markers(match.range, inner: match.range(at: 1), markup)
         }
         for match in Self.matches(#"(?<![_\w])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![_\w])"#, in: line) {
@@ -366,7 +366,7 @@ struct MarkdownStyler {
                     if let middle = parts.middle {
                         hide(middle)
                         let first = sub(NSRange(location: content.location + middle.location, length: 1))
-                        storage.addAttributes([.weftEllipsis: true, .kern: LinkPill.ellipsisWidth(for: PlatformFont.systemFont(ofSize: size))], range: first)
+                        storage.addAttributes([.weftEllipsis: true, .kern: LinkPill.ellipsisWidth(for: TextSettings.font(ofSize: size))], range: first)
                     }
                     if let rest = parts.rest {
                         hide(rest)
@@ -382,7 +382,7 @@ struct MarkdownStyler {
                 // pill measured by its font — the rest of it hidden.
                 let first = NSRange(location: content.location, length: 1)
                 if content.length > 1 { storage.addAttributes(Self.hidden, range: sub(NSRange(location: content.location + 1, length: content.length - 1))) }
-                let font = PlatformFont.systemFont(ofSize: size)
+                let font = TextSettings.font(ofSize: size)
                 let width = ceil((label as NSString).size(withAttributes: [.font: font]).width)
                 let letter = ceil((nsLine.substring(with: first) as NSString).size(withAttributes: [.font: font]).width)
                 storage.addAttributes([.weftLabel: label, .kern: max(0, width - letter), .font: font, .foregroundColor: PlatformColor.clear],
@@ -392,7 +392,7 @@ struct MarkdownStyler {
                                 icon: kind == .web || kind == .tag ? nil : page.flatMap(icon))
             storage.addAttribute(.weftPill, value: pill, range: sub(span.range))
             if let lead, pill.hasLead {
-                storage.addAttribute(.kern, value: pill.leadWidth(for: PlatformFont.systemFont(ofSize: size)), range: sub(NSRange(location: lead, length: 1)))
+                storage.addAttribute(.kern, value: pill.leadWidth(for: TextSettings.font(ofSize: size)), range: sub(NSRange(location: lead, length: 1)))
             }
             if let tail, pill.hasLead {
                 // What the hidden markup after its words takes — a long
@@ -432,7 +432,7 @@ struct MarkdownStyler {
         }
         // Kept for its marker, as tall as a line of words.
         if item != nil, !shown, look.attachment != nil, pieces.words.isEmpty || pieces.card != nil {
-            let font = PlatformFont.systemFont(ofSize: size)
+            let font = TextSettings.font(ofSize: size)
             look.minimumHeight = ceil(font.ascender - font.descender + font.leading)
         }
         // Kept for its marker: its card's link, or its embed, markup.
@@ -487,7 +487,7 @@ enum Palette {
 
 enum Fonts {
     static func italic(size: CGFloat) -> PlatformFont {
-        let font = PlatformFont.systemFont(ofSize: size)
+        let font = TextSettings.font(ofSize: size)
         #if os(macOS)
         return NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
         #else

@@ -8,6 +8,8 @@ struct Card: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
     let title: String
+    /// The face chosen in Settings: its title and peek set in it again.
+    @AppStorage(TextSettings.faceKey) private var face = ""
     @State private var hovering = false
     /// The title being typed in: renaming.
     @State private var renaming = false
@@ -207,7 +209,7 @@ struct Card: View {
             // controls, swiped it shows its actions, held its menu; on the
             // Mac, under the pointer its controls float over its end.
         }
-        .font(.system(size: TextSettings.size))
+        .font(.system(size: TextSettings.size, design: TextSettings.design))
         .draggingCard(title, shown: peek.title)
         #if os(iOS)
         // Held: what can be done with it, as a menu over it.
@@ -607,7 +609,7 @@ struct Card: View {
                     store.change(title) { $0.title = value.isEmpty && Untitled.isName(title) ? title : value }
                 }, selection: $titleSelection)
                 .textFieldStyle(.plain)
-                .font(.system(size: Measures.titleSize, weight: .semibold))
+                .font(.system(size: Measures.titleSize, weight: .semibold, design: TextSettings.design))
                 .lineLimit(1)
                 .focused($titleFocused)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -625,7 +627,8 @@ struct Card: View {
             } else {
                 Text(peeking ? store.peek(of: title).title : shown)
                     // Peeking: the size of what it says, bold.
-                    .font(peeking ? .system(size: TextSettings.size, weight: .bold) : .system(size: Measures.titleSize, weight: .semibold))
+                    .font(peeking ? .system(size: TextSettings.size, weight: .bold, design: TextSettings.design)
+                                  : .system(size: Measures.titleSize, weight: .semibold, design: TextSettings.design))
                     .italic(!store.exists(title) && !store.isEditing(title))
                     // Done: struck through, quieter.
                     .strikethrough(task == .done, color: Ink.secondary.color)

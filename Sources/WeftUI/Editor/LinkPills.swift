@@ -125,7 +125,7 @@ final class LiveLayoutManager: NSLayoutManager {
         guard let storage = textStorage, characters.length > 0 else { return }
         storage.enumerateAttribute(.weftTask, in: characters) { value, range, _ in
             guard let task = value as? TaskBox else { return }
-            let font = PlatformFont.systemFont(ofSize: task.size)
+            let font = TextSettings.font(ofSize: task.size)
             let glyph = glyphIndexForCharacter(at: range.location)
             guard glyph < numberOfGlyphs else { return }
             let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)

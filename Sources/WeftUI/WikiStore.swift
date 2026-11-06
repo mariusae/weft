@@ -1811,8 +1811,10 @@ extension WikiStore {
         var words: Set<String> = ["tiddler", "tiddlers", "Tiddler", "Tiddlers", "Weft", "TiddlyWiki"]
         for entry in wiki?.entries.values.map({ $0 }) ?? [] {
             for name in entry.names {
+                // As named, and in the lower case it is written in running text.
                 for word in name.split(whereSeparator: { !$0.isLetter && $0 != "'" }) where word.count > 1 {
                     words.insert(String(word))
+                    words.insert(word.lowercased())
                 }
             }
         }

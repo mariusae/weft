@@ -95,7 +95,7 @@ struct CardEditor: View {
     }
 
     @AppStorage(TextSettings.sizeKey) private var textSize = TextSettings.standardSize
-    @AppStorage("Typeface") private var face = ""
+    @AppStorage(TextSettings.faceKey) private var face = ""
 
     @ViewBuilder private func editor(_ page: Tiddler?) -> some View {
         let wants = river.wantsCaret(title) == .body

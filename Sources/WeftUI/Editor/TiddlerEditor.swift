@@ -704,7 +704,7 @@ private struct EditorRepresentable: NSViewRepresentable {
         view.usesFindBar = true
         view.isIncrementalSearchingEnabled = true
         view.textContainerInset = NSSize(width: 0, height: 2)
-        view.font = PlatformFont.systemFont(ofSize: styler.size)
+        view.font = TextSettings.font(ofSize: styler.size)
         view.insertionPointColor = Palette.accent
         view.suggest = suggest
         view.onEscape = onEscape
@@ -1110,7 +1110,7 @@ private struct EditorRepresentable: UIViewRepresentable {
         let view = TiddlerTextView(frame: .zero, textContainer: container)
         view.isScrollEnabled = false
         view.backgroundColor = .clear
-        view.font = PlatformFont.systemFont(ofSize: styler.size)
+        view.font = TextSettings.font(ofSize: styler.size)
         view.autocorrectionType = .default
         view.smartQuotesType = .no
         view.isFindInteractionEnabled = true

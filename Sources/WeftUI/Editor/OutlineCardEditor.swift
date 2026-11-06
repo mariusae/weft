@@ -71,7 +71,7 @@ struct OutlineCardEditor: NSViewRepresentable {
         PageOutlineEditor.findNotes { [store] linked in store.noteFile(linked) }
         PageOutlineEditor.nameUntitled { [store] name in store.untitledName(name) }
         PageOutlineEditor.iconTargets { [store] name in store.linkIcon(name) }
-        let editor = PageOutlineEditor(text: "", fontSize: TextSettings.size + 1, root: store.root)
+        let editor = PageOutlineEditor(text: "", fontSize: TextSettings.size + 1, serif: TextSettings.serif, root: store.root)
         // Prism's keys, ⌘⇧K deleting rows and the rest: Weft has not its menus.
         editor.takesEditorKeys = true
         // Folded as it was left in this river.
