@@ -1260,6 +1260,9 @@ private struct RiverColumn: View {
             }
             .scrollPosition(id: $inView, anchor: .top)
             .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.2) { showing = Set($0) }
+            // Its last card folded, or closed, or made shorter: not left looking
+            // past the river's end at nothing.
+            .modifier(KeepsEnd(river: river, proxy: proxy, header: Self.headerID))
             #if os(macOS)
             // The rail of its cards stands for the scroll bar: not both.
             .scrollIndicators(river.cards.count > 1 ? .hidden : .automatic)
@@ -1592,4 +1595,51 @@ extension EnvironmentValues {
     /// What Settings shows of the GitHub account: given by the app, which
     /// knows the account.
     @Entry public var accountSettings: AnyView? = nil
+}
+
+/// A river not left looking past its end at nothing — its last card
+/// folded, closed or made shorter: the end brought back to the foot of
+/// the view, or, all of it shorter than the view, its top. Not while it
+/// is being scrolled by hand: what it shows then is the hand's.
+private struct KeepsEnd: ViewModifier {
+    let river: River
+    let proxy: ScrollViewProxy
+    let header: String
+    @State private var handScrolling = false
+
+    /// Whether the river shows past its end: scrolled beyond its last
+    /// card, or — all of it shorter than the view — down from its top.
+    enum PastEnd: Equatable {
+        case no, beyond, shorter
+
+        init(_ scroll: ScrollGeometry) {
+            let top = scroll.contentOffset.y + scroll.contentInsets.top
+            let room = scroll.containerSize.height - scroll.contentInsets.top - scroll.contentInsets.bottom
+            let slack: CGFloat = 24
+            if scroll.contentSize.height <= room {
+                self = top > slack ? .shorter : .no
+            } else {
+                self = top > scroll.contentSize.height - room + slack ? .beyond : .no
+            }
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollPhaseChange { _, phase in handScrolling = phase != .idle }
+            .onScrollGeometryChange(for: PastEnd.self) { PastEnd($0) } action: { _, past in
+                guard !handScrolling, past != .no else { return }
+                bringBack(past)
+            }
+    }
+
+    private func bringBack(_ past: PastEnd) {
+        withAnimation(.snappy(duration: 0.3)) {
+            if past == .shorter, let first = river.cards.first {
+                proxy.scrollTo(river.isQuery ? header : first, anchor: .top)
+            } else if let last = river.cards.last {
+                proxy.scrollTo(last, anchor: .bottom)
+            }
+        }
+    }
 }
