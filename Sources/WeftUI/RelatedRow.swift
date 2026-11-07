@@ -22,6 +22,7 @@ struct RelatedRow: View {
                     ForEach(related, id: \.title) { page in
                         Button { river.open(page.title, from: title) } label: { RelatedPill(page: page, shown: store.shownTitle(page.title)) }
                             .buttonStyle(.plain)
+                            .pointing()
                             .help(page.isOwn ? "Related here" : "“\(store.shownTitle(page.title))” relates itself to this")
                             .contextMenu {
                                 Button("Unrelate", systemImage: "minus.circle") { store.unrelate(title, from: page.title) }
@@ -52,6 +53,7 @@ struct RelatedRow: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .pointing()
                         .foregroundStyle(Ink.faint.color)
                         .help("Relate to Another Page")
                     }
@@ -68,6 +70,7 @@ struct RelatedRow: View {
                                     .overlay(Capsule().strokeBorder(Ink.accent.color.opacity(0.4)))
                             }
                             .buttonStyle(.plain)
+                            .pointing()
                             .foregroundStyle(Ink.accent.color)
                         }
                     }

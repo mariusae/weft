@@ -82,6 +82,7 @@ private struct IconCell: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .pointing()
         .help(choice.name)
         .accessibilityLabel(choice.name)
         .accessibilityAddTraits(chosen ? .isSelected : [])

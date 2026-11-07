@@ -20,6 +20,9 @@ struct CardEditor: View {
     /// An untitled page that is a thing to do: its ring before its first
     /// line — in an outline, standing for its first row's mark.
     var lead: Tiddler.TaskState? = nil
+    /// Whether its first line's gutter has the card's handle in it: no
+    /// ghost of a bullet shown there.
+    var gutterTaken = false
     @State private var newTag = ""
     /// Where its words' first line's middle is, down from the editor's top.
     @State private var firstLine: CGFloat?
@@ -103,20 +106,18 @@ struct CardEditor: View {
         let focused: (Bool) -> Void = { $0 ? river.caretEntered(title, in: .body) : river.caretLeft(title, from: .body) }
         let body = ZStack(alignment: .topLeading) {
             BodyEditor(title: title, mode: mode, controller: controller, wants: wants, taken: taken, focused: focused,
-                       lead: lead, onFirstLine: { firstLine = $0 }, onEmptinessChange: { typedEmpty = $0 })
+                       lead: lead, gutterTaken: gutterTaken, onFirstLine: { firstLine = $0 }, onEmptinessChange: { typedEmpty = $0 })
             if showsPlaceholder {
                 Text(placeholder(page))
+                    // In the face, at the size, of the words that will replace it.
+                    .font(.system(size: placeholderSize, design: TextSettings.design))
                     .foregroundStyle(Ink.faint.color)
                     // In line with an outline's words, clear of its bullet.
                     .padding(.leading, mode == .outline ? OutlineCardEditor.textIndent : 0)
                     .allowsHitTesting(false)
-                    #if os(macOS)
-                    // Its middle on the outline's first line, where the
-                    // editor says that is — the ring's, the words' to come.
+                    // Its middle on the outline's first line, where the editor
+                    // says that is — the bullet's, the words' to come.
                     .alignmentGuide(.top) { d in mode == .outline ? d.height / 2 - (firstLine ?? d.height / 2 + 2) : -2 }
-                    #else
-                    .padding(.top, 2)
-                    #endif
             }
         }
         // The store has heard: what it has, not what was typed, again.
@@ -145,6 +146,15 @@ struct CardEditor: View {
     /// Empty, as the editor says as it is typed in — at once, not a moment
     /// later as the store hears — else as the store has it: asked of its
     /// head, not its words, told when it comes to be empty or not.
+    /// The size of what will be written in its place.
+    private var placeholderSize: CGFloat {
+        #if os(macOS)
+        mode == .outline ? TextSettings.size + 1 : TextSettings.size
+        #else
+        mode == .outline ? TextSettings.face.size(TextSettings.size) : TextSettings.size
+        #endif
+    }
+
     private var storedEmpty: Bool {
         (store.isEditing(title) ? store.draftHead(title) : store.tiddler(title))?.text.isEmpty ?? true
     }
@@ -175,6 +185,7 @@ struct CardEditor: View {
                     ForEach(tags, id: \.self) { tag in
                         Button { river.open(tag, from: title) } label: { TagPill(tag: tag) }
                             .buttonStyle(.plain)
+                            .pointing()
                             .contextMenu {
                                 Button("Remove Tag", systemImage: "minus.circle") {
                                     let at = tags.firstIndex(of: tag) ?? tags.count
@@ -202,6 +213,7 @@ struct CardEditor: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .pointing()
                         .foregroundStyle(Ink.faint.color)
                         .help("Add a Tag")
                     }
@@ -219,6 +231,7 @@ struct CardEditor: View {
                                     .overlay(Capsule().strokeBorder(Ink.accent.color.opacity(0.4)))
                             }
                             .buttonStyle(.plain)
+                            .pointing()
                             .foregroundStyle(Ink.accent.color)
                         }
                     }
@@ -265,6 +278,7 @@ struct CardEditor: View {
                         Label(own.map(\.name).joined(separator: ", "), systemImage: "list.bullet.rectangle")
                     }
                     .buttonStyle(.plain)
+                    .pointing()
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .help("The fields of tiddlers tagged “\(title)”")
@@ -322,6 +336,7 @@ struct CardEditor: View {
                                     Image(systemName: "minus.circle")
                                 }
                                 .buttonStyle(.plain)
+                                .pointing()
                                 .foregroundStyle(.secondary)
                                 .help("Remove Field")
                             }
@@ -369,6 +384,7 @@ private struct BodyEditor: View {
     let taken: () -> Void
     let focused: (Bool) -> Void
     var lead: Tiddler.TaskState? = nil
+    var gutterTaken = false
     var onFirstLine: (CGFloat) -> Void = { _ in }
     var onEmptinessChange: (Bool) -> Void = { _ in }
 
@@ -378,12 +394,15 @@ private struct BodyEditor: View {
             OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused,
                               lead: lead, onLead: { [store, title, lead] in
                                   withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, lead == .done ? .todo : .done) }
-                              }, onFirstLine: onFirstLine, onEmptinessChange: onEmptinessChange)
+                              }, gutterTaken: gutterTaken, onFirstLine: onFirstLine, onEmptinessChange: onEmptinessChange)
+                // Out into the card's margin, where its rows' ⋯ is shown —
+                // the editor's own, to be clicked; its words where they were.
+                .padding(.leading, -OutlineCardEditor.leadingRoom)
             #else
             OutlineCardEditor(text: text, title: title, wantsCaret: wants, onCaretTaken: taken, onFocusChange: focused,
                               lead: lead, onLead: { [store, title, lead] in
                                   withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, lead == .done ? .todo : .done) }
-                              })
+                              }, onFirstLine: onFirstLine)
             #endif
         } else {
             TiddlerEditor(text: text, controller: controller, card: title,
@@ -427,6 +446,7 @@ struct TaggedList: View {
                             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
                     }
                     .buttonStyle(.plain)
+                    .pointing()
                     .foregroundStyle(Ink.accent.color)
                 }
                 if titles.count > limit {
@@ -434,6 +454,7 @@ struct TaggedList: View {
                         withAnimation(.snappy(duration: 0.2)) { showingAll.toggle() }
                     }
                     .buttonStyle(.plain)
+                    .pointing()
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)

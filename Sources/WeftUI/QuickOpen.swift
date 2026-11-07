@@ -249,6 +249,7 @@ struct QuickOpen: View {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(Ink.faint.color)
                         }
                         .buttonStyle(.plain)
+                        .pointing()
                         .accessibilityLabel("Clear")
                     }
                 }

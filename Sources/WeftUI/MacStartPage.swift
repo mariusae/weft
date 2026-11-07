@@ -42,8 +42,11 @@ struct MacStartPage: View {
     private var rivers: some View {
         VStack(alignment: .leading, spacing: 12) {
             heading("Rivers")
+            // Dragged among themselves, put in another order.
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 92, maximum: 120), spacing: 10, alignment: .top)], alignment: .leading, spacing: 14) {
-                ForEach(store.savedRivers(), id: \.self) { name in riverTile(name) }
+                ForEach(store.savedRivers(), id: \.self) { name in
+                    riverTile(name).reorderingSavedRiver(name, in: store)
+                }
                 newTile("Query River", "line.3.horizontal.decrease") {
                     river.quickOpenShown = false
                     river.queryEditor = .newHere

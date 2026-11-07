@@ -109,6 +109,9 @@ struct CardRow<Margin: View, Mark: View, Content: View>: View {
                 margin()
             }
             .frame(width: Measures.margin)
+            // Over what it says, which reaches into it — an outline's row
+            // buttons — where it has something: a card's handle.
+            .zIndex(1)
             if gutter {
                 ZStack {
                     Color.clear.frame(width: Measures.gutter, height: 0)
@@ -178,6 +181,7 @@ struct GutterMark: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .pointing()
                 .help(help ?? (done ? "Done — click to open again" : "To do — click when done"))
                 .accessibilityLabel(done ? "Done" : "To do")
             case .icon(let symbol):
@@ -189,6 +193,7 @@ struct GutterMark: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .pointing()
                 .disabled(action == nil)
                 .help(help ?? "")
             case nil:

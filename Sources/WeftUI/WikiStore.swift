@@ -1157,10 +1157,55 @@ public final class WikiStore {
         if let known = savedRiversRead, known.version == version, known.root == root { return known.names }
         let folder = root.appendingPathComponent(Self.riversFolder)
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        let names = files.filter { $0.hasSuffix(".md") }.map { String($0.dropLast(3)) }
-            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        // As they were put in order by hand; those never moved after, by name.
+        let named = files.filter { $0.hasSuffix(".md") }.map { String($0.dropLast(3)) }
+        let places = Dictionary(uniqueKeysWithValues: named.map { ($0, savedRiver($0)?.place) })
+        let names = named.sorted { a, b in
+            switch (places[a] ?? nil, places[b] ?? nil) {
+            case let (x?, y?) where x != y: return x < y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: return a.localizedStandardCompare(b) == .orderedAscending
+            }
+        }
         savedRiversRead = (version, root, names)
         return names
+    }
+
+    /// A saved river put before another among them — or, `before` nil,
+    /// after them all — the order kept in the rivers' files, so synced: the
+    /// one moved given a place between its new neighbours'; where they have
+    /// none to be between, all numbered as they now stand.
+    public func moveSavedRiver(_ name: String, before other: String?) {
+        var order = savedRivers()
+        guard let from = order.firstIndex(of: name), name != other else { return }
+        let was = order
+        order.remove(at: from)
+        let to = other.flatMap { order.firstIndex(of: $0) } ?? order.count
+        order.insert(name, at: to)
+        guard order != was else { return }
+        let place = { (name: String) in self.savedRiver(name)?.place }
+        let below = to > 0 ? place(order[to - 1]) : nil
+        let above = to + 1 < order.count ? place(order[to + 1]) : nil
+        let between: Double? = switch (below, above) {
+        case let (low?, high?) where high - low > 1e-6: (low + high) / 2
+        case let (low?, nil) where to + 1 == order.count: low + 1
+        case let (nil, high?) where to == 0: high - 1
+        default: nil
+        }
+        if let between {
+            setPlace(between, of: name)
+        } else {
+            for (index, each) in order.enumerated() { setPlace(Double(index + 1), of: each) }
+        }
+        savedVersion += 1
+        undoable("Move River") { [weak self] in self?.moveSavedRiver(name, before: from + 1 < was.count ? was[from + 1] : nil) }
+    }
+
+    private func setPlace(_ place: Double, of name: String) {
+        guard var saved = savedRiver(name), saved.place != place else { return }
+        saved.place = place
+        _ = writeSavedRiver(name, saved)
     }
 
     @ObservationIgnored private var savedRiversRead: (version: Int, root: URL, names: [String])?
@@ -1176,6 +1221,9 @@ public final class WikiStore {
 
     private func writeSavedRiver(_ name: String, _ river: SavedRiver) -> Bool {
         guard let file = riverFile(name) else { return false }
+        // Its place among the rivers kept: an open river says nothing of it.
+        var river = river
+        if river.place == nil { river.place = savedRiver(name)?.place }
         let text = river.text
         if (try? String(contentsOf: file, encoding: .utf8)) == text { return true }
         do {

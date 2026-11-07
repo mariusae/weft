@@ -228,6 +228,7 @@ private struct WikiTextPlaceholder: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .pointing()
             .font(.callout)
             .foregroundStyle(.secondary)
             if expanded {
@@ -306,6 +307,7 @@ private struct Embed: View {
                         .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.plain)
+                .pointing()
                 .foregroundStyle(.secondary)
                 MarkdownView(blocks: MarkdownCache.blocks(tiddler.text), card: card, depth: depth + 1)
             }
@@ -334,6 +336,7 @@ private struct RiverEmbed: View {
                     .font(.callout.weight(.semibold))
             }
             .buttonStyle(.plain)
+            .pointing()
             .foregroundStyle(saved == nil ? Ink.secondary.color : Ink.text.color)
             .help(saved == nil ? "No saved river is called “\(name)”" : "Bring back the river “\(name)”")
             if saved == nil {
@@ -348,6 +351,7 @@ private struct RiverEmbed: View {
                         .italic(!store.exists(card))
                 }
                 .buttonStyle(.plain)
+                .pointing()
                 .foregroundStyle(store.exists(card) ? Ink.accent.color : Ink.secondary.color)
             }
         }

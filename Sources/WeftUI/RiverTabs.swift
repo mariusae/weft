@@ -105,21 +105,55 @@ struct RiverTabs: View {
     @State private var pointed: Int? = ProcessInfo.processInfo.environment["WEFT_TAB_HOVER"].flatMap(Int.init)
     /// Where in the window the strip is, as laid out.
     @State private var spot: WindowPlace.Spot?
+    /// What the toolbar has been found to want besides what is reckoned:
+    /// grown each time the tabs, given the room reckoned, were put away in
+    /// its overflow — else they'd come back, be given it again, and go
+    /// again, over and over: the tabs shaking.
+    @State private var slack: CGFloat = 0
+    /// The same, given the room the buttons were found to take: for this
+    /// width of window only — at another, found again.
+    @State private var fitSlack: CGFloat = 0
+
+    /// Placed, or put away. Put away by the toolbar, with no change in the
+    /// window's width: they were given too much.
+    private func placed(_ new: WindowPlace.Spot?) {
+        if let new, new.window != spot?.window { fitSlack = 0 }
+        if new == nil, spot != nil { overflowed() }
+        spot = new
+    }
+
+    /// Something put away in the toolbar's overflow: less asked for next time.
+    private func overflowed() {
+        // Given the room the buttons were found to take: that was too much,
+        // at this width. Else, as reckoned, the reckoning was.
+        if spot?.buttons != nil {
+            fitSlack = min(fitSlack + 8, 120)
+        } else {
+            slack = min(slack + 16, 240)
+        }
+    }
 
     /// The room the window leaves the tabs: from where they begin to its
-    /// right edge, all but what the toolbar's buttons take after them — each
-    /// as wide as it says — and the space round them. Else, till the strip
-    /// is placed, as reckoned. Not from where the buttons are: the toolbar
-    /// packs them after the tabs, so they move as the tabs widen.
+    /// right edge, all but what the toolbar's buttons after them take and
+    /// a margin — the buttons as the toolbar placed them, from the first to
+    /// the last; one put away in its overflow, each as wide as it says and
+    /// the space reckoned round it. Else, till the strip is placed, as
+    /// reckoned.
     private var room: CGFloat {
         guard let spot, !rivers.toolbarButtons.isEmpty else { return width }
+        // The buttons found where the toolbar put them: from the first's
+        // left to the last's right, their glass and the space between.
+        if let buttons = spot.buttons {
+            return max(TabLayout.shownMin, (spot.window - spot.minX - TabLayout.gap - buttons - TabLayout.trailing - fitSlack).rounded(.down))
+        }
         // Every button the toolbar has, shown or not: one put away in its
         // overflow counted still, so the tabs give its room back.
-        var shown = ["today", "new", "close all", "rivers"]
-        if store.sync != nil { shown.append("sync") }
+        var shown = ["new", "inspector"]
         if !store.conflicted().isEmpty { shown.append("review") }
         let buttons = shown.reduce(0) { $0 + (rivers.toolbarButtons[$1] ?? TabLayout.buttonGuess) + TabLayout.buttonSlot }
-        return max(TabLayout.shownMin, spot.window - spot.minX - TabLayout.gap - buttons - TabLayout.trailing)
+        // In whole points: else half a point either way moves the toolbar's
+        // items, which moves the strip, which gives it the other half again.
+        return max(TabLayout.shownMin, (spot.window - spot.minX - TabLayout.gap - buttons - TabLayout.trailing - slack).rounded(.down))
     }
 
     var body: some View {
@@ -184,7 +218,13 @@ struct RiverTabs: View {
         .frame(width: width, alignment: .leading)
         // Out of the window — put in the toolbar's overflow — its room
         // reckoned again, from the window, till it is placed once more.
-        .background(WindowPlace { spot = $0 })
+        .background(WindowPlace { placed($0) })
+        // Saved Rivers (⇧⌘R): from the tabs, now the title bar has no button of its own for them.
+        .popover(isPresented: Binding(get: { rivers.current.riversShown }, set: { rivers.current.riversShown = $0 }), arrowEdge: .bottom) {
+            RiversPanel().frame(width: 320).environment(rivers.current)
+        }
+        // The last button found, or put away in the overflow.
+
     }
 
     @ViewBuilder private func menu(_ river: River) -> some View {
@@ -231,12 +271,7 @@ private struct RiverTab: View {
         return ceil(text) + 12 + 6 + 2 * 20
     }
 
-    /// A saved river's stack; else what its top card is — a day, a wiki page, a note.
-    private var symbol: String {
-        if let icon = river.icon { return icon }
-        if river.name != nil { return "square.stack" }
-        return river.cards.first.map { store.symbol(of: $0) } ?? "rectangle.stack"
-    }
+    private var symbol: String { river.symbol(in: store) }
 
     var body: some View {
         ZStack {
@@ -271,6 +306,7 @@ private struct RiverTab: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .pointing()
                     .foregroundStyle(Ink.secondary.color)
                     .opacity(hovering ? 1 : 0)
                     .help("Close Tab (⌘W)")
@@ -341,6 +377,9 @@ struct WindowPlace: NSViewRepresentable {
         var minX: CGFloat
         var maxX: CGFloat
         var window: CGFloat
+        /// What the toolbar's items after it take, as placed: nil, one of
+        /// them put away in its overflow.
+        var buttons: CGFloat? = nil
     }
     let told: (Spot?) -> Void
 
@@ -371,14 +410,34 @@ struct WindowPlace: NSViewRepresentable {
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+        /// How wide the toolbar's items after a frame are, as placed — from
+        /// the first's left to the last's right: nil, one of them put away.
+        static func buttons(after frame: NSRect, in window: NSWindow) -> CGFloat? {
+            var placed: [NSRect] = []
+            for item in window.toolbar?.items ?? [] where item.isVisible {
+                guard let view = item.view else { continue }
+                // In the overflow: out of the window.
+                guard view.window === window else { return nil }
+                let found = view.convert(view.bounds, to: nil)
+                if found.width > 0, found.minX >= frame.maxX - 1 { placed.append(found) }
+            }
+            guard let first = placed.map(\.minX).min(), let last = placed.map(\.maxX).max() else { return nil }
+            return last - first
+        }
+
         func tell() {
             guard window != nil else { return }
             // Once the toolbar has placed it.
             DispatchQueue.main.async { [self] in
                 guard let window else { return }
                 let frame = convert(bounds, to: nil)
-                let spot = Spot(minX: frame.minX, maxX: frame.maxX, window: window.frame.width)
-                guard spot != last else { return }
+                let spot = Spot(minX: frame.minX, maxX: frame.maxX, window: window.frame.width,
+                                buttons: Self.buttons(after: frame, in: window))
+                // Moved by less than a point and a half, not moved: a strip
+                // placed a half point off as it is resized, and back as it
+                // is again, would never be still.
+                if let last, last.window == spot.window, abs(last.minX - spot.minX) < 1.5, abs(last.maxX - spot.maxX) < 1.5,
+                   (last.buttons == nil) == (spot.buttons == nil), abs((last.buttons ?? 0) - (spot.buttons ?? 0)) < 1.5 { return }
                 last = spot
                 told(spot)
             }

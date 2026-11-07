@@ -27,6 +27,7 @@ struct InRiversRow: View {
                             .overlay(Capsule().strokeBorder(Ink.rule.color))
                         }
                         .buttonStyle(.plain)
+                        .pointing()
                         .help("Bring back the river “\(name)”")
                         .contextMenu {
                             Button("Copy Link to River", systemImage: "link") { Platform.copy(RiverLink.link(name)) }

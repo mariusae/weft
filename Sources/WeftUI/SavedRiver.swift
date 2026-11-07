@@ -50,6 +50,9 @@ struct SavedRiver: Equatable {
     /// How it shows among the rivers: an SF Symbol, and a colour's name.
     var icon: String?
     var color: String?
+    /// Where it stands among the saved rivers, as they are put in order by
+    /// hand: lower first. Nil, after those placed, by name.
+    var place: Double?
 
     struct Placed: Equatable {
         var title: String
@@ -81,6 +84,7 @@ struct SavedRiver: Equatable {
             opened = Set(front.list("opened"))
             icon = front.scalar("icon")
             color = front.scalar("color")
+            place = front.scalar("place").flatMap(Double.init)
             body = text[end.upperBound...]
         }
         var cards: [String] = []
@@ -147,6 +151,7 @@ struct SavedRiver: Equatable {
         list("hidden", hidden)
         if let icon { front += "icon: \(NoteCover.quoted(icon))\n" }
         if let color { front += "color: \(NoteCover.quoted(color))\n" }
+        if let place { front += "place: \(Self.number(place))\n" }
         var text = front.isEmpty ? "" : "---\n" + front + "---\n"
         func card(_ card: String, _ line: String) {
             text += line + "\n"
@@ -182,6 +187,11 @@ struct SavedRiver: Equatable {
         river.folded.remove(title)
         river.rows[title] = nil
         return river
+    }
+
+    /// A place as few figures as say it: `3`, `2.5`.
+    static func number(_ place: Double) -> String {
+        place == place.rounded() && abs(place) < 1e15 ? String(Int(place)) : String(place)
     }
 
     /// A row's text on one line: its breaks and backslashes escaped.

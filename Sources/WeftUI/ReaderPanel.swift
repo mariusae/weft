@@ -85,6 +85,7 @@ struct ReaderPanel: View {
             }
         }
         .buttonStyle(.plain)
+        .pointing()
         .foregroundStyle(Ink.accent.color)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -106,6 +107,7 @@ struct ReaderPanel: View {
         }
         .font(.callout.weight(.medium))
         .buttonStyle(.plain)
+        .pointing()
         .foregroundStyle(Ink.accent.color)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

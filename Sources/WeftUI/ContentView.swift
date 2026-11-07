@@ -45,7 +45,9 @@ public struct ContentView: View {
         return max(TabLayout.shownMin, detailWidth - left - right - 40)
     }
 
-    private var hasTabs: Bool { (riverSet?.rivers.count ?? 0) > 1 }
+    /// Tabs, as Safari's compact tabs: even one river's — the whole of the
+    /// room, clicked for its start page, as any tab in front is.
+    private var hasTabs: Bool { riverSet != nil }
 
     #endif
 
@@ -80,11 +82,22 @@ public struct ContentView: View {
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
                         #endif
                         #if os(macOS)
-                        // A card's pages read beside the river.
-                        .inspector(isPresented: Binding(get: { river.reading != nil }, set: { if !$0 { river.reading = nil } })) {
+                        // Beside the river: a card's pages being read, else the
+                        // selected card's inspector.
+                        .inspector(isPresented: Binding(get: { river.reading != nil || river.inspecting },
+                                                        set: { if !$0 { river.reading = nil; river.inspecting = false } })) {
                             if let reading = river.reading {
                                 ReaderPanel(title: reading)
                                     .inspectorColumnWidth(min: 360, ideal: 520, max: 900)
+                            } else if let card = river.selected {
+                                CardInspector(title: card)
+                                    .id(card)
+                                    .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
+                            } else {
+                                Text("No card chosen")
+                                    .foregroundStyle(Ink.secondary.color)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
                             }
                         }
                         #else
@@ -99,9 +112,10 @@ public struct ContentView: View {
                         }
                         #endif
                         #if os(macOS)
-                        // One river: called by it, the graph under it. More: their
-                        // tabs in the title bar, as Safari's, the one shown the title.
-                        .navigationTitle(hasTabs ? "" : river.title)
+                        // The rivers' tabs in the title bar, as Safari's, the one
+                        // shown the title — the window still called by it, in
+                        // the Window menu.
+                        .navigationTitle(river.title)
                         // A folder in no repository is not synced: said, as Sync Now
                         // greyed out alone would not.
                         .navigationSubtitle("")
@@ -140,10 +154,28 @@ public struct ContentView: View {
                         .onTapGesture { river.quickOpenShown = false }
                     QuickOpen().padding(.top, 12)
                 }
+                // Over the river's words: the arrow, not their I-beam.
+                .arrowCursor()
                 .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.12), value: river.quickOpenShown)
+        // A card's home river, chosen by typing its name.
+        .overlay(alignment: .top) {
+            if let homing = river.homing, store.root != nil {
+                ZStack(alignment: .top) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .ignoresSafeArea()
+                        .onTapGesture { river.homing = nil }
+                    HomeRiverPicker(title: homing).padding(.top, 12)
+                }
+                // Over the river's words: the arrow, not their I-beam.
+                .arrowCursor()
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: river.homing)
         // Filled from elsewhere — the sidebar, a link — the start page's ask
         // to go somewhere is done with: not left to show over the river.
         .onChange(of: river.startsEmpty) { _, empty in if !empty { river.quickOpenShown = false } }
@@ -164,6 +196,16 @@ public struct ContentView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Ink.paper.color)
+        }
+        #endif
+        #if os(iOS)
+        .sheet(isPresented: Binding(get: { river.homing != nil }, set: { if !$0 { river.homing = nil } })) {
+            if let homing = river.homing {
+                HomeRiverPicker(title: homing)
+                    .environment(store)
+                    .environment(river)
+                    .presentationDetents([.medium, .large])
+            }
         }
         #endif
         .sheet(isPresented: Binding(get: { river.deletedShown }, set: { river.deletedShown = $0 })) {
@@ -225,20 +267,14 @@ private struct RiverToolbar: ToolbarContent {
                 .toolbarButton("review", in: rivers)
                 #endif
             }
-            if let sync = store.sync {
-                SyncButton(sync: sync)
-                    #if os(macOS)
-                    .toolbarButton("sync", in: rivers)
-                    #endif
-            }
             #if os(iOS)
+            // On the Mac, the sync at the sidebar's foot; today, in its rivers
+            // and ⇧⌘T: the title bar the tabs', a new card and the inspector.
+            if let sync = store.sync { SyncButton(sync: sync) }
             Button("Quick Open", systemImage: "magnifyingglass") { river.quickOpenShown = true }
-            #endif
             Button("Today", systemImage: "calendar") { river.openToday() }
                 .help("Today's Note (⇧⌘T)")
-                #if os(macOS)
-                .toolbarButton("today", in: rivers)
-                #endif
+            #endif
             // Clicked, a new tiddler; held, one of what is on the pasteboard.
             Menu {
                 Button("New To-Do", systemImage: "circle") { river.newTodo() }
@@ -254,13 +290,17 @@ private struct RiverToolbar: ToolbarContent {
             #if os(macOS)
             .toolbarButton("new", in: rivers)
             #endif
+            #if os(iOS)
             Button("Close All", systemImage: "rectangle.stack.badge.minus") { river.closeAll() }
                 .help("Close All Cards (⇧⌘W)")
-                #if os(macOS)
-                .toolbarButton("close all", in: rivers)
-                #endif
-            #if os(macOS)
-            RiversButton()
+            #else
+            // The selected card's inspector, beside the river.
+            @Bindable var river = river
+            Toggle(isOn: $river.inspecting) {
+                Label("Inspector", systemImage: "sidebar.trailing")
+            }
+            .help("Show the Selected Card's Inspector (⌥⌘I)")
+            .toolbarButton("inspector", in: rivers)
             #endif
         }
     }
@@ -286,6 +326,7 @@ struct TaskList: View {
                                     .foregroundStyle(Ink.secondary.color)
                             }
                             .buttonStyle(.plain)
+                            .pointing()
                             .accessibilityLabel("Done")
                             Button { river.open(title) } label: {
                                 Text(store.shownTitle(title))
@@ -294,6 +335,7 @@ struct TaskList: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .pointing()
                         }
                     }
                 } header: {
@@ -309,6 +351,7 @@ struct TaskList: View {
                                     .foregroundStyle(Ink.secondary.color)
                             }
                             .buttonStyle(.plain)
+                            .pointing()
                             .accessibilityLabel("Done")
                             Button { if let title = store.title(atPath: task.notePath) { river.open(title) } } label: {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -406,6 +449,7 @@ struct UndoOfferView: View {
                     Button("Undo") { withAnimation(.snappy) { store.takeUndoOffer() } }
                         .fontWeight(.semibold)
                         .buttonStyle(.plain)
+                        .pointing()
                         .foregroundStyle(Ink.accent.color)
                 }
                 .font(.callout)
@@ -447,6 +491,7 @@ struct SyncNoticeView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .pointing()
                 .alert("Couldn't sync", isPresented: $detailsShown) {
                     Button("Try Again") { store.syncNow() }
                     Button("OK", role: .cancel) { store.dismissSyncNotice() }
@@ -533,6 +578,38 @@ private struct Sidebar: View {
     @Environment(River.self) private var river
     @FocusState private var searchFocused: Bool
     @State private var tab: Tab = .open
+    #if os(macOS)
+    /// Which of its lenses shows: as the phone's start page has them.
+    @SceneStorage("WeftSidebarLens") private var lens: Lens = .rivers
+
+    /// The sidebar's lenses — the phone's start page's: rivers, what was
+    /// written lately, the inbox and the pinned, what is to be read, what
+    /// is to do, and the wiki.
+    enum Lens: String, CaseIterable, Identifiable {
+        case rivers, recent, inbox, reading, tasks, wiki
+        var id: String { rawValue }
+        var symbol: String {
+            switch self {
+            case .rivers: "square.stack.3d.up"
+            case .recent: "clock"
+            case .inbox: "tray"
+            case .reading: "eyeglasses"
+            case .tasks: "checklist"
+            case .wiki: "book.closed"
+            }
+        }
+        var name: String {
+            switch self {
+            case .rivers: "Rivers"
+            case .recent: "Recent"
+            case .inbox: "Inbox and Pinned"
+            case .reading: "Reading"
+            case .tasks: "Tasks"
+            case .wiki: "Wiki"
+            }
+        }
+    }
+    #endif
 
     enum Tab: String, CaseIterable {
         case open = "Open", recent = "Recent", inbox = "Inbox", reading = "Reading", tasks = "Tasks", pinned = "Pinned",
@@ -559,6 +636,7 @@ private struct Sidebar: View {
                 if !river.search.isEmpty {
                     Button { river.search = "" } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain)
+                        .pointing()
                         .foregroundStyle(.secondary)
                 }
             }
@@ -569,19 +647,9 @@ private struct Sidebar: View {
 
             if river.search.trimmingCharacters(in: .whitespaces).isEmpty {
                 #if os(macOS)
-                // Which of them, from a menu: all named, none cut off.
-                HStack {
-                    Picker("Show", selection: $tab) {
-                        ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .fixedSize()
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 2)
-                list
+                // Which of them, by their icons in a row, as the phone's start page has them.
+                lensBar
+                lensList
                     .environment(\.defaultMinListRowHeight, 24)
                 #else
                 // More than a segmented control holds: a row of them, scrolled.
@@ -608,21 +676,30 @@ private struct Sidebar: View {
             } else {
                 searchResults
             }
+            #if os(macOS)
+            // The graph, how much of it, and its sync — a click away: at the
+            // sidebar's foot, under its list, not over it; not in the title bar.
+            Divider().opacity(0.5)
+            HStack(spacing: 6) {
+                Text(graphLine)
+                    .font(.caption)
+                    .foregroundStyle(Ink.secondary.color)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let sync = store.sync {
+                    SyncButton(sync: sync)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .pointing()
+                        .font(.caption)
+                        .foregroundStyle(Ink.secondary.color)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            #endif
         }
-        #if os(macOS)
-        // The graph, how much of it, and whether it syncs: at the sidebar's
-        // foot, not under the window's title.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Text(graphLine)
-                .font(.caption)
-                .foregroundStyle(Ink.secondary.color)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-        }
-        #endif
         .onChange(of: river.searchFocusRequest) { searchFocused = true }
     }
 
@@ -713,6 +790,99 @@ private struct Sidebar: View {
         }
     }
 
+    #if os(macOS)
+    /// The lenses, their icons alone in a row — the chosen lit — each named
+    /// under the pointer.
+    private var lensBar: some View {
+        HStack(spacing: 2) {
+            ForEach(Lens.allCases) { item in
+                Button {
+                    lens = item
+                } label: {
+                    Image(systemName: item.symbol)
+                        .font(.system(size: 13, weight: lens == item ? .semibold : .regular))
+                        .foregroundStyle(lens == item ? Ink.accent.color : Ink.secondary.color)
+                        .frame(maxWidth: .infinity, minHeight: 26)
+                        .background(lens == item ? Ink.accent.color.opacity(0.14) : .clear, in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .pointing()
+                .help(item.name)
+                .accessibilityLabel(item.name)
+                .accessibilityAddTraits(lens == item ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(.quaternary.opacity(0.5), in: .capsule)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 4)
+    }
+
+    /// What the chosen lens shows.
+    @ViewBuilder private var lensList: some View {
+        switch lens {
+        case .rivers: RiversPanel(inSidebar: true)
+        case .recent: titles(store.recent(), empty: "Nothing yet", kinds: true)
+        case .inbox:
+            List {
+                titleSection("Pinned", store.pinned())
+                titleSection("Inbox", store.inbox())
+            }
+            .overlay { if store.pinned().isEmpty && store.inbox().isEmpty { Text("Nothing pinned, and nothing in the inbox").foregroundStyle(.secondary) } }
+        case .reading: ReadingList()
+        case .tasks: TaskList()
+        case .wiki:
+            List {
+                titleSection(nil, store.wikiPages())
+                let tags = store.tags()
+                if !tags.isEmpty {
+                    Section("Tags") {
+                        ForEach(tags, id: \.tag) { item in
+                            Button { river.open(item.tag) } label: {
+                                HStack {
+                                    TagPill(tag: item.tag)
+                                    Spacer()
+                                    Text("\(item.count)").foregroundStyle(.secondary).monospacedDigit()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                titleSection("Missing Pages", store.missing(), missing: true)
+            }
+        }
+    }
+
+    /// Pages under a heading, each opened by a click: none, no heading.
+    @ViewBuilder private func titleSection(_ name: String?, _ titles: [String], missing: Bool = false) -> some View {
+        if !titles.isEmpty {
+            Section {
+                ForEach(titles, id: \.self) { title in
+                    Button { river.open(title) } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: missing ? "questionmark.square.dashed" : store.symbol(of: title))
+                                .font(.caption)
+                                .foregroundStyle(Ink.secondary.color)
+                                .frame(width: 16)
+                            Text(missing ? title : store.shownTitle(title))
+                                .italic(missing)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                if let name { Text(name) }
+            }
+        }
+    }
+    #endif
+
     @ViewBuilder private var list: some View {
         switch tab {
         case .open: titles(river.cards, empty: "No cards open", closable: true)
@@ -759,6 +929,7 @@ private struct Sidebar: View {
                 if closable {
                     Button { withAnimation { river.close(title) } } label: { Image(systemName: "xmark") }
                         .buttonStyle(.plain)
+                        .pointing()
                         .foregroundStyle(.tertiary)
                         .help("Close")
                 }
@@ -1024,6 +1195,8 @@ private struct RiverColumn: View {
     var showSidebar: (() -> Void)?
     /// The card at the top of the river, as it is scrolled.
     @State private var inView: String?
+    /// The cards any of which shows, as it is scrolled.
+    @State private var showing: Set<String> = []
     /// The query river's header, scrolled to with its first card.
     private static let headerID = "\u{1}header"
 
@@ -1046,6 +1219,13 @@ private struct RiverColumn: View {
     #endif
     /// Where a card being dragged would be dropped.
     @State private var drop: CardDrop?
+
+    /// The card the rail marks: the one selected, while it shows; else
+    /// the one at the top.
+    private var railCurrent: String? {
+        if let chosen = river.selected, showing.contains(chosen) { return chosen }
+        return inView == Self.headerID ? river.cards.first : inView ?? river.cards.first
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -1079,9 +1259,12 @@ private struct RiverColumn: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollPosition(id: $inView, anchor: .top)
+            .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.2) { showing = Set($0) }
             #if os(macOS)
             // The rail of its cards stands for the scroll bar: not both.
             .scrollIndicators(river.cards.count > 1 ? .hidden : .automatic)
+            // ↑ ↓, Space and Return, when nothing is being typed in.
+            .background(RiverKeys(river: river))
             #endif
             // The header in view: its first card is, for what asks which.
             .onChange(of: inView) { river.cardInView = inView == Self.headerID ? river.cards.first : inView }
@@ -1128,6 +1311,7 @@ private struct RiverColumn: View {
                             .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
                     }
                     .buttonStyle(.plain)
+                    .pointing()
                     .padding(.top, 10)
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -1139,7 +1323,7 @@ private struct RiverColumn: View {
             #if os(macOS)
             .overlay(alignment: .trailing) {
                 if river.cards.count > 1 {
-                    RiverRail(inView: inView == Self.headerID ? river.cards.first : inView ?? river.cards.first) { title in
+                    RiverRail(inView: railCurrent) { title in
                         river.select(title)
                         withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(title, anchor: .top) }
                     }
@@ -1294,6 +1478,8 @@ private struct RiverRail: View {
             if open { RoundedRectangle(cornerRadius: 14).fill(.regularMaterial).shadow(color: .black.opacity(0.12), radius: 12, y: 4) }
         }
         .onHover { hovering = $0 }
+        // Over the river's words: the arrow, not their I-beam.
+        .arrowCursor()
         .animation(.snappy(duration: 0.18), value: open)
         .padding(.trailing, 8)
     }

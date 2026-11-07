@@ -22,6 +22,8 @@ struct OutlineCardEditor: NSViewRepresentable {
 
     /// Where a top-level row's words start.
     static var textIndent: CGFloat { PageOutlineEditor.textIndent(fontSize: TextSettings.size + 1) }
+    /// Before its words, out in the card's margin: room for a task's ⋯.
+    static var leadingRoom: CGFloat { Measures.margin }
     /// How big its rows' checkboxes are drawn.
     static var markSize: CGFloat { PageOutlineEditor.markSize(fontSize: TextSettings.size + 1) }
 
@@ -29,6 +31,8 @@ struct OutlineCardEditor: NSViewRepresentable {
     /// mark, that row's own not shown; clicked, `onLead`.
     var lead: Tiddler.TaskState? = nil
     var onLead: () -> Void = {}
+    /// Whether its first row's gutter has the card's handle in it.
+    var gutterTaken = false
     /// Told where its first line's middle is, down from its top.
     var onFirstLine: (CGFloat) -> Void = { _ in }
     /// Told as it is typed in when it comes to have words, or none.
@@ -72,8 +76,12 @@ struct OutlineCardEditor: NSViewRepresentable {
         PageOutlineEditor.nameUntitled { [store] name in store.untitledName(name) }
         PageOutlineEditor.iconTargets { [store] name in store.linkIcon(name) }
         let editor = PageOutlineEditor(text: "", fontSize: TextSettings.size + 1, serif: TextSettings.serif, root: store.root)
+        editor.leadingRoom = Self.leadingRoom
         // Prism's keys, ⌘⇧K deleting rows and the rest: Weft has not its menus.
         editor.takesEditorKeys = true
+        // Escape once, the row; twice, out of the card — still selected,
+        // for the river's keys.
+        editor.onEscapeFromRows = { [weak editor] in _ = editor?.window?.makeFirstResponder(nil) }
         // Folded as it was left in this river.
         let coordinator = context.coordinator
         coordinator.folds = river.rowFolds(of: title)
@@ -130,6 +138,7 @@ struct OutlineCardEditor: NSViewRepresentable {
         let leadMark = lead.map { $0 == .done }
         if editor.leadMark != leadMark { editor.leadMark = leadMark }
         editor.onLeadMark = lead == nil ? nil : onLead
+        if editor.leadGutterTaken != gutterTaken { editor.leadGutterTaken = gutterTaken }
         context.coordinator.tellFirstLine(editor)
         // A private page's links are not looked up on the web.
         editor.isPrivate = store.isPrivate(title)

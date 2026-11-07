@@ -279,6 +279,7 @@ struct LinkCardView: View {
         if let face = box.face {
             Button { if let url = URL(string: source) { openURL(url) } } label: { card(face) }
                 .buttonStyle(.plain)
+                .pointing()
                 .help(source)
         } else {
             InlineText(text: text.map { "[\($0)](\(source))" } ?? source, cards: false)

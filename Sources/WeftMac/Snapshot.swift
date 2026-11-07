@@ -122,6 +122,10 @@ enum Snapshot {
         for title in environment["WEFT_FOLD"]?.split(separator: "|") ?? [] { river.setFolded(String(title), true) }
         if let edit = environment["WEFT_EDIT"] { river.edit(edit) }
         if environment["WEFT_QUICK_OPEN"] != nil { river.quickOpenShown = true }
+        // `WEFT_HOMING=<title>`: that card's home river being chosen.
+        if let homing = environment["WEFT_HOMING"] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { river.homing = homing } }
+        // `WEFT_INSPECT`: the selected card's inspector beside the river.
+        if environment["WEFT_INSPECT"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { if environment["WEFT_INSPECT"] == "read" { river.reading = river.cards.first } else { river.inspecting = true } } }
         // `WEFT_REPLACE=Saved`: a saved river chosen from its start page, in its place.
         if let saved = environment["WEFT_REPLACE"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { river.replace(withSaved: saved) }
@@ -178,7 +182,9 @@ enum Snapshot {
                     if let found = view as? NSSplitView { return found }
                     return view.subviews.lazy.compactMap(split).first
                 }
-                if let view = NSApp.windows.first(where: { $0.isVisible })?.contentView, let found = split(in: view),
+                // From the window's frame: the split view is not always under its content.
+                if let window = NSApp.windows.first(where: { $0.isVisible }), let view = window.contentView?.superview ?? window.contentView,
+                   let found = split(in: view),
                    let controller = found.delegate as? NSSplitViewController {
                     controller.toggleSidebar(nil)
                 }
@@ -247,6 +253,24 @@ enum Snapshot {
                 if let typed = environment["WEFT_TYPE"], let view = NSApp.windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first {
                     view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
                     view.insertText(typed, replacementRange: view.selectedRange())
+                }
+                // `WEFT_KEYS=down,down,space`: keys pressed, a moment apart, as
+                // the keyboard would — through what watches for them.
+                if let keys = environment["WEFT_KEYS"]?.split(separator: ","), let window = NSApp.windows.first(where: { $0.isVisible }) {
+                    let codes: [Substring: (UInt16, String)] = ["up": (126, "\u{F700}"), "down": (125, "\u{F701}"), "space": (49, " "),
+                                                                "return": (36, "\r"), "escape": (53, "\u{1B}")]
+                    for (index, key) in keys.enumerated() {
+                        guard let (code, characters) = codes[key] else { continue }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 * Double(index)) {
+                            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                                if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                                windowNumber: window.windowNumber, context: nil, characters: characters,
+                                                                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code) {
+                                    NSApp.postEvent(event, atStart: false)
+                                }
+                            }
+                        }
+                    }
                 }
                 // `WEFT_HOVER=x,y`: the pointer moved there, in points from the
                 // window's top left.

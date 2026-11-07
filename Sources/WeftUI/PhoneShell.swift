@@ -94,7 +94,7 @@ struct PhoneBar: View {
         }
     }
 
-    private var riverSymbol: String { river.icon ?? (river.isQuery ? "line.3.horizontal.decrease.circle" : "square.stack") }
+    private var riverSymbol: String { river.symbol(in: store) }
 
     /// A page found by name, or a new one named: the start page, the keys up.
     private var find: some View {
@@ -659,7 +659,8 @@ private struct RiversGrid: View {
                         .padding(.horizontal, 4)
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4), spacing: 18) {
-                    ForEach(saved, id: \.self) { name in tile(name) }
+                    // Held and dragged among themselves, put in another order.
+                    ForEach(saved, id: \.self) { name in tile(name).reorderingSavedRiver(name, in: store) }
                     newQuery
                 }
             }
@@ -810,7 +811,7 @@ struct RiverOverview: View {
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
-                    Image(systemName: river.icon ?? (river.isQuery ? "line.3.horizontal.decrease.circle" : "square.stack"))
+                    Image(systemName: river.symbol(in: store))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(color)
                     Text(river.title)

@@ -34,6 +34,7 @@ struct QueryView: View {
                 if let index, store.exists(card), !store.isEditing(card) {
                     Button("Edit Query") { editing = true }
                         .buttonStyle(.plain)
+                        .pointing()
                         .foregroundStyle(Ink.accent.color)
                         .popover(isPresented: $editing) {
                             QueryBuilder(query: query, card: card) { changed in
@@ -116,6 +117,7 @@ struct TiddlerLink: View {
                 .multilineTextAlignment(.leading)
         }
         .buttonStyle(.plain)
+        .pointing()
         .foregroundStyle(store.exists(title) ? Ink.accent.color : .secondary)
     }
 }
@@ -206,6 +208,7 @@ private struct TagTree: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .pointing()
                     .foregroundStyle(.secondary)
                 }
                 TiddlerLink(title: title)

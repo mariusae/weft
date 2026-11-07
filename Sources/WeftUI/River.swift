@@ -158,6 +158,8 @@ public final class River: Identifiable {
     public private(set) var quickOpenAsked = 0
     /// The card whose pages are being read, beside the river or over it.
     public var reading: String?
+    /// On the Mac: whether the selected card's inspector is beside the river.
+    public var inspecting = false
     /// Whether the pages deleted lately are showing, to bring back.
     public var deletedShown = false
 
@@ -825,6 +827,8 @@ public final class River: Identifiable {
     }
     /// Whether the saved rivers are showing: the Mac's popover, the phone's sheet.
     public var riversShown = false
+    /// The card whose home river is being chosen, by typing its name.
+    public var homing: String?
     /// Opens a river beside this one: a new tab on the Mac, another of the
     /// phone's rivers. Set by the app.
     @ObservationIgnored public var openNew: (State) -> Void = { _ in }
@@ -881,4 +885,16 @@ public final class River: Identifiable {
 
     /// Its saved river renamed elsewhere — from the list.
     func named(_ name: String) { self.name = name }
+}
+
+extension River {
+    /// What stands for it, by its name or on its tab: its own icon; a
+    /// query river's filter; a saved river's stack — else, not saved, what
+    /// its top card is: a day, a wiki page, a note.
+    @MainActor func symbol(in store: WikiStore) -> String {
+        if let icon { return icon }
+        if isQuery { return "line.3.horizontal.decrease.circle" }
+        if name != nil { return "square.stack" }
+        return cards.first.map { store.symbol(of: $0) } ?? "rectangle.stack"
+    }
 }

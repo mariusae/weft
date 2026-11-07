@@ -50,6 +50,7 @@ struct QueryRiverHeader: View {
             #endif
         }
         .buttonStyle(.plain)
+        .pointing()
         .help("Edit what the river finds, and how it orders it")
     }
 }

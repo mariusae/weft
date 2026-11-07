@@ -321,6 +321,7 @@ struct RiverSwitcher: View {
             }
         }
         .buttonStyle(.plain)
+        .pointing()
         .padding(.horizontal, small ? 12 : 8)
         .padding(.vertical, small ? 6 : 6)
         .contentShape(.capsule)
@@ -338,29 +339,13 @@ struct RiverSwitcher: View {
 
 // MARK: Saved rivers
 
-#if os(macOS)
-/// In the toolbar: this river — saved or not — and the saved ones.
-struct RiversButton: View {
-    @Environment(River.self) private var river
-    @Environment(RiverSet.self) private var rivers: RiverSet?
-
-    var body: some View {
-        @Bindable var river = river
-        Button("Rivers", systemImage: "square.stack.3d.up") { river.riversShown.toggle() }
-            .help("Saved Rivers (⇧⌘R)")
-            .toolbarButton("rivers", in: rivers)
-            .popover(isPresented: $river.riversShown, arrowEdge: .bottom) {
-                RiversPanel().frame(width: 320)
-            }
-    }
-}
-#endif
-
 /// This river, saved or not, and every saved river — to recall, duplicate,
 /// rename or delete.
 struct RiversPanel: View {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
+    /// In the window's sidebar, as its Rivers: as tall as the sidebar, in its look.
+    var inSidebar = false
     @State private var deleting: String?
     /// The saved river whose icon is being chosen.
     @State private var choosingIcon: String?
@@ -380,6 +365,11 @@ struct RiversPanel: View {
                     Button(river.name == nil ? "Save…" : "Rename…") {
                         ask(river.name.map { .rename($0) } ?? .save)
                     }
+                    #if os(macOS)
+                    // A quiet control in the list, not its window's default.
+                    .buttonStyle(.borderless)
+                    .pointing()
+                    #endif
                 }
             }
             Section("Saved Rivers") {
@@ -389,14 +379,22 @@ struct RiversPanel: View {
                         .foregroundStyle(Ink.secondary.color)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
+                    // Dragged up or down, put in another order — synced.
                     ForEach(saved, id: \.self) { name in row(name) }
+                        .onMove { from, to in
+                            guard let first = from.first else { return }
+                            withAnimation(.snappy(duration: 0.2)) {
+                                store.moveSavedRiver(saved[first], before: to < saved.count ? saved[to] : nil)
+                            }
+                        }
                 }
             }
         }
         #if os(macOS)
         .listStyle(.inset)
-        // As tall as its rows, up to a point.
-        .frame(height: min(130 + CGFloat(max(saved.count, 1)) * 40, 460))
+        .scrollContentBackground(inSidebar ? .hidden : .automatic)
+        // As tall as its rows, up to a point; in the sidebar, as tall as it.
+        .frame(height: inSidebar ? nil : min(130 + CGFloat(max(saved.count, 1)) * 40, 460))
         #endif
         .sheet(isPresented: Binding(get: { choosingIcon != nil }, set: { if !$0 { choosingIcon = nil } })) {
             if let name = choosingIcon {
@@ -423,7 +421,8 @@ struct RiversPanel: View {
             river.recall(name)
         } label: {
             HStack {
-                Image(systemName: store.savedRiverIcon(name) ?? "square.stack.3d.up")
+                // As it is shown everywhere else: its own, a query's filter, else a stack.
+                Image(systemName: store.savedRiverIcon(name) ?? (store.savedRiver(name)?.query != nil ? "line.3.horizontal.decrease.circle" : "square.stack"))
                     .foregroundStyle(Ink.accent.color)
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {
@@ -442,6 +441,7 @@ struct RiversPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .pointing()
         .contextMenu {
             Button("Open", systemImage: "arrow.up.forward.square") {
                 river.riversShown = false
@@ -619,5 +619,33 @@ extension View {
     /// Brings back the saved river a `weft://river/…` address names.
     public func followingRiverAddresses(_ rivers: RiverSet) -> some View {
         modifier(RiverAddresses(rivers: rivers))
+    }
+}
+
+extension View {
+    /// A saved river's tile, held and dragged among the others: put where
+    /// it is let go, in the place of the one it is dropped on — the order synced.
+    func reorderingSavedRiver(_ name: String, in store: WikiStore) -> some View {
+        draggable(SavedRiverDrag.prefix + name)
+            .dropDestination(for: String.self) { items, _ in
+                guard let dragged = items.first.flatMap(SavedRiverDrag.name), dragged != name else { return false }
+                // Taking the place of the one it is let go on: before it from
+                // after it, after it from before.
+                let order = store.savedRivers()
+                guard let from = order.firstIndex(of: dragged), let to = order.firstIndex(of: name) else { return false }
+                let before = from < to ? (to + 1 < order.count ? order[to + 1] : nil) : name
+                withAnimation(.snappy(duration: 0.25)) { store.moveSavedRiver(dragged, before: before) }
+                return true
+            }
+    }
+}
+
+/// A saved river being dragged among the others: its name, marked so
+/// that text dropped from elsewhere is not taken for one.
+enum SavedRiverDrag {
+    static let prefix = "weft-saved-river:"
+
+    static func name(_ dragged: String) -> String? {
+        dragged.hasPrefix(prefix) ? String(dragged.dropFirst(prefix.count)) : nil
     }
 }

@@ -24,6 +24,9 @@ struct OutlineCardEditor: UIViewRepresentable {
     /// mark, that row's own not shown; tapped, `onLead`.
     var lead: Tiddler.TaskState? = nil
     var onLead: () -> Void = {}
+    /// Told where its first line's middle is, down from its top: where its
+    /// first words are, or will be.
+    var onFirstLine: (CGFloat) -> Void = { _ in }
 
     /// Where a top-level row's words start.
     static var textIndent: CGFloat { PhoneMetrics(face: TextSettings.face, size: TextSettings.size).textIndent(for: .blank) }
@@ -36,6 +39,22 @@ struct OutlineCardEditor: UIViewRepresentable {
         /// The store's count of the page's words replaced, as last taken.
         var replaced = 0
         var write: (String) -> Void = { _ in }
+        /// Where its first line's middle was last told to be.
+        var firstLine: CGFloat?
+        var onFirstLine: (CGFloat) -> Void = { _ in }
+
+        /// Its first line's middle told, once laid out, when it moved: where
+        /// the caret goes at its start — an empty row's, where its words will.
+        func tellFirstLine(_ editor: OutlineEditor) {
+            DispatchQueue.main.async { [self] in
+                let caret = editor.caretRect(for: editor.beginningOfDocument)
+                guard caret.height > 0, !caret.isNull else { return }
+                let middle = caret.midY
+                guard middle != firstLine else { return }
+                firstLine = middle
+                onFirstLine(middle)
+            }
+        }
         var onFocusChange: (Bool) -> Void = { _ in }
         /// The rows folded, as the river keeps them for the card, and keeping them.
         var folds: () -> [OutlineFolds.Mark] = { [] }
@@ -132,7 +151,11 @@ struct OutlineCardEditor: UIViewRepresentable {
             coordinator.scheduleSave(editor)
         }
         editor.onOpenLink = { [river, title] in followOutline($0, in: river, from: title) }
-        editor.onHeightChange = { [weak editor] in editor?.invalidateIntrinsicContentSize() }
+        editor.onHeightChange = { [weak editor] in
+            guard let editor else { return }
+            editor.invalidateIntrinsicContentSize()
+            coordinator.tellFirstLine(editor)
+        }
         editor.onFocusChange = { focused in
             // Leaving: what was typed written back first.
             if !focused { coordinator.flush() }
@@ -163,6 +186,8 @@ struct OutlineCardEditor: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.write = { text = $0 }
         coordinator.onFocusChange = onFocusChange
+        coordinator.onFirstLine = onFirstLine
+        coordinator.tellFirstLine(editor)
         // The page's ring standing for its first row's mark.
         editor.leadMark = lead.map { $0 == .done }
         editor.onLeadMark = lead == nil ? nil : onLead
@@ -188,7 +213,9 @@ struct OutlineCardEditor: UIViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView editor: OutlineEditor, context: Context) -> CGSize? {
         let width = proposal.width ?? 350
-        return CGSize(width: width, height: max(editor.fittingHeight(width: width), 30))
+        // As tall as its rows: not the empty line after the last one's
+        // break, which the caret never goes to — room under every card.
+        return CGSize(width: width, height: max(editor.rowsHeight(width: width), 30))
     }
 }
 

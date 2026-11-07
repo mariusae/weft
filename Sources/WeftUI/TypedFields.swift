@@ -101,6 +101,7 @@ struct TypedFieldEditor: View {
                         .labelsHidden()
                     Button { value = "" } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain)
+                        .pointing()
                         .foregroundStyle(.tertiary)
                         .help("Clear")
                 } else {
@@ -198,6 +199,7 @@ struct SchemaEditor: View {
                     Spacer(minLength: 0)
                     Button { specs.remove(at: index) } label: { Image(systemName: "minus.circle") }
                         .buttonStyle(.plain)
+                        .pointing()
                         .foregroundStyle(.secondary)
                         .help("Remove field")
                 }

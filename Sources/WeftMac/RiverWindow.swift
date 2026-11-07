@@ -259,8 +259,17 @@ struct RiverCommands: Commands {
             }
             .keyboardShortcut("p", modifiers: [.command, .control])
             .disabled(card.map { store.tiddler($0) == nil } ?? true)
+            Button("Home River…") { if let card { river?.homing = card } }
+                .keyboardShortcut("h", modifiers: [.command, .control])
+                .disabled(card.map { store.tiddler($0) == nil || store.isShadow($0) } ?? true)
             Button("Read") { if let card { river?.reading = card } }
                 .keyboardShortcut("r", modifiers: [.command, .control])
+            Button(river?.inspecting == true ? "Hide Inspector" : "Show Inspector") {
+                guard let river else { return }
+                river.reading = nil
+                river.inspecting.toggle()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .option])
                 .disabled(card.map { !store.canRead($0) } ?? true)
             Button("Close Card") { if let card { withAnimation { river?.close(card) } } }
                 .keyboardShortcut("w", modifiers: [.command, .control])

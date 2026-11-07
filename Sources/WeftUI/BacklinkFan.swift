@@ -65,6 +65,7 @@ struct BacklinkFan: View {
                     .menuStyle(.button)
                     #endif
                     .buttonStyle(.plain)
+                    .pointing()
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .offset(x: fanned ? CGFloat(singles) * step : CGFloat(min(singles, 2)) * peek)
@@ -98,6 +99,7 @@ struct BacklinkFan: View {
                             .background(Ink.accent.color.opacity(0.12), in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    .pointing()
                     .help("Open every page linking here, after this card")
                     .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
                 }
@@ -149,7 +151,7 @@ struct BacklinkFan: View {
 
     /// One linking tiddler, note or day: its kind's symbol on a small
     /// rounded square, a shade darker for each one behind, so the front leads.
-    private struct Face: View {
+    fileprivate struct Face: View {
         let target: LinkTarget
         let depth: Int
         let highlighted: Bool
@@ -199,3 +201,200 @@ struct BacklinkFan: View {
         }
     }
 }
+
+#if os(iOS)
+/// On the phone, what links to a card — where nothing rests on a face to
+/// say which page it is. Gathered, its foot names them: “Linked from
+/// Garden, Reading and 2 more”. Tapped, they open out under it, a list:
+/// each one's icon, its name, and the words around its link to the card;
+/// tapped, opened after it. Held, one shows itself, to be read without
+/// opening it.
+struct PhoneBacklinks: View {
+    @Environment(WikiStore.self) private var store
+    @Environment(River.self) private var river
+    let card: String
+    let links: [LinkTarget]
+    /// `WEFT_FAN` opens them out, for a snapshot.
+    @State private var open = ProcessInfo.processInfo.environment["WEFT_FAN"] != nil
+    @State private var all = false
+    /// How many are listed before the rest are asked for.
+    private let first = 5
+
+    private var listed: [LinkTarget] { all ? links : Array(links.prefix(first)) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.snappy(duration: 0.25)) {
+                    open.toggle()
+                    if !open { all = false }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    bunch
+                    names
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(Ink.faint.color)
+                        .rotationEffect(.degrees(open ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(open ? "Hide the pages linking here" : "Show the pages linking here")
+            if open {
+                VStack(spacing: 0) {
+                    ForEach(Array(listed.enumerated()), id: \.element) { index, link in
+                        if index > 0 { Divider().padding(.leading, 42) }
+                        row(link)
+                    }
+                    if links.count > listed.count {
+                        Divider().padding(.leading, 42)
+                        Button { withAnimation(.snappy(duration: 0.25)) { all = true } } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "ellipsis")
+                                    .frame(width: 20)
+                                Text("\(links.count - listed.count) more")
+                                Spacer(minLength: 0)
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Ink.accent.color)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .background(Ink.text.color.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                .transition(.opacity)
+                if links.count > 1 {
+                    Button(action: openAll) {
+                        Label("Open All", systemImage: "rectangle.stack")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .foregroundStyle(Ink.accent.color)
+                            .background(Ink.accent.color.opacity(0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity)
+                }
+            }
+        }
+    }
+
+    /// The first three faces, bunched, the most recent in front.
+    private var bunch: some View {
+        let shown = Array(links.prefix(3))
+        return ZStack(alignment: .leading) {
+            ForEach(Array(shown.enumerated()), id: \.element) { index, link in
+                BacklinkFan.Face(target: link, depth: index, highlighted: false)
+                    .offset(x: CGFloat(index) * 5)
+                    .zIndex(Double(shown.count - index))
+            }
+        }
+        .frame(width: 26 + CGFloat(shown.count - 1) * 5, height: 26, alignment: .leading)
+    }
+
+    /// Who links here, by name: the first two, and how many more.
+    private var names: some View {
+        let a = Self.short(links[0].shown)
+        let text: Text = switch links.count {
+        case 1: Text("Linked from \(Text(a).foregroundStyle(Ink.text.color))")
+        case 2: Text("Linked from \(Text(a).foregroundStyle(Ink.text.color)) and \(Text(Self.short(links[1].shown)).foregroundStyle(Ink.text.color))")
+        default: Text("Linked from \(Text(a).foregroundStyle(Ink.text.color)), \(Text(Self.short(links[1].shown)).foregroundStyle(Ink.text.color)) and \(links.count - 2) more")
+        }
+        return text
+            .font(.footnote)
+            .foregroundStyle(Ink.secondary.color)
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+    }
+
+    /// A name cut short enough for two of them to fit beside each other.
+    private static func short(_ name: String) -> String {
+        name.count <= 28 ? name : String(name.prefix(26)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// One page linking here: its icon, its name, the words around its link.
+    private func row(_ link: LinkTarget) -> some View {
+        let context = store.context(of: link, linkingTo: card)?.trimmingCharacters(in: .whitespaces)
+        let says = context.flatMap { words in
+            // Only the link, and nothing around it, says nothing more.
+            words.isEmpty || words.caseInsensitiveCompare(store.shownTitle(card)) == .orderedSame ? nil : words
+        }
+        return Button { river.open(link.title, from: card) } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: link.symbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Ink.accent.color)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(link.shown)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Ink.text.color)
+                        .lineLimit(1)
+                    if let says {
+                        Text(says)
+                            .font(.footnote)
+                            .foregroundStyle(Ink.secondary.color)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Open", systemImage: "arrow.up.forward.square") { river.open(link.title, from: card) }
+            if links.count > 1 {
+                Button("Open All", systemImage: "rectangle.stack") { openAll() }
+            }
+            Button("Copy Link", systemImage: "link") { UIPasteboard.general.string = "[[\(link.title)]]" }
+        } preview: {
+            LinkPreview(target: link)
+                .environment(store)
+                .environment(river)
+        }
+    }
+
+    /// Every page linking here, opened after the card, in their order.
+    private func openAll() {
+        withAnimation(.snappy(duration: 0.28)) {
+            for link in links.reversed() { river.open(link.title, from: card) }
+            open = false
+            all = false
+        }
+    }
+
+    /// A page linking here, held: itself, as far as fits, to be read
+    /// without being opened.
+    private struct LinkPreview: View {
+        @Environment(WikiStore.self) private var store
+        let target: LinkTarget
+
+        var body: some View {
+            let text = (store.draft(target.title) ?? store.tiddler(target.title))?.text ?? ""
+            VStack(alignment: .leading, spacing: 12) {
+                Label(target.shown, systemImage: target.symbol)
+                    .font(.headline)
+                    .foregroundStyle(Ink.text.color)
+                    .lineLimit(2)
+                MarkdownView(blocks: MarkdownCache.blocks(text), card: target.title, editable: false)
+                    .allowsHitTesting(false)
+            }
+            .padding(18)
+            .frame(width: 340, alignment: .topLeading)
+            .frame(maxHeight: 480, alignment: .top)
+            .clipped()
+            .background(Color.card)
+        }
+    }
+}
+#endif

@@ -10,7 +10,6 @@ struct Card: View {
     let title: String
     /// The face chosen in Settings: its title and peek set in it again.
     @AppStorage(TextSettings.faceKey) private var face = ""
-    @State private var hovering = false
     /// The title being typed in: renaming.
     @State private var renaming = false
     @FocusState private var titleFocused: Bool
@@ -64,7 +63,7 @@ struct Card: View {
                 }
                 let links = store.backlinks(of: title)
                 if !links.isEmpty {
-                    BacklinkFan(card: title, links: links)
+                    PhoneBacklinks(card: title, links: links)
                         .padding(.top, 4)
                 }
             }
@@ -103,7 +102,9 @@ struct Card: View {
         #else
         .padding(.horizontal, sizeClass == .compact ? 16 : 28)
         .padding(.top, peeking ? 12 : (sizeClass == .compact ? 16 : headerlessTop))
-        .padding(.bottom, peeking ? 12 : (sizeClass == .compact ? 22 : 30))
+        // As much under its last line as over its first: the room an outline
+        // leaves under its last row is in it already.
+        .padding(.bottom, peeking ? 12 : (sizeClass == .compact ? 16 : 24))
         #endif
         .frame(maxWidth: .infinity, alignment: .leading)
         // Peeking: set back, a shade under an open card — to be read, not written in.
@@ -122,7 +123,6 @@ struct Card: View {
         // Swiped aside — a finger on the phone, two on the Mac's trackpad —
         // its actions under it; not while it is written in.
         .cardSwipe(leading: leadingSwipe, trailing: trailingSwipe, enabled: !river.isWriting(title) && !renaming)
-        .onHover { hovering = $0 }
         // A click makes it the card ⌘↩ goes to.
         .simultaneousGesture(TapGesture().onEnded { river.select(title) })
         .sheet(isPresented: $historyShown) { HistorySheet(title: title).environment(store) }
@@ -210,10 +210,17 @@ struct Card: View {
             // Mac, under the pointer its controls float over its end.
         }
         .font(.system(size: TextSettings.size, design: TextSettings.design))
+        #if os(macOS)
+        // Its handle, beside it, on its first line's middle — not between its two.
+        .alignmentGuide(.cardFirstLine) { $0[.firstTextBaseline] - TextSettings.size * 0.36 }
+        #endif
         .draggingCard(title, shown: peek.title)
         #if os(iOS)
         // Held: what can be done with it, as a menu over it.
         .contextMenu { longPressMenu }
+        #else
+        // Right-clicked: its handle's menu.
+        .contextMenu { handleMenu }
         #endif
         #if os(macOS)
         // Under the pointer, its controls over the end of its words, on a
@@ -239,10 +246,7 @@ struct Card: View {
     private func peekLead(task: Tiddler.TaskState?) -> Text {
         var lead = Text("")
         #if os(macOS)
-        // The gutter has its ring, else its icon: its icon here only with its ring there.
-        if task != nil, let symbol = shownSymbol {
-            lead = lead + Text(Image(systemName: symbol)).foregroundStyle(Ink.secondary.color) + Text("  ")
-        }
+        // Its ring in the gutter, its icon the handle's: nothing before its title.
         return lead
         #else
         if let task {
@@ -334,10 +338,10 @@ struct Card: View {
     /// How the card opens for its drawer, and the drawer grows into it.
     static let drawerSpring = Animation.spring(response: 0.34, dampingFraction: 0.82)
 
-    /// How many lines a peek always has room for: one on the Mac, its ring
+    /// How many lines a peek always has room for: two on the Mac, its ring
     /// or icon in the gutter; on the phone, three, they in its first line.
     #if os(macOS)
-    static let peekLines = 1
+    static let peekLines = 2
     static let peekAlignment = VerticalAlignment.center
     static let ringInPeekLine = false
     #else
@@ -364,12 +368,16 @@ struct Card: View {
     }
 
     /// Which saved river the page calls its home — frontmatter `river:` —
-    /// shown in its header, a tap bringing it back.
+    /// shown in its header, a tap bringing it back: chosen by typing its
+    /// name (⌃⌘H), or from those saved.
     @ViewBuilder private var homeRiverMenu: some View {
         let saved = store.savedRivers()
         let home = store.homeRiver(of: title)
-        if !saved.isEmpty || home != nil {
+        if !store.isShadow(title) {
             Menu("Home River", systemImage: RiverLink.symbol) {
+                // Found by typing its name, or a new one made.
+                Button("Choose…") { river.homing = title }
+                if !saved.isEmpty || home != nil { Divider() }
                 if let name = river.name, home != name {
                     Button("This River, “\(name)”") { store.setHomeRiver(name, of: title) }
                     Divider()
@@ -426,6 +434,7 @@ struct Card: View {
                 .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.plain)
+        .pointing()
         .help(task == .done ? "Done — click to open again" : "To do — click when done")
         .accessibilityLabel(task == .done ? "Done" : "To do")
     }
@@ -443,11 +452,11 @@ struct Card: View {
     /// says — so that what is beside what lines up by being laid out so.
     @ViewBuilder private func macRows(peeking: Bool) -> some View {
         if peeking {
-            CardRow(margin: { foldChevron }, mark: { GutterMark(kind: markKind) }, content: { peekRow })
+            CardRow(mark: { handle }, content: { peekRow })
         } else {
             if showsHeader {
                 // Over the words after it: a control's name, said under it, not hidden by them.
-                CardRow(margin: { foldChevron }, mark: { headerMark }, content: { header })
+                CardRow(mark: { handle }, content: { header })
                     .zIndex(1)
             }
             CardRow { relinking }
@@ -456,10 +465,19 @@ struct Card: View {
             } else {
                 // Its words: their gutter the editor's own — the outline draws
                 // its marks there, the page's ring among them, untitled.
-                CardRow(gutter: false, margin: { if !showsHeader { foldChevron } }, mark: { EmptyView() }) {
+                CardRow(gutter: false, margin: { if !showsHeader, !handleInline { marginHandle } }, mark: { EmptyView() }) {
                     CardEditor(title: title, controller: controller, addingTag: $addingTag, addingField: $addingField,
                                addingRelated: $addingRelated, definingFields: $definingFields,
-                               lead: showsHeader ? nil : store.taskState(title))
+                               lead: showsHeader ? nil : store.taskState(title), gutterTaken: !showsHeader && handleInline)
+                }
+                // Untitled, its first line with no mark of its own: its handle
+                // in that line's gutter, as a title's.
+                .overlay(alignment: Alignment(horizontal: .leading, vertical: .cardFirstLine)) {
+                    if !showsHeader, handleInline {
+                        CardHandle(symbol: handleSymbol, title: title, shown: store.peek(of: title).title)
+                            .contextMenu { handleMenu }
+                            .padding(.leading, Measures.margin)
+                    }
                 }
                 // Untitled: its controls under the pointer, on its first line's
                 // end, on a fade of its own card — taking no room from its words.
@@ -485,24 +503,58 @@ struct Card: View {
         }
     }
 
-    /// What its title's gutter shows: its ring, else its icon.
-    private var markKind: GutterMark.Kind? {
-        if let task = store.taskState(title) { return .ring(done: task == .done) }
-        return shownSymbol.map { .icon($0) }
-    }
-
-    private var headerMark: some View {
-        let kind = store.kind(title)
-        let help: String? = if case .icon(let symbol) = markKind {
-            kind == .day && store.icon(of: title) == nil ? "A day" : "Its icon: \(PageIcon.name(of: symbol)) — click to choose another"
-        } else { nil }
-        return GutterMark(kind: markKind, help: help) {
+    /// Its handle, in its title's gutter: a thing to do's ring, checked off
+    /// with a click; else what it is, its menu a click away. Either, its
+    /// menu a right-click away, and dragged, the card moved.
+    @ViewBuilder private var handle: some View {
+        let shown = store.peek(of: title).title
+        Group {
             if let task = store.taskState(title) {
-                withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
-            } else if canChooseIcon {
-                choosingIcon = true
+                CardHandle(title: title, shown: shown,
+                           help: task == .done ? "Done — click to open again; right-click for more, drag to move it"
+                                               : "To do — click when done; right-click for more, drag to move it",
+                           onClick: {
+                    withAnimation(.snappy(duration: 0.2)) { store.setTaskState(title, task == .done ? .todo : .done) }
+                }) { _ in
+                    Image(systemName: task == .done ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: Measures.markSize))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(task == .done ? Color.white : Measures.markColor, Ink.accent.color)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+            } else {
+                CardHandle(symbol: handleSymbol, title: title, shown: shown)
             }
         }
+        .contextMenu { handleMenu }
+    }
+
+    /// Untitled, whether its handle can be in its first line's gutter: not
+    /// a thing to do — the outline's ring is there — nor a list's row, or
+    /// an empty outline's, its bullet there.
+    private var handleInline: Bool {
+        guard store.taskState(title) == nil else { return false }
+        guard store.editorMode(title) == .outline else { return true }
+        let text = (store.draft(title) ?? store.tiddler(title))?.text ?? ""
+        // Empty, an outline is one bullet, ready for words.
+        guard let first = text.split(separator: "\n").first(where: { !$0.allSatisfy(\.isWhitespace) })?
+            .drop(while: { $0 == " " || $0 == "\t" }) else { return false }
+        return !(first == "-" || first == "*" || first.hasPrefix("- ") || first.hasPrefix("* ") || first.hasPrefix("+ ")
+                 || first.range(of: #"^\d+[.)]\s"#, options: .regularExpression) != nil)
+    }
+
+    /// An untitled card's handle: with no title row to be in, and its first
+    /// line's gutter taken — a list's bullet, its ring — out in its margin.
+    private var marginHandle: some View {
+        CardHandle(symbol: handleSymbol, title: title, shown: store.peek(of: title).title, width: Measures.margin)
+            .contextMenu { handleMenu }
+    }
+
+    /// What its handle shows: its own icon, a day's calendar, a thing to
+    /// do's list — its ring beside it — else a note.
+    private var handleSymbol: String {
+        if let symbol = shownSymbol { return symbol }
+        return store.taskState(title) != nil ? "checklist" : "note.text"
     }
     #endif
 
@@ -513,18 +565,6 @@ struct Card: View {
         #else
         14
         #endif
-    }
-
-    /// Its icon — a day's calendar, or its own — a click away from another.
-    private func iconButton(_ symbol: String, kind: LinkTarget.Kind) -> some View {
-        Button { if canChooseIcon { choosingIcon = true } } label: {
-            Image(systemName: symbol)
-                .foregroundStyle(Ink.secondary.color)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(kind == .day && store.icon(of: title) == nil ? "A day" : "Its icon: \(PageIcon.name(of: symbol)) — click to choose another")
-        .accessibilityLabel(PageIcon.name(of: symbol))
     }
 
     private var headerlessTop: CGFloat {
@@ -581,10 +621,7 @@ struct Card: View {
         let task = store.taskState(title)
         let peeking = river.isFolded(title)
         return HStack(alignment: .center, spacing: peeking ? 8 : 10) {
-            #if os(macOS)
-            // Its ring, else its icon, in its row's gutter; both, its icon here, by the title.
-            if task != nil, let symbol = shownSymbol { iconButton(symbol, kind: kind) }
-            #else
+            #if os(iOS)
             // Its icon — a day's calendar, or its own — a click away from another.
             if let symbol = shownSymbol {
                 Button { if canChooseIcon { choosingIcon = true } } label: {
@@ -636,7 +673,15 @@ struct Card: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     #if os(macOS)
-                    .onTapGesture(count: 2) { startRenaming() }
+                    // Clicked, folded to it or opened again, as a tap does on
+                    // the phone; clicked twice, typed in.
+                    .contentShape(Rectangle())
+                    .gesture(TapGesture(count: 2).onEnded { startRenaming() }.exclusively(before: TapGesture().onEnded {
+                        river.select(title)
+                        withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) }
+                    }))
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint(river.isFolded(title) ? "Unfolds the card" : "Folds the card to its title")
                     #else
                     // A tap folds it to its title, or opens it again; renaming is in its menu.
                     .contentShape(Rectangle())
@@ -669,6 +714,7 @@ struct Card: View {
                         .fixedSize()
                 }
                 .buttonStyle(.plain)
+                .pointing()
                 .help("Its home river: bring back “\(home)”")
                 .contextMenu {
                     Button("Remove Home River", systemImage: "minus.circle") { store.setHomeRiver(nil, of: title) }
@@ -684,6 +730,9 @@ struct Card: View {
         #if os(iOS)
         // Held by its title: what can be done with it, as a menu over it.
         .contextMenu { if !renaming { longPressMenu } }
+        #else
+        // Right-clicked: its handle's menu.
+        .contextMenu { if !renaming { handleMenu } }
         #endif
         #if os(macOS)
         .safeAreaInset(edge: .trailing, spacing: 8) { macControls }
@@ -691,41 +740,9 @@ struct Card: View {
     }
 
     #if os(macOS)
-    /// The card's disclosure triangle: faint under the pointer, there always
-    /// when folded; ⌥-clicked, every card folded or opened as this one goes.
-    private var foldChevron: some View {
-        let folded = river.isFolded(title)
-        return Button {
-            withAnimation(.snappy(duration: 0.22)) {
-                if NSEvent.modifierFlags.contains(.option) {
-                    if folded { river.unfoldAll() } else { river.foldAll() }
-                } else {
-                    river.toggleFold(title)
-                }
-            }
-        } label: {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .bold))
-                .rotationEffect(.degrees(folded ? 0 : 90))
-                .frame(width: 18, height: 26)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Ink.secondary.color)
-        .opacity(folded ? 0.9 : controlsShown ? 0.6 : 0)
-        .animation(.easeOut(duration: 0.15), value: controlsShown)
-        .help(folded ? "Unfold (⌃⌘↓) — ⌥-click unfolds every card" : "Fold to its title (⌃⌘↑) — ⌥-click folds every card")
-        .accessibilityLabel(folded ? "Unfold" : "Fold")
-    }
-    #endif
-
-    #if os(macOS)
-    /// The card's controls, at the end of its title row: under the pointer,
-    /// faint while it is written in or chosen, else out of sight. Open:
-    /// text or outline, the days beside a day's, what a query river does
-    /// with it, More, and closing it. Peeking: More and closing.
-    /// Under the pointer — not while typing — what is reached for most:
-    /// the days beside a day's, More, and closing it. The rest in More.
+    /// The card's controls, at the end of its title row, under the pointer —
+    /// not while typing: the days beside a day's, and closing it. The rest
+    /// is in its handle's menu.
     private var macControls: some View {
         let peeking = river.isFolded(title)
         return HStack(spacing: 2) {
@@ -733,13 +750,6 @@ struct Card: View {
                 CardButton("The Day Before", "chevron.left") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: -1) } }
                 CardButton("The Day After", "chevron.right") { withAnimation(.snappy(duration: 0.28)) { river.openDay(beside: title, by: 1) } }
             }
-            Menu { menuItems } label: { CardButtonFace(symbol: "ellipsis") }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .cardTip("More")
-                .accessibilityLabel("More")
             CardButton("Close", "xmark") { withAnimation { river.close(title) } }
         }
         .foregroundStyle(Ink.secondary.color)
@@ -750,7 +760,9 @@ struct Card: View {
 
     /// Its controls shown: the pointer on it — and not put away by typing,
     /// till the pointer moves again, as the Mac hides the pointer itself.
-    private var controlsShown: Bool { hovering && !TypingQuiet.shared.quiet }
+    /// The selected card's alone — not every card the pointer crosses —
+    /// and not while typing, till the pointer moves again.
+    private var controlsShown: Bool { river.isSelected(title) && !TypingQuiet.shared.quiet }
     #endif
 
     /// The card's controls, slid out under it: open or peek, text or
@@ -801,6 +813,115 @@ struct Card: View {
         .background(Ink.drawer.color, in: Capsule())
         .padding(.top, 12)
     }
+
+    #if os(macOS)
+    /// Its handle's menu, and a right-click's: what is reached for first —
+    /// folding it, checking it off, where it lives, flagging it — then
+    /// naming it; the rest in More; closing and deleting it last.
+    @ViewBuilder private var handleMenu: some View {
+        let folded = river.isFolded(title)
+        Section {
+            Button(folded ? "Unfold" : "Fold", systemImage: folded ? "chevron.down" : "chevron.right") {
+                withAnimation(.snappy(duration: 0.2)) { river.toggleFold(title) }
+            }
+            if store.kind(title) != .day, !store.isShadow(title) {
+                switch store.taskState(title) {
+                case nil:
+                    Button("Make a To-Do", systemImage: "circle") { store.setTaskState(title, .todo) }
+                case .todo:
+                    Button("Mark Done", systemImage: "checkmark.circle") { store.setTaskState(title, .done) }
+                case .done:
+                    Button("Mark Not Done", systemImage: "circle") { store.setTaskState(title, .todo) }
+                }
+            }
+            homeRiverMenu
+            if store.tiddler(title) != nil, store.kind(title) != .day {
+                let inbox = store.isInInbox(title), pinned = store.isPinned(title)
+                Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") { store.setPinned(title, !pinned) }
+                Button(inbox ? "Done with It" : "Add to Inbox", systemImage: inbox ? "tray.and.arrow.up" : "tray.and.arrow.down") {
+                    store.setInbox(title, !inbox)
+                }
+            }
+        }
+        Section {
+            if canRename {
+                Button(isUntitled ? "Add Title…" : "Rename…", systemImage: "character.cursor.ibeam") { startRenaming() }
+            }
+            if canChooseIcon {
+                Button("Choose Icon…", systemImage: store.icon(of: title) ?? "square.grid.3x3") { choosingIcon = true }
+            }
+            if store.canRead(title) {
+                Button("Read", systemImage: "doc.richtext") { river.reading = title }
+            }
+            Button("Copy Link", systemImage: "link") { Platform.copy("[[\(title)]]") }
+            Menu("More", systemImage: "ellipsis.circle") { handleMore }
+        }
+        Section {
+            Button(river.isQuery ? "Remove from River" : "Close", systemImage: "xmark") { withAnimation { river.close(title) } }
+            if store.tiddler(title) != nil, !store.isShadow(title) {
+                Button("Delete Tiddler", systemImage: "trash", role: .destructive) {
+                    // At once: Undo brings it back.
+                    withAnimation { store.delete(title) }
+                }
+            }
+        }
+    }
+
+    /// What its handle's menu has under More: what is reached for less.
+    @ViewBuilder private var handleMore: some View {
+        Section {
+            if canRename, !isUntitled {
+                Button("Remove Title", systemImage: "minus.circle") { removeTitle() }
+            }
+            if canChooseIcon, store.icon(of: title) != nil {
+                Button("Remove Icon", systemImage: "minus.circle") { store.setIcon(nil, of: title) }
+            }
+            Button("Add Tag", systemImage: "tag") { addingTag = true }
+            Button("Add Field", systemImage: "plus.rectangle") {
+                addingField = true
+                store.fieldsShown.insert(title)
+            }
+            Button("Relate To…", systemImage: "link") { addingRelated = true }
+            if store.taskState(title) != nil, store.kind(title) != .day, !store.isShadow(title) {
+                Button("No Longer a To-Do", systemImage: "circle.slash") { store.setTaskState(title, nil) }
+            }
+            if store.tiddler(title) != nil || store.isEditing(title) {
+                let wiki = store.draftHead(title)?.isWiki ?? store.isWiki(title)
+                Button(wiki ? "Remove from Wiki" : "Add to Wiki", systemImage: "book.closed") { store.setWiki(title, !wiki) }
+            }
+        }
+        Section {
+            Picker("Write As", selection: Binding(get: { store.editorMode(title) }, set: { store.setEditorMode($0, for: title) })) {
+                ForEach(WikiStore.EditorMode.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.symbol).tag($0) }
+            }
+            if river.isQuery {
+                if river.isHeld(title) {
+                    Button("Release to Query", systemImage: "arrow.down.to.line") { withAnimation { river.releaseToQuery(title) } }
+                } else {
+                    Button("Keep at Top", systemImage: "arrow.up.to.line") { withAnimation { river.keepAtTop(title) } }
+                }
+            }
+            Button("Close Others", systemImage: "rectangle.stack.badge.minus") { withAnimation { river.closeOthers(title) } }
+        }
+        Section {
+            Button("Find in It", systemImage: "text.magnifyingglass") { river.find(in: title) }
+            Button("Insert Query…", systemImage: "line.3.horizontal.decrease.circle") { insertingQuery = true }
+            if let page = store.tiddler(title), !store.tagged(title).isEmpty || !FieldSpec.specs(of: page).isEmpty {
+                Button("Fields of Tiddlers Tagged “\(title)”…", systemImage: "list.bullet.rectangle") { definingFields = true }
+            }
+            if store.tiddler(title) != nil {
+                Button("History…", systemImage: "clock.arrow.circlepath") { historyShown = true }
+            }
+            Button("Copy Contents", systemImage: "doc.on.doc") {
+                Platform.copy((store.draft(title) ?? store.tiddler(title))?.text ?? "")
+            }
+            .disabled(store.tiddler(title) == nil && !store.isEditing(title))
+            if Platform.canReveal, let path = store.path(of: title) {
+                Button("Show in Finder", systemImage: "folder") { Platform.reveal(path) }
+            }
+        }
+    }
+    #endif
 
     /// Everything else to do with the card: in its drawer's More.
     /// What can be done with it, in four groups and its deleting: what it is
@@ -1011,6 +1132,7 @@ private struct CardButton: View {
     var body: some View {
         Button(action: action) { CardButtonFace(symbol: symbol) }
             .buttonStyle(.plain)
+            .pointing()
             .cardTip(name)
             .accessibilityLabel(name)
     }

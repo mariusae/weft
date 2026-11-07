@@ -34,6 +34,29 @@ import ReflectCore
         try? String(contentsOf: root.appendingPathComponent("rivers/\(name).md"), encoding: .utf8)
     }
 
+    @Test func savedRiversPutInOrderByHand() {
+        for name in ["Apple", "Banana", "Cherry", "Date"] { _ = store.addSavedRiver(name, SavedRiver(cards: ["Alpha"])) }
+        #expect(store.savedRivers() == ["Apple", "Banana", "Cherry", "Date"])
+        // None placed yet: all numbered as they now stand.
+        store.moveSavedRiver("Date", before: "Banana")
+        #expect(store.savedRivers() == ["Apple", "Date", "Banana", "Cherry"])
+        #expect(file("Cherry")?.contains("place: 4") == true)
+        // Placed: only the one moved written, between its neighbours.
+        let banana = file("Banana")
+        store.moveSavedRiver("Apple", before: "Cherry")
+        #expect(store.savedRivers() == ["Date", "Banana", "Apple", "Cherry"])
+        #expect(file("Apple")?.contains("place: 3.5") == true)
+        #expect(file("Banana") == banana)
+        // To the end; and an open river's writes keep its place.
+        store.moveSavedRiver("Date", before: nil)
+        #expect(store.savedRivers() == ["Banana", "Apple", "Cherry", "Date"])
+        store.keepSavedRiver("Date", SavedRiver(cards: ["Beta"]))
+        #expect(store.savedRivers().last == "Date")
+        // One new, after those placed.
+        _ = store.addSavedRiver("Aardvark", SavedRiver(cards: []))
+        #expect(store.savedRivers().last == "Aardvark")
+    }
+
     @Test func aPageOpenInTwoRiversIsOneDraft() {
         let one = river(["Alpha"]), two = river(["Alpha"])
         store.change("Alpha") { $0.text = "Changed." }
