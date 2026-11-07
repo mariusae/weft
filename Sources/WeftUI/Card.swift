@@ -15,6 +15,10 @@ struct Card: View {
     @FocusState private var titleFocused: Bool
     /// What of the title is selected as it is typed in: a new tiddler's, all of it.
     @State private var titleSelection: TextSelection?
+    /// The pages offered for a name being typed after @ or [[ in the title.
+    @State private var titleSuggestions = SuggestionModel()
+    /// What was typed when the offer was put away: not offered again for it.
+    @State private var titleMentionDismissed: String?
     @State private var controller = EditorController()
     @State private var insertingQuery = false
     @State private var addingTag = false
@@ -39,6 +43,7 @@ struct Card: View {
                     // Over the words after it: a control's name, said under it, not hidden by them.
                     header.zIndex(1)
                 }
+                titleSuggestionList
                 relinking
                 if store.needsReview(title) {
                     ConflictView(title: title)
@@ -273,6 +278,9 @@ struct Card: View {
     /// Held on the phone: the actions most reached for, then the rest of its menu.
     @ViewBuilder private var longPressMenu: some View {
         Section {
+            if canRename {
+                Button(isUntitled ? "Add Title…" : "Rename…", systemImage: "character.cursor.ibeam") { startRenaming() }
+            }
             Button("Open in New River", systemImage: "plus.square.on.square") {
                 river.openNew(River.State(graph: store.root?.path ?? "", cards: [title]))
             }
@@ -459,6 +467,7 @@ struct Card: View {
                 CardRow(mark: { handle }, content: { header })
                     .zIndex(1)
             }
+            if renaming, !titleSuggestions.items.isEmpty { CardRow { titleSuggestionList } }
             CardRow { relinking }
             if store.needsReview(title) {
                 CardRow { ConflictView(title: title) }
@@ -474,7 +483,8 @@ struct Card: View {
                 // in that line's gutter, as a title's.
                 .overlay(alignment: Alignment(horizontal: .leading, vertical: .cardFirstLine)) {
                     if !showsHeader, handleInline {
-                        CardHandle(symbol: handleSymbol, title: title, shown: store.peek(of: title).title)
+                        CardHandle(symbol: handleSymbol, title: title, shown: store.peek(of: title).title,
+                                   onDoubleClick: foldFromHandle)
                             .contextMenu { handleMenu }
                             .padding(.leading, Measures.margin)
                     }
@@ -523,7 +533,7 @@ struct Card: View {
                         .contentTransition(.symbolEffect(.replace))
                 }
             } else {
-                CardHandle(symbol: handleSymbol, title: title, shown: shown)
+                CardHandle(symbol: handleSymbol, title: title, shown: shown, onDoubleClick: foldFromHandle)
             }
         }
         .contextMenu { handleMenu }
@@ -546,8 +556,15 @@ struct Card: View {
     /// An untitled card's handle: with no title row to be in, and its first
     /// line's gutter taken — a list's bullet, its ring — out in its margin.
     private var marginHandle: some View {
-        CardHandle(symbol: handleSymbol, title: title, shown: store.peek(of: title).title, width: Measures.margin)
+        CardHandle(symbol: handleSymbol, title: title, shown: store.peek(of: title).title, width: Measures.margin,
+                   onDoubleClick: foldFromHandle)
             .contextMenu { handleMenu }
+    }
+
+    /// Its handle double-clicked: folded to its title, or opened again.
+    private func foldFromHandle() {
+        river.select(title)
+        withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) }
     }
 
     /// What its handle shows: its own icon, a day's calendar, a thing to
@@ -592,8 +609,85 @@ struct Card: View {
         river.change(title, settling: true) { $0.title = "" }
     }
 
+    /// Under the title, the pages that fit a name being typed after @ or [[.
+    @ViewBuilder private var titleSuggestionList: some View {
+        if renaming, !titleSuggestions.items.isEmpty {
+            SuggestionList(model: titleSuggestions)
+                .transition(.opacity)
+        }
+    }
+
+    /// The title as it is typed in: empty, untitled.
+    private var titleText: String {
+        let name = store.draftHead(title)?.title ?? title
+        return Untitled.isName(name) ? "" : name
+    }
+
+    /// A name being typed in the title after @ or [[, up to the caret: from
+    /// its opener on, and what is typed after it.
+    private func titleMention(in name: String) -> (range: Range<String.Index>, typed: String)? {
+        var caret = name.endIndex
+        if case let .selection(range)? = titleSelection?.indices {
+            guard range.isEmpty else { return nil }
+            if range.upperBound <= name.endIndex { caret = range.upperBound }
+        }
+        let before = name[..<caret]
+        let at = before.range(of: "@", options: .backwards)
+        let brackets = before.range(of: "[[", options: .backwards)
+        guard let opener = [at, brackets].compactMap({ $0 }).max(by: { $0.lowerBound < $1.lowerBound }) else { return nil }
+        // An @ at a word's start: not an address's.
+        if opener == at, opener.lowerBound > before.startIndex, !before[before.index(before: opener.lowerBound)].isWhitespace {
+            return nil
+        }
+        let typed = String(before[opener.upperBound...])
+        guard typed.count <= 40, !typed.contains("]"), !typed.contains("@"), !typed.hasPrefix(" ") else { return nil }
+        return (opener.lowerBound..<caret, typed)
+    }
+
+    /// The pages that fit the name being typed in the title, offered under it.
+    private func offerTitleSuggestions() {
+        guard renaming, let mention = titleMention(in: titleText) else {
+            titleMentionDismissed = nil
+            if !titleSuggestions.items.isEmpty { titleSuggestions.items = [] }
+            return
+        }
+        guard mention.typed != titleMentionDismissed else { return }
+        let items = store.linkSuggestions(mention.typed).filter { [.wiki, .note, .day].contains($0.kind) && $0.title != title }
+        if items != titleSuggestions.items {
+            titleSuggestions.items = items
+            titleSuggestions.selected = 0
+        }
+        titleSuggestions.typed = mention.typed
+        titleSuggestions.pick = { takeTitleSuggestion($0) }
+    }
+
+    private func moveTitleSuggestion(_ delta: Int) -> KeyPress.Result {
+        guard !titleSuggestions.items.isEmpty else { return .ignored }
+        titleSuggestions.move(delta)
+        return .handled
+    }
+
+    /// A page chosen for the name being typed: its name in the title, in
+    /// words — a title is a name, not a link, so that links to it hold —
+    /// and the caret after it.
+    private func takeTitleSuggestion(_ item: LinkTarget) {
+        let name = titleText
+        guard let mention = titleMention(in: name) else { return }
+        let words = item.kind == .day ? item.shown : store.shownTitle(item.title)
+        let start = name.distance(from: name.startIndex, to: mention.range.lowerBound)
+        var new = name
+        new.replaceSubrange(mention.range, with: words)
+        titleSuggestions.items = []
+        store.change(title) { $0.title = new }
+        titleSelection = TextSelection(insertionPoint: new.index(new.startIndex, offsetBy: start + words.count))
+    }
+
     private func startRenaming() {
         guard canRename else { return }
+        #if os(iOS)
+        // Folded, it has no title to type in: opened first.
+        if river.isFolded(title) { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
+        #endif
         renaming = true
         titleFocused = true
         Task { @MainActor in
@@ -640,17 +734,39 @@ struct Card: View {
                 // Untitled: empty, what it begins with offered — taken with
                 // Return, typed over, or left, and it stays untitled.
                 TextField(isUntitled ? (untitledSuggestion.isEmpty ? "Title" : untitledSuggestion) : "Title", text: Binding {
-                    let name = store.draftHead(title)?.title ?? title
-                    return Untitled.isName(name) ? "" : name
+                    titleText
                 } set: { value in
                     store.change(title) { $0.title = value.isEmpty && Untitled.isName(title) ? title : value }
+                    offerTitleSuggestions()
                 }, selection: $titleSelection)
                 .textFieldStyle(.plain)
                 .font(.system(size: Measures.titleSize, weight: .semibold, design: TextSettings.design))
                 .lineLimit(1)
                 .focused($titleFocused)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .onChange(of: titleSelection) { offerTitleSuggestions() }
+                // A page being named: ↑ and ↓ choose, Tab takes, Escape puts the list away.
+                .onKeyPress(.downArrow) { moveTitleSuggestion(1) }
+                .onKeyPress(.upArrow) { moveTitleSuggestion(-1) }
+                .onKeyPress(.tab) {
+                    guard let item = titleSuggestions.current else { return .ignored }
+                    takeTitleSuggestion(item)
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    guard !titleSuggestions.items.isEmpty else { return .ignored }
+                    titleMentionDismissed = titleSuggestions.typed
+                    titleSuggestions.items = []
+                    return .handled
+                }
                 .onSubmit {
+                    // A page being named: its name taken first.
+                    if let item = titleSuggestions.current {
+                        takeTitleSuggestion(item)
+                        #if os(macOS)
+                        return
+                        #endif
+                    }
                     // Untitled, and nothing typed: called what it begins with.
                     if isUntitled, case let offered = untitledSuggestion, !offered.isEmpty {
                         store.change(title) { $0.title = offered }
@@ -683,11 +799,14 @@ struct Card: View {
                     .accessibilityAddTraits(.isButton)
                     .accessibilityHint(river.isFolded(title) ? "Unfolds the card" : "Folds the card to its title")
                     #else
-                    // A tap folds it to its title, or opens it again; renaming is in its menu.
+                    // A tap folds it to its title, or opens it again; two, typed in.
                     .contentShape(Rectangle())
-                    .onTapGesture { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) } }
+                    .gesture(TapGesture(count: 2).onEnded { startRenaming() }.exclusively(before: TapGesture().onEnded {
+                        withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) }
+                    }))
                     .accessibilityAddTraits(.isButton)
                     .accessibilityHint(river.isFolded(title) ? "Unfolds the card" : "Folds the card to its title")
+                    .accessibilityAction(named: "Rename") { startRenaming() }
                     #endif
             }
             let wiki = store.draftHead(title)?.isWiki ?? (kind == .wiki)

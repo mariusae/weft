@@ -15,9 +15,11 @@ struct CardHandle<Face: View>: View {
     let shown: String
     /// Its column's width.
     var width: CGFloat = Measures.gutter
-    var help = "Click for what can be done with it — drag to move it"
+    var help = "Click for what can be done with it, double-click to fold it — drag to move it"
     /// A click's, if not its menu.
     var onClick: (() -> Void)? = nil
+    /// Two clicks': with it, one click's waits to see whether a second follows.
+    var onDoubleClick: (() -> Void)? = nil
     /// What it shows, under the pointer or not.
     @ViewBuilder var face: (_ hovered: Bool) -> Face
     @State private var hovered = false
@@ -30,7 +32,7 @@ struct CardHandle<Face: View>: View {
                     .fill(Ink.text.color.opacity(hovered && onClick == nil ? 0.08 : 0))
                     .frame(width: Measures.markSize + 8)
             }
-            .overlay { HandlePointer(title: title, shown: shown, onClick: onClick) }
+            .overlay { HandlePointer(title: title, shown: shown, onClick: onClick, onDoubleClick: onDoubleClick) }
             .onHover { hovered = $0 }
             .animation(.easeOut(duration: 0.12), value: hovered)
             .help(help)
@@ -42,8 +44,8 @@ struct CardHandle<Face: View>: View {
 
 extension CardHandle where Face == HandleGlyph {
     /// A handle showing a symbol: faint till the pointer is on it.
-    init(symbol: String, title: String, shown: String, width: CGFloat = Measures.gutter) {
-        self.init(title: title, shown: shown, width: width) { HandleGlyph(symbol: symbol, hovered: $0) }
+    init(symbol: String, title: String, shown: String, width: CGFloat = Measures.gutter, onDoubleClick: (() -> Void)? = nil) {
+        self.init(title: title, shown: shown, width: width, onDoubleClick: onDoubleClick) { HandleGlyph(symbol: symbol, hovered: $0) }
     }
 }
 
@@ -65,6 +67,7 @@ private struct HandlePointer: NSViewRepresentable {
     let title: String
     let shown: String
     let onClick: (() -> Void)?
+    let onDoubleClick: (() -> Void)?
 
     func makeNSView(context: Context) -> HandlePointerView { HandlePointerView() }
 
@@ -72,6 +75,7 @@ private struct HandlePointer: NSViewRepresentable {
         view.title = title
         view.shown = shown
         view.onClick = onClick
+        view.onDoubleClick = onDoubleClick
     }
 }
 
@@ -79,6 +83,11 @@ final class HandlePointerView: NSView, NSDraggingSource {
     var title = ""
     var shown = ""
     var onClick: (() -> Void)?
+    var onDoubleClick: (() -> Void)?
+
+    /// How long one click waits for a second: the system's, but not so
+    /// long that the menu is slow to come.
+    private var doubleClickWait: TimeInterval { min(NSEvent.doubleClickInterval, 0.3) }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -89,6 +98,19 @@ final class HandlePointerView: NSView, NSDraggingSource {
         // Held till it is let go, or moved far enough to be a drag.
         while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp {
+                // Clicked again soon: its double-click's, not its menu — which,
+                // shown at once, the second click would land in.
+                if let onDoubleClick,
+                   let again = window?.nextEvent(matching: [.leftMouseDown], until: Date(timeIntervalSinceNow: doubleClickWait),
+                                                 inMode: .eventTracking, dequeue: true) {
+                    if again.clickCount >= 2 {
+                        _ = window?.nextEvent(matching: [.leftMouseUp])
+                        onDoubleClick()
+                        return
+                    }
+                    // Another click, slower: put back for what it is on.
+                    window?.postEvent(again, atStart: true)
+                }
                 if let onClick { onClick() } else { showMenu(for: event) }
                 return
             }

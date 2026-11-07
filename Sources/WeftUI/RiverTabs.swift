@@ -11,6 +11,9 @@ import WeftCore
 /// before it too is bunched; and the one shown taking what is left.
 enum TabLayout {
     static let spacing: CGFloat = 4
+    /// Inside the title bar's glass round them, at its ends: as much as it
+    /// leaves over and under them, so the one shown sits in it evenly.
+    static let inset: CGFloat = 5
     /// Between the tabs and the toolbar's buttons, their glass and all.
     static let gap: CGFloat = 8
     /// After the toolbar's buttons, to the window's edge.
@@ -157,7 +160,7 @@ struct RiverTabs: View {
     }
 
     var body: some View {
-        let width = room
+        let width = room - 2 * TabLayout.inset
         let all = rivers.rivers
         let current = all.firstIndex { $0 === rivers.current } ?? 0
         let widths = TabLayout.widths(count: all.count, current: current, pointed: pointed,
@@ -216,6 +219,7 @@ struct RiverTabs: View {
             }
         }
         .frame(width: width, alignment: .leading)
+        .padding(.horizontal, TabLayout.inset)
         // Out of the window — put in the toolbar's overflow — its room
         // reckoned again, from the window, till it is placed once more.
         .background(WindowPlace { placed($0) })

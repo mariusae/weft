@@ -14,7 +14,7 @@ enum ShadowTiddlers {
 
         - **⌘N**, or **+** above the river, makes one. Its title is how you link to it.
         - Click into a card to write in it — there is no separate editor. A card is written as an **Outline** of rows, as Prism writes, unless it holds what an outline would change; then as **Text**, its Markdown showing on the line the caret is on. The switch in its header, or **⌘↩**, goes between them.
-        - What you write saves itself. Double-click a title to rename it; **Escape** takes the caret out.
+        - What you write saves itself. Double-click a title to rename it (on the phone, double-tap it); **Escape** takes the caret out.
         - Tag it with **+** by its tags, or **Add Tag** in its menu. A tag is a tiddler too: its card lists everything tagged with it.
 
         ## Linking
