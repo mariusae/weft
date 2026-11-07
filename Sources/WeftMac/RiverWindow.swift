@@ -264,13 +264,16 @@ struct RiverCommands: Commands {
                 .disabled(card.map { store.tiddler($0) == nil || store.isShadow($0) } ?? true)
             Button("Read") { if let card { river?.reading = card } }
                 .keyboardShortcut("r", modifiers: [.command, .control])
-            Button(river?.inspecting == true ? "Hide Inspector" : "Show Inspector") {
+                .disabled(card.map { !store.canRead($0) } ?? true)
+            Button(river?.side == .related ? "Hide Related" : "Show Related") {
                 guard let river else { return }
-                river.reading = nil
-                river.inspecting.toggle()
+                river.side = river.side == .related ? nil : .related
+            }
+            .keyboardShortcut("r", modifiers: [.command, .option])
+            Button(river?.inspecting == true ? "Hide Inspector" : "Show Inspector") {
+                river?.inspecting.toggle()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
-                .disabled(card.map { !store.canRead($0) } ?? true)
             Button("Close Card") { if let card { withAnimation { river?.close(card) } } }
                 .keyboardShortcut("w", modifiers: [.command, .control])
                 .disabled(card == nil)

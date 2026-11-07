@@ -14,6 +14,8 @@ struct ReaderPanel: View {
     @Environment(River.self) private var river
     /// The card whose pages these are.
     let title: String
+    /// In the side beside the river, which has its own way to be closed.
+    var inSide = false
     @State private var index = 0
     @State private var reading = true
     @State private var web = ReaderWeb()
@@ -45,8 +47,10 @@ struct ReaderPanel: View {
 
     private func bar(_ sources: [ReaderSource], _ source: ReaderSource?) -> some View {
         HStack(spacing: 14) {
-            Button { river.reading = nil } label: { Image(systemName: "xmark") }
-                .help("Close the Reader")
+            if !inSide {
+                Button { river.reading = nil } label: { Image(systemName: "xmark") }
+                    .help("Close the Reader")
+            }
             if sources.count > 1 {
                 Button { index = max(0, index - 1) } label: { Image(systemName: "chevron.left") }
                     .disabled(index == 0)

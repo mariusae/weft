@@ -1847,6 +1847,13 @@ extension WikiStore {
     }
 
     /// What links to a card: wiki pages first, then notes and days, by title.
+    /// The pages a card links to, by their titles.
+    public func links(from card: String) -> [String] {
+        watch(card)
+        _ = listsVersion
+        return Array(wiki?.links(from: card) ?? [])
+    }
+
     public func backlinks(of card: String) -> [LinkTarget] {
         let order: [LinkTarget.Kind: Int] = [.wiki: 0, .note: 1, .day: 2, .new: 3]
         return linking(to: card).map(target).sorted { (order[$0.kind] ?? 0, $0.title) < (order[$1.kind] ?? 0, $1.title) }

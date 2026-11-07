@@ -125,7 +125,7 @@ enum Snapshot {
         // `WEFT_HOMING=<title>`: that card's home river being chosen.
         if let homing = environment["WEFT_HOMING"] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { river.homing = homing } }
         // `WEFT_INSPECT`: the selected card's inspector beside the river.
-        if environment["WEFT_INSPECT"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { if environment["WEFT_INSPECT"] == "read" { river.reading = river.cards.first } else { river.inspecting = true } } }
+        if environment["WEFT_INSPECT"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { if environment["WEFT_INSPECT"] == "read" { river.reading = river.cards.first } else if environment["WEFT_INSPECT"] == "related" { river.side = .related } else { river.inspecting = true } } }
         // `WEFT_REPLACE=Saved`: a saved river chosen from its start page, in its place.
         if let saved = environment["WEFT_REPLACE"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { river.replace(withSaved: saved) }

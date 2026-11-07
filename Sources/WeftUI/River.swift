@@ -156,10 +156,54 @@ public final class River: Identifiable {
     /// Bumped each time Quick Open is asked for, shown already or not: its
     /// field takes the keys again.
     public private(set) var quickOpenAsked = 0
-    /// The card whose pages are being read, beside the river or over it.
-    public var reading: String?
+    /// What is beside the river, where there is room — the Mac, the iPad,
+    /// the iPhone Duo open: what the selected card is linked with, the
+    /// pages it links to being read, or (on the Mac) its inspector. Nil,
+    /// nothing: the river alone.
+    public enum Side: String, CaseIterable, Sendable {
+        case related, reading, inspector
+
+        public var name: String {
+            switch self {
+            case .related: "Related"
+            case .reading: "Read"
+            case .inspector: "Inspector"
+            }
+        }
+
+        public var symbol: String {
+            switch self {
+            case .related: "point.3.connected.trianglepath.dotted"
+            case .reading: "doc.richtext"
+            case .inspector: "info.circle"
+            }
+        }
+    }
+
+    public var side: Side? {
+        didSet { if let side { lastSide = side } }
+    }
+    /// What was beside it last: what the side's button brings back.
+    public private(set) var lastSide: Side = .related
+
+    /// The side shown — what it showed last — or hidden.
+    public func toggleSide() {
+        side = side == nil ? lastSide : nil
+    }
+
+    /// The card whose pages are being read: beside the river where there is
+    /// room, over it where there isn't. Set, the side reads it; let go, the
+    /// side reading closes.
+    public var reading: String? {
+        didSet {
+            if reading != nil { side = .reading } else if side == .reading { side = nil }
+        }
+    }
     /// On the Mac: whether the selected card's inspector is beside the river.
-    public var inspecting = false
+    public var inspecting: Bool {
+        get { side == .inspector }
+        set { side = newValue ? .inspector : (side == .inspector ? nil : side) }
+    }
     /// Whether the pages deleted lately are showing, to bring back.
     public var deletedShown = false
 

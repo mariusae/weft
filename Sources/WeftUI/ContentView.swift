@@ -13,6 +13,18 @@ public struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// On the iPhone, where the sidebar and the river take turns: which shows.
     @State private var compactColumn = NavigationSplitViewColumn.detail
+    /// On the phone: a card's pages being read over the river.
+    @State private var readingOver = false
+
+    /// Whether there is room beside the river for the side: always on the
+    /// Mac; on the iPad and the iPhone Duo open, where the width is regular.
+    private var sideFits: Bool {
+        #if os(macOS)
+        true
+        #else
+        sizeClass == .regular
+        #endif
+    }
 
     /// A tab moved to a window of its own: opened by the app, which knows its windows.
     let moveToWindow: (River) -> Void
@@ -81,28 +93,21 @@ public struct ContentView: View {
                         #if os(macOS)
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
                         #endif
-                        #if os(macOS)
-                        // Beside the river: a card's pages being read, else the
-                        // selected card's inspector.
-                        .inspector(isPresented: Binding(get: { river.reading != nil || river.inspecting },
-                                                        set: { if !$0 { river.reading = nil; river.inspecting = false } })) {
-                            if let reading = river.reading {
-                                ReaderPanel(title: reading)
-                                    .inspectorColumnWidth(min: 360, ideal: 520, max: 900)
-                            } else if let card = river.selected {
-                                CardInspector(title: card)
-                                    .id(card)
-                                    .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
-                            } else {
-                                Text("No card chosen")
-                                    .foregroundStyle(Ink.secondary.color)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
-                            }
+                        // Beside the river, where there is room: what the chosen
+                        // card is linked with, its pages read, or its inspector.
+                        .inspector(isPresented: Binding(get: { sideFits && river.side != nil },
+                                                        set: { if !$0, sideFits { river.side = nil } })) {
+                            SidePanel()
+                                .environment(store)
+                                .environment(river)
+                                .inspectorColumnWidth(min: river.side == .reading ? 360 : 280,
+                                                      ideal: river.side == .reading ? 520 : 340,
+                                                      max: river.side == .reading ? 900 : 480)
                         }
-                        #else
-                        // Over it, on the phone and the iPad.
-                        .sheet(isPresented: Binding(get: { river.reading != nil }, set: { if !$0 { river.reading = nil } })) {
+                        #if os(iOS)
+                        // Where there is no room — the phone, the Duo closed — the
+                        // pages read over the river, as they always were.
+                        .sheet(isPresented: Binding(get: { readingOver && !sideFits }, set: { if !$0 { readingOver = false; river.reading = nil } })) {
                             if let reading = river.reading {
                                 ReaderPanel(title: reading)
                                     .environment(store)
@@ -110,6 +115,13 @@ public struct ContentView: View {
                                     .presentationDetents([.large])
                             }
                         }
+                        .onChange(of: river.reading) { _, now in
+                            if now != nil, !sideFits { readingOver = true }
+                            if now == nil { readingOver = false }
+                        }
+                        // Opened out — the Duo unfolded — what was read over the
+                        // river goes beside it; closed, the river alone again.
+                        .onChange(of: sideFits) { _, fits in if fits { readingOver = false } }
                         #endif
                         #if os(macOS)
                         // The rivers' tabs in the title bar, as Safari's, the one
@@ -233,6 +245,20 @@ public struct ContentView: View {
         .onChange(of: river.focusRequest) { compactColumn = .detail }
         // What is done to pages and cards undone with the window's undo.
         .onAppear { store.undoManager = undoManager }
+        #if os(iOS)
+        // `WEFT_SIDE=<side>:<card>`, for trying it out: that card opened and
+        // chosen, and the side beside it — `related`, or `reading`.
+        .task {
+            guard let asked = ProcessInfo.processInfo.environment["WEFT_SIDE"] else { return }
+            try? await Task.sleep(for: .seconds(2))
+            let parts = asked.split(separator: ":", maxSplits: 1).map(String.init)
+            if parts.count > 1 {
+                river.open(parts[1])
+                river.select(parts[1])
+            }
+            if parts[0] == "reading", let card = river.selected { river.reading = card } else { river.side = River.Side(rawValue: parts[0]) }
+        }
+        #endif
         .onChange(of: undoManager) { store.undoManager = undoManager }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.activated() } else { store.saveEditing() }
@@ -250,6 +276,14 @@ private struct RiverToolbar: ToolbarContent {
     @Environment(WikiStore.self) private var store
     @Environment(River.self) private var river
     @Environment(RiverSet.self) private var rivers: RiverSet?
+
+    private var sideKinds: [River.Side] {
+        #if os(macOS)
+        River.Side.allCases
+        #else
+        [.related, .reading]
+        #endif
+    }
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
@@ -293,13 +327,29 @@ private struct RiverToolbar: ToolbarContent {
             #if os(iOS)
             Button("Close All", systemImage: "rectangle.stack.badge.minus") { river.closeAll() }
                 .help("Close All Cards (⇧⌘W)")
-            #else
-            // The selected card's inspector, beside the river.
-            @Bindable var river = river
-            Toggle(isOn: $river.inspecting) {
-                Label("Inspector", systemImage: "sidebar.trailing")
+            #endif
+            // Beside the river: shown or hidden — held, which.
+            Menu {
+                ForEach(sideKinds, id: \.self) { kind in
+                    Toggle(isOn: Binding(get: { river.side == kind }, set: { on in
+                        if on, kind == .reading, river.reading == nil, let card = river.selected, store.canRead(card) {
+                            river.reading = card
+                        } else {
+                            river.side = on ? kind : nil
+                        }
+                    })) {
+                        Label(kind.name, systemImage: kind.symbol)
+                    }
+                }
+            } label: {
+                Label("Side", systemImage: "sidebar.trailing")
+                    .symbolVariant(river.side == nil ? .none : .fill)
+            } primaryAction: {
+                river.toggleSide()
             }
-            .help("Show the Selected Card's Inspector (⌥⌘I)")
+            .menuIndicator(.hidden)
+            .help("Beside the River: Related, Read, Inspector (⌥⌘R, ⌃⌘R, ⌥⌘I) — click to show or hide")
+            #if os(macOS)
             .toolbarButton("inspector", in: rivers)
             #endif
         }
@@ -1256,6 +1306,12 @@ private struct RiverColumn: View {
                 .padding(.vertical, sizeClass == .compact ? 12 : 22)
                 #endif
                 .frame(maxWidth: 820)
+                #if os(macOS)
+                // Room beside the cards for the rail, however narrow the
+                // river: its ticks in the margin, not over a card's edge.
+                // Both sides alike, so that the cards stay in the middle.
+                .padding(.horizontal, RiverRail.room - Measures.riverSides)
+                #endif
                 .frame(maxWidth: .infinity)
             }
             .scrollPosition(id: $inView, anchor: .top)
@@ -1466,6 +1522,11 @@ private struct RiverRail: View {
     /// The titles shown: under the pointer, or a card dragged over it.
     private var open: Bool { hovering || drop != nil }
 
+    /// Its ticks' widest, from its edge out, and the room between them and the cards.
+    private static let edge: CGFloat = 8
+    private static let tick: CGFloat = 18
+    static let room: CGFloat = edge * 2 + tick + Measures.s
+
     var body: some View {
         // As tall as its rows, scrolling only when they would not fit.
         ScrollView(showsIndicators: false) {
@@ -1484,7 +1545,7 @@ private struct RiverRail: View {
         // Over the river's words: the arrow, not their I-beam.
         .arrowCursor()
         .animation(.snappy(duration: 0.18), value: open)
-        .padding(.trailing, 8)
+        .padding(.trailing, Self.edge)
     }
 
     private var rows: some View {
@@ -1510,8 +1571,8 @@ private struct RiverRail: View {
                         // again — a shiver.
                         Capsule()
                             .fill(current ? Ink.accent.color : lit ? Ink.secondary.color : Ink.faint.color.opacity(0.7))
-                            .frame(width: current || lit ? 18 : 11, height: 3)
-                            .frame(width: 18, alignment: .trailing)
+                            .frame(width: current || lit ? Self.tick : 11, height: 3)
+                            .frame(width: Self.tick, alignment: .trailing)
                     }
                     .padding(.vertical, open ? 5.5 : 0)
                     .padding(.horizontal, open ? 8 : 0)
@@ -1543,7 +1604,7 @@ private struct RiverRail: View {
             }
         }
         .fixedSize(horizontal: true, vertical: false)
-        .padding(8)
+        .padding(Self.edge)
         .coordinateSpace(.named(Self.space))
         .onDrop(of: [.weftCard], delegate: RailDropDelegate(cards: river.cards, middles: middles, drop: $drop, river: river))
         .animation(.easeOut(duration: 0.1), value: pointed)
