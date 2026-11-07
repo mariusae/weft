@@ -139,6 +139,8 @@ struct OutlineCardEditor: UIViewRepresentable {
         PhoneImages.root = store.root
         // Links shown with their pages' and rivers' own icons.
         PhoneLayoutManager.targetIcon = { [store] name in store.linkIcon(name) }
+        // Links to untitled pages shown as what they begin with.
+        PhoneLayoutManager.untitledName = { [store] name in store.untitledName(name) }
         let editor = OutlineEditor(metrics: PhoneMetrics(face: TextSettings.face, size: TextSettings.size))
         editor.isFindInteractionEnabled = true
         let coordinator = context.coordinator
