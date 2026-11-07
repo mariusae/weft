@@ -89,10 +89,11 @@ struct PhoneBar: View {
         }
         // Its room the same, gathered or not.
         .frame(height: 48)
-        // Over it while + is held: what is heard, as it is.
+        // Over it, for a moment, why + held can't listen. What is heard
+        // is written in the new tiddler itself.
         .overlay(alignment: .bottom) {
-            if let said = held.shown {
-                HeardBubble(text: said, engine: held.engine, waiting: held.heard == nil && held.problem == nil)
+            if let said = held.problem {
+                HeardBubble(text: said)
                     .padding(.horizontal, 14)
                     // Its foot a little above the bar's top.
                     .padding(.bottom, 48 + 12)
@@ -100,7 +101,7 @@ struct PhoneBar: View {
                     .transition(.opacity.combined(with: .offset(y: 6)))
             }
         }
-        .animation(.easeOut(duration: 0.2), value: held.shown != nil)
+        .animation(.easeOut(duration: 0.2), value: held.problem != nil)
         .buttonStyle(.plain)
         .foregroundStyle(Ink.accent.color)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = max($0, 320) }
@@ -151,7 +152,7 @@ struct PhoneBar: View {
                     guard pressed == nil, !held.listening else { return }
                     // Held still a moment: listening.
                     pressed = Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(0.35))
+                        try? await Task.sleep(for: .seconds(0.25))
                         guard !Task.isCancelled else { return }
                         held.begin(in: river, store: store)
                     }
@@ -931,35 +932,30 @@ struct RiverOverview: View {
 }
 // MARK: Dictating a new tiddler
 
-/// + held: listening, and what is heard written into a new tiddler at the
-/// top of the river as it comes, typed out; let go, written for good — or,
-/// given up, or nothing said, gone again. Prism's, but into the river.
+/// + held: a new tiddler at the top of the river, listening, and what is
+/// heard written into its first line as it comes — typed out, the caret a
+/// glittering bar of light, each word lit as it is written. Let go, written
+/// for good — or, given up, or nothing said, gone again. Prism's, but into
+/// the river.
 @MainActor @Observable
 final class HeldDictation {
     /// + held, as a microphone.
     private(set) var listening = false
-    /// What has been heard so far; nil before anything is.
-    private(set) var heard: String?
     /// Why it can't listen, said for a moment.
     private(set) var problem: String?
-    private(set) var engine: Dictation.Engine?
     @ObservationIgnored private var dictation: Dictation?
     @ObservationIgnored private var typist: DictationTypist?
     @ObservationIgnored private var title: String?
     @ObservationIgnored private var outline = true
     @ObservationIgnored private var asking = false
-
-    /// What the bubble over the bar says, while it is shown.
-    var shown: String? {
-        if let problem { return problem }
-        guard listening || dictation != nil else { return nil }
-        return heard?.isEmpty == false ? heard : "Listening…"
-    }
+    /// The new tiddler's caret while it is said into, and its words lit.
+    @ObservationIgnored private var glow: DictationGlow?
+    /// What has been written into it so far: what comes next is lit from where it differs.
+    @ObservationIgnored private var written = ""
 
     func begin(in river: River, store: WikiStore) {
         guard dictation == nil, !asking else { return }
         listening = true
-        heard = nil
         problem = nil
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         asking = true
@@ -974,17 +970,17 @@ final class HeldDictation {
             guard listening, let title = river.newDictatedTiddler() else { return }
             self.title = title
             outline = store.editorMode(title) == .outline
+            written = ""
             typist = DictationTypist { [weak self, weak river] text in
                 guard let self, let river else { return }
-                river.change(title) { $0.text = self.written(text) }
+                self.write(text, into: title, in: river)
             }
+            glowOnceShown(title)
             let dictation = Dictation()
             self.dictation = dictation
-            dictation.onEngine = { [weak self] engine in self?.engine = engine }
             do {
                 try dictation.start(keyterms: OutlineEditor.dictationTerms?() ?? []) { [weak self] text in
                     guard let self, self.dictation === dictation else { return }
-                    self.heard = text
                     self.typist?.type(text)
                 }
             } catch {
@@ -1008,21 +1004,54 @@ final class HeldDictation {
         Task { @MainActor in
             let text = await dictation.stop().trimmingCharacters(in: .whitespacesAndNewlines)
             typist?.stop()
-            heard = nil
-            engine = nil
-            guard let title else { return }
+            let glow = self.glow
+            self.glow = nil
+            guard let title else {
+                glow?.end(keepingLight: false)
+                return
+            }
             if cancelled || text.isEmpty {
+                glow?.end(keepingLight: false)
                 if cancelled { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
                 return drop(title, in: river, store: store)
             }
-            river.change(title) { $0.text = written(text) }
+            if text != written { river.change(title) { $0.text = words(text) } }
+            glow?.end()
             store.finishEditing(title)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
     }
 
     /// What is said, as the tiddler's words: an outline's first row.
-    private func written(_ text: String) -> String { outline ? "- " + text : text }
+    private func words(_ text: String) -> String { outline ? "- " + text : text }
+
+    /// What has been heard so far, in the tiddler's first line — which its
+    /// editor shows from its start — lit where it is new, the caret after it.
+    private func write(_ text: String, into title: String, in river: River) {
+        guard text != written else { return }
+        river.change(title) { $0.text = words(text) }
+        let same = written.commonPrefix(with: text).utf16.count
+        written = text
+        glow?.wrote(NSRange(location: same, length: text.utf16.count - same))
+        glow?.listen(at: text.utf16.count)
+    }
+
+    /// The caret glittering at the start of the new tiddler's first line,
+    /// once its card is laid out and its editor there to draw it on.
+    private func glowOnceShown(_ title: String) {
+        Task { @MainActor in
+            for _ in 0..<40 {
+                guard self.title == title, dictation != nil || asking || listening else { return }
+                if let view = CardTextViews.view(for: title) {
+                    let glow = DictationGlow(on: view)
+                    glow.listen(at: written.utf16.count)
+                    self.glow = glow
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+    }
 
     /// The tiddler made for it, gone again: nothing in it.
     private func drop(_ title: String, in river: River, store: WikiStore) {
@@ -1040,32 +1069,38 @@ final class HeldDictation {
     }
 }
 
-/// Over the bar while dictating: what is heard, and in its corner who is
-/// writing it down.
+/// Over the bar for a moment: why + held can't listen.
 private struct HeardBubble: View {
     let text: String
-    let engine: Dictation.Engine?
-    let waiting: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Text(text)
                 .font(.callout)
-                .foregroundStyle(waiting ? Ink.secondary.color : Ink.text.color)
+                .foregroundStyle(Ink.text.color)
                 .lineLimit(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let engine {
-                Image(systemName: engine.symbol)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(engine == .connecting ? Ink.faint.color : engine == .scribe ? Ink.accent.color : Ink.secondary.color)
-                    .accessibilityLabel(engine.name)
-            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
         .allowsHitTesting(false)
     }
+}
+
+/// The text views of the cards laid out, by card: where words said into a
+/// new tiddler are drawn coming in.
+@MainActor enum CardTextViews {
+    private final class Held { weak var view: UITextView?; init(_ view: UITextView) { self.view = view } }
+    private static var views: [String: Held] = [:]
+
+    static func shown(_ view: UITextView, for title: String) {
+        guard views[title]?.view !== view else { return }
+        views = views.filter { $0.value.view != nil }
+        views[title] = Held(view)
+    }
+
+    static func view(for title: String) -> UITextView? { views[title]?.view }
 }
 
 /// Dictation written down by ElevenLabs, through the relay, while signed

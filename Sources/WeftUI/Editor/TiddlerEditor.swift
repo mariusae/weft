@@ -1144,6 +1144,7 @@ private struct EditorRepresentable: UIViewRepresentable {
 
     func updateUIView(_ view: TiddlerTextView, context: Context) {
         context.coordinator.parent = self
+        CardTextViews.shown(view, for: card)
         view.suggest = suggest
         controller.textView = view
         // What it was last given or told, the same: not looked at again.

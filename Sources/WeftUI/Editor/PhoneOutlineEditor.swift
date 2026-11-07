@@ -193,6 +193,7 @@ struct OutlineCardEditor: UIViewRepresentable {
 
     func updateUIView(_ editor: OutlineEditor, context: Context) {
         let coordinator = context.coordinator
+        CardTextViews.shown(editor, for: title)
         coordinator.write = { text = $0 }
         coordinator.onFocusChange = onFocusChange
         coordinator.onFirstLine = onFirstLine
