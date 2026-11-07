@@ -153,6 +153,13 @@ struct OutlineCardEditor: UIViewRepresentable {
             coordinator.scheduleSave(editor)
         }
         editor.onOpenLink = { [river, title] in followOutline($0, in: river, from: title) }
+        // Untitled and new: its first row offered as its title, quietly, once
+        // written — or taken, typed as a heading and Return pressed.
+        editor.isUntitled = { [store, title] in Untitled.isName(store.draftHead(title)?.title ?? title) }
+        editor.offersTitleChip = true
+        editor.offersTitle = { [store, title] in store.offersTitle(title) }
+        editor.titlesByHeading = true
+        editor.onTitle = { [store, title] name in store.change(title) { $0.title = name } }
         editor.onHeightChange = { [weak editor] in
             guard let editor else { return }
             editor.invalidateIntrinsicContentSize()

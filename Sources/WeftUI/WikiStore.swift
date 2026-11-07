@@ -497,6 +497,10 @@ public final class WikiStore {
 
     func noteReplaced(_ title: String) { replacements[title, default: 0] += 1 }
 
+    /// Untitled pages made here and not yet left: offered their first line
+    /// as their title.
+    @ObservationIgnored private var freshUntitled: Set<String> = []
+
     /// The title a page is to take: what is typed, or — none — untitled:
     /// as it was, if it was, else under a new name.
     func titleTaken(_ typed: String, by title: String) -> String {
@@ -1611,6 +1615,8 @@ public final class WikiStore {
     /// Back to Preview: the draft written, a new title taken — with what
     /// referred to it updated, unless asked not to — and the card read again.
     public func finishEditing(_ title: String, closing: Bool = false) {
+        // Left: its first line no longer offered as its title.
+        freshUntitled.remove(title)
         autosaves[title]?.cancel()
         autosaves[title] = nil
         guard let wiki, var tiddler = drafts[title] else { return }
@@ -1780,9 +1786,14 @@ public final class WikiStore {
         madeFields[title] = tiddler.fields
         drafts[title] = tiddler
         editing.insert(title)
+        if untitled { freshUntitled.insert(title) }
         draftChanged(title)
         return title
     }
+
+    /// Whether an untitled page is offered its first line as its title:
+    /// one made here and not yet left — the first time it is written.
+    public func offersTitle(_ title: String) -> Bool { freshUntitled.contains(title) }
 }
 
 /// Somewhere a link, a backlink or Quick Open leads: a wiki page, a

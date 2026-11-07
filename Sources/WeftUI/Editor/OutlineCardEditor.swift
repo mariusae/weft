@@ -115,10 +115,13 @@ struct OutlineCardEditor: NSViewRepresentable {
             editor?.invalidateIntrinsicContentSize()
             if let editor { coordinator.tellFirstLine(editor) }
         }
-        // Untitled: its first row its title by More's Title, or ⌃⌘T — not
-        // offered in the row itself.
+        // Untitled and new: its first row offered as its title, quietly, once
+        // written — or taken, typed as a heading and Return pressed. Else by
+        // More's Title, or ⌃⌘T.
         editor.isUntitled = { [store, title] in Untitled.isName(store.draftHead(title)?.title ?? title) }
-        editor.offersTitleChip = false
+        editor.quietTitleChip = true
+        editor.offersTitle = { [store, title] in store.offersTitle(title) }
+        editor.titlesByHeading = true
         editor.onTitle = { [store, title] name in store.change(title) { $0.title = name } }
         editor.onAskTitle = { [river, title] in river.edit(title, inTitle: true) }
         editor.onFocusChange = { [coordinator = context.coordinator] in coordinator.onFocusChange($0) }
