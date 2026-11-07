@@ -722,6 +722,14 @@ public final class River: Identifiable {
         edit(title, inTitle: tag != nil)
     }
 
+    /// A new untitled tiddler at the top of the river, not written in — no
+    /// caret, no keys — for what is dictated to go in.
+    public func newDictatedTiddler() -> String? {
+        guard let title = store.makeTiddler(untitled: true, seed: query) else { return nil }
+        open(title)
+        return title
+    }
+
     /// ⌘⇧N: a new thing to do, untitled, at the top of the river — what
     /// the river's query asks of a new page given it too.
     public func newTodo() {

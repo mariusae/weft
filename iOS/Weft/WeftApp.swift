@@ -18,6 +18,18 @@ struct WeftApp: App {
         return store
     }()
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    init() {
+        // + held, dictating: written down by ElevenLabs, through the relay,
+        // while signed in to GitHub — Apple's, else.
+        if SyncRelay.host != nil {
+            PhoneDictation.useScribe { @MainActor in
+                let account = GitHubGraph.account
+                guard account.isSignedIn else { throw GitHubError("Not signed in to GitHub") }
+                return try await SyncRelay.scribeToken(accessToken: try await account.validAccessToken())
+            }
+        }
+    }
     @State private var store = WeftApp.store
     @State private var relay = Relay()
     @Environment(\.scenePhase) private var scenePhase

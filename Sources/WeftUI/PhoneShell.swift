@@ -1,4 +1,6 @@
 #if os(iOS)
+import PhoneUI
+import PrismCore
 import ReflectCore
 import SwiftUI
 import UIKit
@@ -24,6 +26,13 @@ struct PhoneBar: View {
     let untuck: () -> Void
     @State private var settingsShown = false
     @State private var width: CGFloat = 400
+    /// + held: what is said, into a new tiddler.
+    @State private var held = HeldDictation()
+    /// + pressed, and since when: held long enough, dictating.
+    @State private var pressed: Task<Void, Never>?
+    /// A finger on +: gone without being let go — an alert over it, a
+    /// call — the dictation given up, as a hold cancelled is.
+    @GestureState private var touching = false
     /// The bar's glass, one piece morphing into another as it is gathered
     /// to the river's name and opened out again.
     @Namespace private var glass
@@ -57,8 +66,12 @@ struct PhoneBar: View {
                 .accessibilityHint("Shows the river's controls")
             } else {
                 HStack(spacing: 8) {
+                    // Dragged aside, the river beside this one; up, the rivers
+                    // all shown — but not from +, held to dictate, and slid
+                    // up to give that up.
                     find
                         .glassEffectID("find", in: glass)
+                        .highPriorityGesture(swipe)
                     HStack(spacing: 0) {
                         more
                         name
@@ -67,16 +80,27 @@ struct PhoneBar: View {
                     }
                     .glassEffect(.regular.interactive(), in: .capsule)
                     .glassEffectID("name", in: glass)
+                    .highPriorityGesture(swipe)
                     new
                         .glassEffectID("new", in: glass)
                 }
                 .padding(.horizontal, 14)
-                // Dragged aside, the river beside this one; up, the rivers all shown.
-                .highPriorityGesture(swipe)
             }
         }
         // Its room the same, gathered or not.
         .frame(height: 48)
+        // Over it while + is held: what is heard, as it is.
+        .overlay(alignment: .bottom) {
+            if let said = held.shown {
+                HeardBubble(text: said, engine: held.engine, waiting: held.heard == nil && held.problem == nil)
+                    .padding(.horizontal, 14)
+                    // Its foot a little above the bar's top.
+                    .padding(.bottom, 48 + 12)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: held.shown != nil)
         .buttonStyle(.plain)
         .foregroundStyle(Ink.accent.color)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = max($0, 320) }
@@ -110,25 +134,50 @@ struct PhoneBar: View {
         .accessibilityLabel("Find a Tiddler")
     }
 
-    /// A new tiddler, at the top of the river.
-    /// Tapped, a new tiddler; held, one of what is on the pasteboard.
+    /// A new tiddler, at the top of the river. Held, a microphone: what is
+    /// said goes into a new tiddler, there, as it is heard; let go, kept —
+    /// or, slid well up from the + first, given up. As Prism's + is.
     private var new: some View {
-        Menu {
-            Button("New Tiddler from Pasteboard", systemImage: "doc.on.clipboard") { river.newTiddlerFromPasteboard() }
-                .disabled(!Platform.pasteboardHasContents)
-            Button("New To-Do", systemImage: "circle") { river.newTodo() }
-            Button("New Tiddler", systemImage: "plus") { river.newTiddler() }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 20, weight: .medium))
-                .frame(width: 48, height: 48)
-        } primaryAction: {
-            river.newTiddler()
-        }
-        .menuIndicator(.hidden)
-        .glassEffect(.regular.interactive(), in: .circle)
-        .accessibilityLabel("New Tiddler")
-        .accessibilityHint("Hold for a new tiddler of what is on the pasteboard")
+        Image(systemName: held.listening ? "mic.fill" : "plus")
+            .font(.system(size: 20, weight: .medium))
+            .foregroundStyle(held.listening ? Color.red : Ink.accent.color)
+            .contentTransition(.symbolEffect(.replace))
+            .frame(width: 48, height: 48)
+            .contentShape(.circle)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .updating($touching) { _, touching, _ in touching = true }
+                .onChanged { drag in
+                    guard pressed == nil, !held.listening else { return }
+                    // Held still a moment: listening.
+                    pressed = Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.35))
+                        guard !Task.isCancelled else { return }
+                        held.begin(in: river, store: store)
+                    }
+                    _ = drag
+                }
+                .onEnded { drag in
+                    pressed?.cancel()
+                    pressed = nil
+                    if held.listening {
+                        held.end(cancelled: drag.translation.height < -80, in: river, store: store)
+                    } else if abs(drag.translation.width) < 20, abs(drag.translation.height) < 20 {
+                        river.newTiddler()
+                    }
+                })
+            .onChange(of: touching) { _, now in
+                guard !now else { return }
+                pressed?.cancel()
+                pressed = nil
+                // Let go, it was ended already; else, taken away: given up.
+                if held.listening { held.end(cancelled: true, in: river, store: store) }
+            }
+            .accessibilityElement()
+            .accessibilityLabel("New Tiddler")
+            .accessibilityHint("Hold to dictate a new tiddler")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { river.newTiddler() }
     }
 
     /// The river by name — its icon before it — the start page a tap away.
@@ -172,7 +221,9 @@ struct PhoneBar: View {
             }
             Section {
                 Button("Today", systemImage: "calendar") { river.openToday() }
+                Button("New To-Do", systemImage: "circle") { river.newTodo() }
                 Button("New Tiddler from Pasteboard", systemImage: "doc.on.clipboard") { river.newTiddlerFromPasteboard() }
+                    .disabled(!Platform.pasteboardHasContents)
                 if river.allFolded {
                     Button("Unfold All", systemImage: "rectangle.expand.vertical") { withAnimation(.snappy) { river.unfoldAll() } }
                 } else {
@@ -876,6 +927,156 @@ struct RiverOverview: View {
             }
         }
         .accessibilityLabel(river.title + (current ? ", shown" : ""))
+    }
+}
+// MARK: Dictating a new tiddler
+
+/// + held: listening, and what is heard written into a new tiddler at the
+/// top of the river as it comes, typed out; let go, written for good — or,
+/// given up, or nothing said, gone again. Prism's, but into the river.
+@MainActor @Observable
+final class HeldDictation {
+    /// + held, as a microphone.
+    private(set) var listening = false
+    /// What has been heard so far; nil before anything is.
+    private(set) var heard: String?
+    /// Why it can't listen, said for a moment.
+    private(set) var problem: String?
+    private(set) var engine: Dictation.Engine?
+    @ObservationIgnored private var dictation: Dictation?
+    @ObservationIgnored private var typist: DictationTypist?
+    @ObservationIgnored private var title: String?
+    @ObservationIgnored private var outline = true
+    @ObservationIgnored private var asking = false
+
+    /// What the bubble over the bar says, while it is shown.
+    var shown: String? {
+        if let problem { return problem }
+        guard listening || dictation != nil else { return nil }
+        return heard?.isEmpty == false ? heard : "Listening…"
+    }
+
+    func begin(in river: River, store: WikiStore) {
+        guard dictation == nil, !asking else { return }
+        listening = true
+        heard = nil
+        problem = nil
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        asking = true
+        Task { @MainActor in
+            let allowed = await Dictation.allowed()
+            asking = false
+            guard allowed else {
+                listening = false
+                return say("Weft can’t listen: allow the microphone and speech recognition in Settings.")
+            }
+            // Let go while being asked: nothing.
+            guard listening, let title = river.newDictatedTiddler() else { return }
+            self.title = title
+            outline = store.editorMode(title) == .outline
+            typist = DictationTypist { [weak self, weak river] text in
+                guard let self, let river else { return }
+                river.change(title) { $0.text = self.written(text) }
+            }
+            let dictation = Dictation()
+            self.dictation = dictation
+            dictation.onEngine = { [weak self] engine in self?.engine = engine }
+            do {
+                try dictation.start(keyterms: OutlineEditor.dictationTerms?() ?? []) { [weak self] text in
+                    guard let self, self.dictation === dictation else { return }
+                    self.heard = text
+                    self.typist?.type(text)
+                }
+            } catch {
+                self.dictation = nil
+                listening = false
+                drop(title, in: river, store: store)
+                say("Dictation isn’t available right now.")
+            }
+        }
+    }
+
+    /// Let go: kept, or — `cancelled`, slid away first — given up.
+    func end(cancelled: Bool, in river: River, store: WikiStore) {
+        listening = false
+        guard let dictation else { return }
+        self.dictation = nil
+        let title = self.title
+        self.title = nil
+        let typist = self.typist
+        self.typist = nil
+        Task { @MainActor in
+            let text = await dictation.stop().trimmingCharacters(in: .whitespacesAndNewlines)
+            typist?.stop()
+            heard = nil
+            engine = nil
+            guard let title else { return }
+            if cancelled || text.isEmpty {
+                if cancelled { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
+                return drop(title, in: river, store: store)
+            }
+            river.change(title) { $0.text = written(text) }
+            store.finishEditing(title)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+    }
+
+    /// What is said, as the tiddler's words: an outline's first row.
+    private func written(_ text: String) -> String { outline ? "- " + text : text }
+
+    /// The tiddler made for it, gone again: nothing in it.
+    private func drop(_ title: String, in river: River, store: WikiStore) {
+        river.change(title) { $0.text = "" }
+        river.close(title, quietly: true)
+        store.finishEditing(title)
+    }
+
+    private func say(_ words: String) {
+        problem = words
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            if problem == words { problem = nil }
+        }
+    }
+}
+
+/// Over the bar while dictating: what is heard, and in its corner who is
+/// writing it down.
+private struct HeardBubble: View {
+    let text: String
+    let engine: Dictation.Engine?
+    let waiting: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(waiting ? Ink.secondary.color : Ink.text.color)
+                .lineLimit(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let engine {
+                Image(systemName: engine.symbol)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(engine == .connecting ? Ink.faint.color : engine == .scribe ? Ink.accent.color : Ink.secondary.color)
+                    .accessibilityLabel(engine.name)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
+        .allowsHitTesting(false)
+    }
+}
+
+/// Dictation written down by ElevenLabs, through the relay, while signed
+/// in — Apple's, else.
+@MainActor public enum PhoneDictation {
+    public static func useScribe(_ token: @escaping @Sendable () async throws -> String) {
+        Dictation.scribeToken = token
+        Dictation.prepare()
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { Dictation.prepare() }
+        }
     }
 }
 #endif
