@@ -34,6 +34,11 @@ The GitHub App's details come from reflect-mac's `iOS/GitHub.local.xcconfig`:
 read by `scripts/build-app.sh` on the Mac, included by the xcconfig of
 `iOS/Weft.xcodeproj`, the iPhone and iPad app.
 
+`scripts/testflight.sh` archives the iPhone and iPad app and uploads it to
+App Store Connect for TestFlight, signed by the account Xcode is signed in
+to or an App Store Connect API key; `--export` makes the .ipa instead. Each
+build is numbered by when it was made.
+
 An empty wiki shows **Getting Started**, a tiddler built into weft, as
 TiddlyWiki has shadow tiddlers: written to the graph only when edited.
 
