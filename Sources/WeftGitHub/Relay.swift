@@ -47,7 +47,7 @@ extension GitHubGraph {
     public static func register(deviceToken: Data, for root: URL) async throws {
         guard SyncRelay.host != nil, account.isSignedIn, let repository = repositoryName(for: root) else { return }
         try await SyncRelay.register(deviceToken: deviceToken, repository: repository,
-                                     topic: Bundle.main.bundleIdentifier ?? "com.mariusae.weft",
+                                     topic: Bundle.main.bundleIdentifier ?? "org.mutable.weft",
                                      sandbox: SyncRelay.isSandbox, accessToken: try await account.validAccessToken())
     }
 }
