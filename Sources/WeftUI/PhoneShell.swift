@@ -30,9 +30,10 @@ struct PhoneBar: View {
     @State private var held = HeldDictation()
     /// + pressed, and since when: held long enough, dictating.
     @State private var pressed: Task<Void, Never>?
-    /// A finger on +: gone without being let go — an alert over it, a
-    /// call — the dictation given up, as a hold cancelled is.
-    @GestureState private var touching = false
+    /// How long + is held, still, to be listening.
+    private static let hold = 0.2
+    /// + held long enough: let go, not a tap, even when it couldn't listen.
+    @State private var wasHeld = false
     /// The bar's glass, one piece morphing into another as it is gathered
     /// to the river's name and opened out again.
     @Namespace private var glass
@@ -146,34 +147,35 @@ struct PhoneBar: View {
             .frame(width: 48, height: 48)
             .contentShape(.circle)
             .glassEffect(.regular.interactive(), in: .circle)
-            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                .updating($touching) { _, touching, _ in touching = true }
-                .onChanged { drag in
+            // UIKit's, not SwiftUI's: told the moment the finger lands, so
+            // that the hold is as long as it says, as Prism's + is.
+            .gesture(Press { phase in
+                switch phase {
+                case .down:
                     guard pressed == nil, !held.listening else { return }
+                    wasHeld = false
                     // Held still a moment: listening.
                     pressed = Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(0.25))
+                        try? await Task.sleep(for: .seconds(Self.hold))
                         guard !Task.isCancelled else { return }
+                        wasHeld = true
                         held.begin(in: river, store: store)
                     }
-                    _ = drag
-                }
-                .onEnded { drag in
+                case .up(let moved):
                     pressed?.cancel()
                     pressed = nil
                     if held.listening {
-                        held.end(cancelled: drag.translation.height < -80, in: river, store: store)
-                    } else if abs(drag.translation.width) < 20, abs(drag.translation.height) < 20 {
+                        held.end(cancelled: moved.height < -80, in: river, store: store)
+                    } else if !wasHeld, abs(moved.width) < 20, abs(moved.height) < 20 {
                         river.newTiddler()
                     }
-                })
-            .onChange(of: touching) { _, now in
-                guard !now else { return }
-                pressed?.cancel()
-                pressed = nil
-                // Let go, it was ended already; else, taken away: given up.
-                if held.listening { held.end(cancelled: true, in: river, store: store) }
-            }
+                case .taken:
+                    // Taken away — an alert over it, a call: given up.
+                    pressed?.cancel()
+                    pressed = nil
+                    if held.listening { held.end(cancelled: true, in: river, store: store) }
+                }
+            })
             .accessibilityElement()
             .accessibilityLabel("New Tiddler")
             .accessibilityHint("Hold to dictate a new tiddler")
@@ -1067,6 +1069,40 @@ final class HeldDictation {
             if problem == words { problem = nil }
         }
     }
+}
+
+/// A finger on a view, as UIKit sees it: down the moment it lands, up with
+/// how far it went, or taken away.
+private struct Press: UIGestureRecognizerRepresentable {
+    enum Phase { case down, up(CGSize), taken }
+    let phase: (Phase) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let press = UILongPressGestureRecognizer()
+        press.minimumPressDuration = 0
+        press.allowableMovement = .greatestFiniteMagnitude
+        return press
+    }
+
+    func handleUIGestureRecognizerAction(_ press: UILongPressGestureRecognizer, context: Context) {
+        let at = press.location(in: press.view)
+        switch press.state {
+        case .began:
+            context.coordinator.start = at
+            phase(.down)
+        case .ended:
+            let start = context.coordinator.start
+            phase(.up(CGSize(width: at.x - start.x, height: at.y - start.y)))
+        case .cancelled, .failed:
+            phase(.taken)
+        default:
+            break
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    final class Coordinator { var start = CGPoint.zero }
 }
 
 /// Over the bar for a moment: why + held can't listen.
