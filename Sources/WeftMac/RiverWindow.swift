@@ -277,9 +277,11 @@ struct RiverCommands: Commands {
             Button("Close Card") { if let card { withAnimation { river?.close(card) } } }
                 .keyboardShortcut("w", modifiers: [.command, .control])
                 .disabled(card == nil)
-            Button("Delete Tiddler") { if let card { withAnimation { store.delete(card) } } }
+            // Only a card chosen — shown so — never the one at the river's top.
+            let chosen = river?.chosen
+            Button("Delete Tiddler") { if let chosen { withAnimation { store.delete(chosen) } } }
                 .keyboardShortcut(.delete, modifiers: [.command, .control])
-                .disabled(card.map { store.tiddler($0) == nil || store.isShadow($0) } ?? true)
+                .disabled(chosen.map { store.tiddler($0) == nil || store.isShadow($0) } ?? true)
             Divider()
             Button("Back") { river?.goBack() }
                 .keyboardShortcut("[")

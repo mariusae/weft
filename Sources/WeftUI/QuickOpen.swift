@@ -70,8 +70,25 @@ struct QuickOpen: View {
     }
     #endif
 
+    /// What was found last, for what was typed: kept while the pages are as
+    /// they were — a row hovered, or ↓, draws it again without a search.
+    private final class Found {
+        var key: (query: String, version: Int)?
+        var results: [LinkTarget] = []
+    }
+    @State private var kept = Found()
+
     /// What is found, and a new tiddler of the name typed when none has it.
     private var found: [LinkTarget] {
+        let version = store.namesVersion &+ store.textVersion &* 31 &+ store.savedVersion &* 1009 &+ river.cards.count &* 7919
+        if let key = kept.key, key.query == query, key.version == version { return kept.results }
+        let results = search()
+        kept.key = (query, version)
+        kept.results = results
+        return results
+    }
+
+    private func search() -> [LinkTarget] {
         var results = store.quickOpen(query)
         let typed = query.trimmingCharacters(in: .whitespaces)
         if !typed.isEmpty, !results.contains(where: { $0.title.caseInsensitiveCompare(typed) == .orderedSame }) {

@@ -254,16 +254,17 @@ enum Snapshot {
                     view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
                     view.insertText(typed, replacementRange: view.selectedRange())
                 }
-                // `WEFT_KEYS=down,down,space`: keys pressed, a moment apart, as
+                // `WEFT_KEYS=down,down,space` (or `cmd-delete`): keys pressed, a moment apart, as
                 // the keyboard would — through what watches for them.
                 if let keys = environment["WEFT_KEYS"]?.split(separator: ","), let window = NSApp.windows.first(where: { $0.isVisible }) {
-                    let codes: [Substring: (UInt16, String)] = ["up": (126, "\u{F700}"), "down": (125, "\u{F701}"), "space": (49, " "),
-                                                                "return": (36, "\r"), "escape": (53, "\u{1B}")]
+                    let codes: [Substring: (UInt16, String, NSEvent.ModifierFlags)] = [
+                        "up": (126, "\u{F700}", []), "down": (125, "\u{F701}", []), "space": (49, " ", []),
+                        "return": (36, "\r", []), "escape": (53, "\u{1B}", []), "cmd-delete": (51, "\u{7F}", .command)]
                     for (index, key) in keys.enumerated() {
-                        guard let (code, characters) = codes[key] else { continue }
+                        guard let (code, characters, flags) = codes[key] else { continue }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 * Double(index)) {
                             for type in [NSEvent.EventType.keyDown, .keyUp] {
-                                if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                                                                 windowNumber: window.windowNumber, context: nil, characters: characters,
                                                                 charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code) {
                                     NSApp.postEvent(event, atStart: false)

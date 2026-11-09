@@ -340,6 +340,8 @@ final class TiddlerTextView: NSTextView {
     var isUntitled: () -> Bool = { false }
     var onTitle: (String) -> Void = { _ in }
     var onAskTitle: () -> Void = {}
+    /// Title, at the end of a first line that is a heading: made once wanted.
+    var titleChip: NSButton?
     private let model = SuggestionModel()
     private lazy var panel = SuggestionPanel(model: model)
     private let ghost = NSTextField(labelWithString: "")
@@ -407,21 +409,30 @@ final class TiddlerTextView: NSTextView {
 
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
-        if became { onFocusChange(true) }
+        if became {
+            onFocusChange(true)
+            DispatchQueue.main.async { [weak self] in self?.placeTitleChip() }
+        }
         return became
     }
 
     override func resignFirstResponder() -> Bool {
         hideCompletions()
         let resigned = super.resignFirstResponder()
-        if resigned { onFocusChange(false) }
+        if resigned {
+            onFocusChange(false)
+            titleChip?.isHidden = true
+        }
         return resigned
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         let changed = newSize != frame.size
         super.setFrameSize(newSize)
-        if changed { onResize() }
+        if changed {
+            onResize()
+            placeTitleChip()
+        }
     }
 
     // MARK: Links
@@ -508,11 +519,13 @@ final class TiddlerTextView: NSTextView {
     override func didChangeText() {
         super.didChangeText()
         offerCompletions()
+        placeTitleChip()
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
         if !stillSelecting, panel.isVisible || !ghost.isHidden { offerCompletions() }
+        if !stillSelecting { placeTitleChip() }
     }
 
     /// The titles for the link being typed, under the caret, and the best
@@ -586,6 +599,8 @@ final class TiddlerTextView: NSTextView {
             }
         } else if selector == #selector(cancelOperation(_:)) {
             return onEscape()
+        } else if selector == #selector(insertNewline(_:)), titleByHeading(at: selectedRange().location) {
+            return
         }
         super.doCommand(by: selector)
     }
@@ -910,6 +925,8 @@ final class TiddlerTextView: UITextView {
     var isUntitled: () -> Bool = { false }
     var onTitle: (String) -> Void = { _ in }
     var onAskTitle: () -> Void = {}
+    /// Title, at the end of a first line that is a heading: made once wanted.
+    var titleChip: UIButton?
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
@@ -922,6 +939,7 @@ final class TiddlerTextView: UITextView {
         if abs(bounds.width - laidOutWidth) > 0.5 {
             laidOutWidth = bounds.width
             onLayout()
+            placeTitleChip()
         }
     }
 
@@ -1209,6 +1227,8 @@ private struct EditorRepresentable: UIViewRepresentable {
         }
 
         func textView(_ view: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            // Return at the end of a first line written as a heading: the title.
+            if text == "\n", range.length == 0, (view as? TiddlerTextView)?.titleByHeading(at: range.location) == true { return false }
             live?.willEdit([range], [text], in: (view.text ?? "") as NSString)
             return true
         }
@@ -1223,22 +1243,26 @@ private struct EditorRepresentable: UIViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + EditorRepresentable.flushDelay, execute: work)
             (view as? TiddlerTextView)?.offerCompletions()
             (view as? TiddlerTextView)?.showUndoState()
+            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textViewDidChangeSelection(_ view: UITextView) {
             live?.selectionChanged(view.selectedRange)
             (view as? TiddlerTextView)?.offerCompletions()
+            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textViewDidBeginEditing(_ view: UITextView) {
             live?.focusChanged(true, selection: view.selectedRange)
             parent.onFocusChange(true)
+            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textViewDidEndEditing(_ view: UITextView) {
             flush()
             live?.focusChanged(false, selection: view.selectedRange)
             parent.onFocusChange(false)
+            (view as? TiddlerTextView)?.placeTitleChip()
         }
 
         func textStorage(_ storage: NSTextStorage, didProcessEditing editedMask: NSTextStorage.EditActions, range: NSRange, changeInLength: Int) {

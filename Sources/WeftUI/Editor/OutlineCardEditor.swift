@@ -75,6 +75,8 @@ struct OutlineCardEditor: NSViewRepresentable {
         PageOutlineEditor.findNotes { [store] linked in store.noteFile(linked) }
         PageOutlineEditor.nameUntitled { [store] name in store.untitledName(name) }
         PageOutlineEditor.iconTargets { [store] name in store.linkIcon(name) }
+        // Its tasks ticked in Weft's accent, as a text card's and a ring are.
+        PageOutlineEditor.accent = Ink.accent.platform
         let editor = PageOutlineEditor(text: "", fontSize: TextSettings.size + 1, serif: TextSettings.serif, root: store.root)
         editor.leadingRoom = Self.leadingRoom
         // Prism's keys, ⌘⇧K deleting rows and the rest: Weft has not its menus.
@@ -82,6 +84,11 @@ struct OutlineCardEditor: NSViewRepresentable {
         // Escape once, the row; twice, out of the card — still selected,
         // for the river's keys.
         editor.onEscapeFromRows = { [weak editor] in _ = editor?.window?.makeFirstResponder(nil) }
+        // Its one empty bullet deleted: written as text instead.
+        editor.onDeleteInEmpty = { [weak editor, river, title] in
+            editor?.flushEdits()
+            river.writeAsText(title)
+        }
         // Folded as it was left in this river.
         let coordinator = context.coordinator
         coordinator.folds = river.rowFolds(of: title)

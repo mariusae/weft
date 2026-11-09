@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import WeftCore
 import WeftUI
 
@@ -46,7 +47,7 @@ enum Bench {
                 print("BENCH", name, "can't be run here")
                 return next()
             }
-            let gaps = ["hover": 0.008, "scroll": 0.016, "type": 0.05, "switch": 0.15, "open": 0.5, "save": 3.5]
+            let gaps = ["select": 0.1, "step": 0.5, "fold": 0.4, "edit": 0.6, "hover": 0.008, "scroll": 0.016, "type": 0.05, "switch": 0.15, "open": 0.5, "save": 3.5]
             measure(name, steps: steps, gap: gaps[name] ?? 0.1) { next() }
         }
         next()
@@ -91,6 +92,23 @@ enum Bench {
                 } else {
                     view.deleteBackward(nil)
                 }
+            } }
+        case "select":
+            // Each card chosen in turn, as a click on it, or ↓, does.
+            let cards = river.cards
+            guard !cards.isEmpty else { return nil }
+            return (0..<count).map { round in { river.select(cards[round % cards.count]) } }
+        case "step":
+            return (0..<count).map { round in { river.step((round / 4) % 2 == 0 ? 1 : -1) } }
+        case "fold":
+            // The first card folded and unfolded, as its title clicked does.
+            guard let card = river.cards.first else { return nil }
+            return (0..<count).map { _ in { withAnimation(.snappy(duration: 0.22)) { river.toggleFold(card) } } }
+        case "edit":
+            // The first card written in, then left, as a click in it and Escape do.
+            guard let card = river.cards.first else { return nil }
+            return (0..<count).map { round in {
+                if round % 2 == 0 { river.edit(card) } else { window.makeFirstResponder(nil) }
             } }
         case "open":
             let titles = (ProcessInfo.processInfo.environment["WEFT_BENCH_OPEN"] ?? "").split(separator: "|").map(String.init)

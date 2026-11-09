@@ -12,6 +12,8 @@ struct Card: View {
     @AppStorage(TextSettings.faceKey) private var face = ""
     /// The title being typed in: renaming.
     @State private var renaming = false
+    /// Whether the pointer is over it: its controls show.
+    @State private var pointerOver = false
     @FocusState private var titleFocused: Bool
     /// What of the title is selected as it is typed in: a new tiddler's, all of it.
     @State private var titleSelection: TextSelection?
@@ -102,7 +104,7 @@ struct Card: View {
         #if os(macOS)
         // Its leading side each row's margin; its trailing, room.
         .padding(.trailing, Measures.cardSides)
-        .padding(.top, peeking ? Measures.peekPadding : Measures.cardTop)
+        .padding(.top, peeking ? Measures.peekPadding : showsHeader ? Measures.titledCardTop : Measures.cardTop)
         .padding(.bottom, peeking ? Measures.peekPadding : Measures.cardBottom)
         #else
         .padding(.horizontal, sizeClass == .compact ? 16 : 28)
@@ -128,8 +130,19 @@ struct Card: View {
         // Swiped aside — a finger on the phone, two on the Mac's trackpad —
         // its actions under it; not while it is written in.
         .cardSwipe(leading: leadingSwipe, trailing: trailingSwipe, enabled: !river.isWriting(title) && !renaming)
-        // A click makes it the card ⌘↩ goes to.
-        .simultaneousGesture(TapGesture().onEnded { river.select(title) })
+        #if os(macOS)
+        .onHover { over in if pointerOver != over { pointerOver = over } }
+        #endif
+        // A click makes it the card ⌘↩ goes to — and, on the Mac, the card
+        // the keys go to: one being written in elsewhere is left, as a tap
+        // elsewhere leaves it on the phone, not keeping the keys while this
+        // one shows chosen. A click into its words has the caret there already.
+        .simultaneousGesture(TapGesture().onEnded {
+            #if os(macOS)
+            if river.isWritingAny, !river.isWriting(title) { Platform.endEditing() }
+            #endif
+            river.select(title)
+        })
         .sheet(isPresented: $historyShown) { HistorySheet(title: title).environment(store) }
         .environment(\.openURL, OpenURLAction { url in
             if let target = InlineMarkdown.title(from: url) {
@@ -164,10 +177,11 @@ struct Card: View {
         HStack(alignment: Self.peekAlignment, spacing: 8) {
             // Its ring and its icon in its first line, not beside it: what
             // it says flows back under them to the card's edge.
+            // Done: its title struck through, as it is open.
             (peekLead(task: task)
              + Text(peek.title).bold().foregroundStyle(task == .done ? Ink.secondary.color : Ink.text.color)
-             + Text(peek.summary.isEmpty ? "" : "  " + peek.summary).foregroundStyle(Ink.secondary.color))
-                .strikethrough(false)
+                .strikethrough(task == .done, color: Ink.secondary.color)
+             + Text(peek.summary.isEmpty ? "" : "  " + peek.summary).foregroundStyle(Ink.secondary.color).strikethrough(false))
                 .lineLimit(Self.peekLines, reservesSpace: true)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -229,8 +243,9 @@ struct Card: View {
         #endif
         #if os(macOS)
         // Under the pointer, its controls over the end of its words, on a
-        // fade of its own paper — taking no room from them otherwise.
-        .overlay(alignment: .trailing) {
+        // fade of its own paper — taking no room from them otherwise — on
+        // its first line, as an open card's are.
+        .overlay(alignment: Alignment(horizontal: .trailing, vertical: .cardFirstLine)) {
             if controlsShown {
                 macControls
                     .padding(.leading, 28)
@@ -295,6 +310,11 @@ struct Card: View {
                 Button("Choose Icon…", systemImage: store.icon(of: title) ?? "square.grid.3x3") { choosingIcon = true }
             }
             Button("Copy Link", systemImage: "link") { Platform.copy("[[\(title)]]") }
+            // What it says, as written — the draft, while it is being written.
+            Button("Copy Contents", systemImage: "doc.on.doc") {
+                Platform.copy((store.draft(title) ?? store.tiddler(title))?.text ?? "")
+            }
+            .disabled(store.tiddler(title) == nil && !store.isEditing(title))
             ShareLink(item: (store.draft(title) ?? store.tiddler(title))?.text ?? store.shownTitle(title),
                       subject: Text(store.shownTitle(title))) {
                 Label("Share", systemImage: "square.and.arrow.up")
@@ -359,6 +379,13 @@ struct Card: View {
     #endif
 
     /// Being renamed: whether what refers to it is updated too.
+    /// Whether renaming it asks about the pages that refer to it.
+    private var relinkingShown: Bool {
+        guard let draft = store.draftHead(title), store.tiddler(title) != nil, store.kind(title) != .day else { return false }
+        let new = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return new != title && !new.isEmpty && !store.references(to: title).isEmpty
+    }
+
     @ViewBuilder private var relinking: some View {
         if let draft = store.draftHead(title), store.tiddler(title) != nil, store.kind(title) != .day {
             let new = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -460,7 +487,14 @@ struct Card: View {
     /// says — so that what is beside what lines up by being laid out so.
     @ViewBuilder private func macRows(peeking: Bool) -> some View {
         if peeking {
-            CardRow(mark: { handle }, content: { peekRow })
+            if !showsHeader, !handleInline {
+                // Where it is open, folded: its handle out in its margin —
+                // the gutter its first row's, or its ring's — not moving in
+                // to the gutter as it folds, and out again as it opens.
+                CardRow(margin: { marginHandle }, mark: { if store.taskState(title) != nil { handle } }, content: { peekRow })
+            } else {
+                CardRow(mark: { handle }, content: { peekRow })
+            }
         } else {
             if showsHeader {
                 // Over the words after it: a control's name, said under it, not hidden by them.
@@ -468,7 +502,9 @@ struct Card: View {
                     .zIndex(1)
             }
             if renaming, !titleSuggestions.items.isEmpty { CardRow { titleSuggestionList } }
-            CardRow { relinking }
+            // Only when it has something to say: a row with nothing in it is
+            // still a row, and the space each side of it pushed the words down.
+            if relinkingShown { CardRow { relinking } }
             if store.needsReview(title) {
                 CardRow { ConflictView(title: title) }
             } else {
@@ -790,12 +826,18 @@ struct Card: View {
                     .fixedSize(horizontal: true, vertical: false)
                     #if os(macOS)
                     // Clicked, folded to it or opened again, as a tap does on
-                    // the phone; clicked twice, typed in.
+                    // the phone — at once, not after waiting to see if a second
+                    // click comes. Clicked twice: folded and opened again, and
+                    // typed in.
                     .contentShape(Rectangle())
-                    .gesture(TapGesture(count: 2).onEnded { startRenaming() }.exclusively(before: TapGesture().onEnded {
+                    .onTapGesture {
                         river.select(title)
                         withAnimation(.snappy(duration: 0.22)) { river.toggleFold(title) }
-                    }))
+                    }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        if river.isFolded(title) { river.setFolded(title, false) }
+                        startRenaming()
+                    })
                     .accessibilityAddTraits(.isButton)
                     .accessibilityHint(river.isFolded(title) ? "Unfolds the card" : "Folds the card to its title")
                     #else
@@ -881,7 +923,10 @@ struct Card: View {
     /// till the pointer moves again, as the Mac hides the pointer itself.
     /// The selected card's alone — not every card the pointer crosses —
     /// and not while typing, till the pointer moves again.
-    private var controlsShown: Bool { river.isSelected(title) && !TypingQuiet.shared.quiet }
+    /// Its controls — closing it, the days beside a day's — shown on the
+    /// card chosen, and on one under the pointer: a card closed with one
+    /// click, not one to choose it and one to close it. Not while typing.
+    private var controlsShown: Bool { (river.isSelected(title) || pointerOver) && !TypingQuiet.shared.quiet }
     #endif
 
     /// The card's controls, slid out under it: open or peek, text or

@@ -39,6 +39,9 @@ public final class WikiStore {
     /// fields and links: for what asks the words — a `text:` query, one
     /// sorted by when pages changed, an embed.
     public private(set) var textVersion = 0
+    /// Bumped when which pages have conflicts to review changes.
+    public private(set) var conflictsVersion = 0
+    @ObservationIgnored private var conflictCache: [String] = []
 
     private func signal(_ name: String) -> PageSignal {
         let key = NoteIndex.foldKey(name)
@@ -79,12 +82,17 @@ public final class WikiStore {
         var links: [Set<String>] = []
         for entry in [before, after].compactMap({ $0 }) {
             entry.names.forEach(tell)
-            let targets = WikiLinks.targets(in: entry.page.text)
-            links.append(Set(targets))
-            for target in targets {
-                tell(target)
-                if let title = wiki.title(for: target) { tell(title) }
-            }
+            links.append(Set(WikiLinks.targets(in: entry.page.text)))
+        }
+        // The pages it links to, or did: what links to them changed — only
+        // when its links did, or it came or went, or a name it goes by did.
+        // Words typed alone redraw no other card.
+        let linked = before == nil || after == nil || before?.names != after?.names
+            ? links.reduce(into: Set<String>()) { $0.formUnion($1) }
+            : (links.first ?? []).symmetricDifference(links.last ?? [])
+        for target in linked {
+            tell(target)
+            if let title = wiki.title(for: target) { tell(title) }
         }
         if before?.tags != after?.tags || before?.page.title != after?.page.title || before?.page[field: "list"] != after?.page[field: "list"] {
             for tag in (before?.tags ?? []) + (after?.tags ?? []) { tell(tag) }
@@ -94,8 +102,13 @@ public final class WikiStore {
         if let title = after?.page.title ?? before?.page.title {
             for river in rivers where river.query != nil { river.pageChanged(title) }
         }
-        listsVersion += 1
+        // Every save: what asks the words, and when pages were written.
         textVersion += 1
+        // Conflicts, when this page's came or went: the toolbar's review.
+        if let title = after?.page.title ?? before?.page.title, wiki.needsReview(title) != conflictCache.contains(title) {
+            conflictCache = wiki.conflicted()
+            conflictsVersion += 1
+        }
         // What most queries ask — names, tags, fields, links — changed: they
         // run again. Words alone, as typing writes them, leave them be.
         let flags = { (entry: Wiki.Entry?) -> NoteEntry? in
@@ -112,6 +125,9 @@ public final class WikiStore {
         if before == nil || after == nil || before?.names != after?.names || before?.tags != after?.tags
             || shape(before) != shape(after) || links.first != links.last || flags(before) != flags(after) {
             graphVersion += 1
+            // The lists of pages — tagged, pinned, the wiki's, what is
+            // related — only change with what pages are, not their words.
+            listsVersion += 1
         }
     }
 
@@ -255,6 +271,7 @@ public final class WikiStore {
         namesVersion += 1
         listsVersion += 1
         graphVersion += 1
+        gatherConflicts()
         sync = makeSync(url)
         sync?.onPulled = { [weak self] paths in self?.pulled(paths) }
         sync?.onFinished = { [weak self] result in self?.syncFinished(result) }
@@ -388,6 +405,7 @@ public final class WikiStore {
     public func pulled(_ paths: [String]) {
         guard let wiki else { return }
         for path in paths where PageFolder.isPage(path) { wiki.reload(path: path) }
+        gatherConflicts()
         refreshLinkNotes(paths.filter { $0.hasSuffix(".md") })
         let saved = paths.filter { $0.hasPrefix(Self.riversFolder + "/") }
         guard !saved.isEmpty else { return }
@@ -406,8 +424,16 @@ public final class WikiStore {
     }
 
     public func conflicted() -> [String] {
-        _ = listsVersion
-        return wiki?.conflicted() ?? []
+        _ = conflictsVersion
+        return conflictCache
+    }
+
+    /// The pages with conflicts gathered again: after a load or a pull.
+    private func gatherConflicts() {
+        let now = wiki?.conflicted() ?? []
+        guard now != conflictCache else { return }
+        conflictCache = now
+        conflictsVersion += 1
     }
 
     /// A tiddler's text with its conflict markers, to show both sides.
@@ -623,8 +649,20 @@ public final class WikiStore {
     /// much as two lines could show.
     public func peek(of title: String) -> (title: String, summary: String) {
         let text = (drafts[title] ?? tiddler(title))?.text ?? ""
-        var lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("```") }
         let name = peekName(title)
+        // Kept for the words it was made from: a card drawn again — selected,
+        // hovered — is not its words read through again.
+        if let kept = peeks[title], kept.text == text, kept.name == name { return (name, kept.summary) }
+        let summary = makePeek(text, name: name)
+        peeks[title] = (text, name, summary)
+        return (name, summary)
+    }
+
+    @ObservationIgnored private var peeks: [String: (text: String, name: String, summary: String)] = [:]
+    @ObservationIgnored private var peekedPictures: [String: (text: String, sources: [String])] = [:]
+
+    private func makePeek(_ text: String, name: String) -> String {
+        var lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("```") }
         // Its own title — a first heading, or an untitled page's first line — says nothing more.
         if let head = lines.first, Untitled.title(from: head).caseInsensitiveCompare(name) == .orderedSame { lines.removeFirst() }
         var words: [String] = []
@@ -645,7 +683,7 @@ public final class WikiStore {
             words.append(plain)
             length += plain.count
         }
-        return (name, words.joined(separator: " · "))
+        return words.joined(separator: " · ")
     }
 
     /// What a folded card is called: what it is called open. A title given
@@ -664,8 +702,14 @@ public final class WikiStore {
     public func peekPictures(of title: String, limit: Int = 2) -> [String] {
         let text = (drafts[title] ?? tiddler(title))?.text ?? ""
         guard text.contains("![") else { return [] }
-        return text.matches(of: #/!\[[^\]]*\]\(<?([^)\s>]+)>?/#).prefix(limit).map { String($0.1) }
+        if let kept = peekedPictures[title], kept.text == text { return Array(kept.sources.prefix(limit)) }
+        let sources = Self.pictureSource.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length))
+            .prefix(max(limit, 2)).map { (text as NSString).substring(with: $0.range(at: 1)) }
+        peekedPictures[title] = (text, sources)
+        return Array(sources.prefix(limit))
     }
+
+    private static let pictureSource = try! NSRegularExpression(pattern: #"!\[[^\]]*\]\(<?([^)\s>]+)>?"#)
 
     // MARK: Folds
 
@@ -714,11 +758,23 @@ public final class WikiStore {
             guard seen.insert(NoteIndex.foldKey(resolved ?? name)).inserted else { continue }
             found.append(RelatedPage(title: resolved ?? name, exists: resolved != nil, isOwn: true))
         }
-        for other in wiki?.relating(to: title) ?? [] where seen.insert(NoteIndex.foldKey(other)).inserted {
+        // The pages that say they are related to it change only with what
+        // pages are, not their words: kept till then — every card asks, each
+        // time it is drawn, and finding them reads every page.
+        let relating: [String]
+        if let kept = relatingCache[title], kept.version == listsVersion {
+            relating = kept.titles
+        } else {
+            relating = wiki?.relating(to: title) ?? []
+            relatingCache[title] = (listsVersion, relating)
+        }
+        for other in relating where seen.insert(NoteIndex.foldKey(other)).inserted {
             found.append(RelatedPage(title: other, exists: true, isOwn: false))
         }
         return found
     }
+
+    @ObservationIgnored private var relatingCache: [String: (version: Int, titles: [String])] = [:]
 
     /// The saved river a page calls its home — its frontmatter `river:` —
     /// as its draft has it: a link's target or a name alike.
@@ -831,15 +887,15 @@ public final class WikiStore {
     /// Every open task in the graph — Prism's `+ [ ]` — grouped as its
     /// Tasks lens groups them: current, overdue, upcoming, then by page.
     public func taskGroups() -> [TaskGroup] {
-        _ = listsVersion
-        if let cached = tasksCache, cached.version == listsVersion { return cached.groups }
+        _ = textVersion
+        if let cached = tasksCache, cached.version == textVersion { return cached.groups }
         guard let wiki else { return [] }
         let tasks = wiki.entries.values.flatMap { entry -> [NoteTask] in
             guard !entry.note.path.hasPrefix("templates/"), entry.page.text.containsText("+ [") else { return [] }
             return Tasks.tasks(in: entry.page.text, path: entry.note.path, entry: entry.note).filter { !$0.done }
         }
         let groups = Tasks.group(tasks, today: .today)
-        tasksCache = (listsVersion, groups)
+        tasksCache = (textVersion, groups)
         return groups
     }
 
@@ -886,6 +942,7 @@ public final class WikiStore {
     /// The pages that are things still to do, the latest written first.
     public func todoPages() -> [String] {
         _ = listsVersion
+        _ = textVersion
         guard let wiki else { return [] }
         return wiki.pages(flagged: .todo).sorted {
             (wiki.entries[$0]?.note.modified ?? .distantPast) > (wiki.entries[$1]?.note.modified ?? .distantPast)
@@ -966,6 +1023,7 @@ public final class WikiStore {
 
     public func recent() -> [String] {
         _ = listsVersion
+        _ = textVersion
         return wiki?.recent(limit: 100) ?? []
     }
 
@@ -1153,6 +1211,14 @@ public final class WikiStore {
         return name.isEmpty ? nil : name
     }
 
+    /// The saved rivers whose names have what is typed in them: from those
+    /// known, not the folder read again for each key.
+    func matchingRivers(_ query: String, limit: Int) -> [String] {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return [] }
+        return Array(savedRivers().filter { $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil }.prefix(limit))
+    }
+
     /// The saved rivers, by name.
     public func savedRivers() -> [String] {
         let version = savedVersion
@@ -1216,9 +1282,16 @@ public final class WikiStore {
 
     /// A saved river — its cards, and what is folded of them — as its file has it.
     func savedRiver(_ name: String) -> SavedRiver? {
-        guard let file = riverFile(name), let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
-        return SavedRiver(text: text)
+        // Read once for each change to the saved rivers: asked for each row
+        // of the rivers listed, each tile, each time they are drawn.
+        if savedRiverCache.version != savedVersion { savedRiverCache = (savedVersion, [:]) }
+        if let known = savedRiverCache.rivers[name] { return known }
+        let read = riverFile(name).flatMap { try? String(contentsOf: $0, encoding: .utf8) }.map(SavedRiver.init(text:))
+        savedRiverCache.rivers[name] = .some(read)
+        return read
     }
+
+    @ObservationIgnored private var savedRiverCache: (version: Int, rivers: [String: SavedRiver?]) = (-1, [:])
 
     /// A saved river's cards, as its file has them.
     public func savedCards(_ name: String) -> [String]? { savedRiver(name)?.cards }
@@ -1469,7 +1542,16 @@ public final class WikiStore {
         if let chosen = chosenModes[title] { return chosen }
         let text = (drafts[title] ?? tiddler(title))?.text ?? ""
         if let known = defaultModes[title], known.text == text || editing.contains(title) { return known.mode }
-        let mode: EditorMode = canOutline(text) ? .outline : .text
+        // Decided once, kept: a card does not turn into the other as it is
+        // written — its size, its marks, its handle all moving. Only an
+        // outline that can no longer be one, without changing how it is
+        // written, is shown as text.
+        let mode: EditorMode
+        if let known = defaultModes[title] {
+            mode = known.mode == .outline && !canOutline(text) ? .text : known.mode
+        } else {
+            mode = canOutline(text) ? .outline : .text
+        }
         defaultModes[title] = (text, mode)
         return mode
     }
@@ -1636,7 +1718,10 @@ public final class WikiStore {
             error = "There is already a tiddler called “\(tiddler.title)”; this one keeps its title."
             tiddler.title = title
         }
-        guard write(tiddler, from: title) else { return }
+        // As it was last written — left without a change since — not written
+        // again: its file, and when it was changed, are left as they are.
+        let unchanged = tiddler.title == title && wiki[title] == tiddler
+        if !unchanged { guard write(tiddler, from: title) else { return } }
         if tiddler.title != title, wiki[title] == nil, relinkOnRename[title] ?? true {
             do {
                 try wiki.relink(from: title, to: tiddler.title)
@@ -1917,7 +2002,7 @@ extension WikiStore {
             .prefix(limit).map(target)
         if let day = dayTarget(query), !found.contains(day) { found.insert(day, at: 0) }
         // Saved rivers the words name, kept a place among the pages.
-        let rivers = root.map { RiverLink.matching(query, in: $0, limit: 2) } ?? []
+        let rivers = matchingRivers(query, limit: 2)
         found = Array(found.prefix(limit - rivers.count)) + rivers.map(riverTarget)
         if !query.isEmpty, !found.contains(where: { $0.title.caseInsensitiveCompare(query) == .orderedSame }), wiki?.title(for: query) == nil {
             found.append(LinkTarget(title: query, shown: query, kind: .new))
@@ -1936,7 +2021,7 @@ extension WikiStore {
         }
         var found = (wiki?.search(query, limit: limit) ?? []).map(target)
         // Saved rivers the words name, among the best pages.
-        if let root { found.insert(contentsOf: RiverLink.matching(query, in: root, limit: 3).map(riverTarget), at: min(3, found.count)) }
+        if root != nil { found.insert(contentsOf: matchingRivers(query, limit: 3).map(riverTarget), at: min(3, found.count)) }
         if let day = dayTarget(query), !found.contains(day) {
             found.insert(day, at: 0)
         } else if let day = DayQuery.day(query).map({ dayTarget($0.description)! }), !found.contains(day) {

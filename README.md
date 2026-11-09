@@ -55,10 +55,11 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
 
 - **The river**: open cards, one after another. A link opens its card just
   after the one it was clicked in and scrolls to it; a card already open is
-  scrolled to. Cards fold to their titles — on the Mac by the chevron
-  in the margin before the title (⌥-click folds or opens every card) or
-  ⌃⌘↑ and ⌃⌘↓ (when not writing in an outline); on the phone by a tap on the title — and a folded card
-  shows its first line and how many more; pinching the river in folds
+  scrolled to. Cards fold to their titles — on the Mac by a click on the
+  title, a double-click on the handle, Space on the card chosen, or ⌃⌘↑
+  and ⌃⌘↓ (when not writing in an outline); on the phone by a tap on the
+  title — and a folded card shows its first two lines, its handle and
+  first line where they are open, so nothing beside them moves; pinching the river in folds
   every card, out opens them, as Fold All and Unfold All do (the Story
   menu, ⌃⌥⌘↑ ⌃⌥⌘↓, or ⋯ on the phone). A river keeps its folds. Cards
   close (×), and
@@ -124,17 +125,23 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   Preview. Its body reads as what it says, and is edited as it reads: as
   an **Outline** (Prism's outline editor, the Mac's and the phone's) where
   the outline would write it back as it is, else as **Text** (Markdown,
-  its markup showing only on the lines the caret is on) — the switch in
-  its header (on the Mac, two icons: lines of text, and an indented list), or on the phone in its menu. In both, links and tags are pills, as Slack draws them: an
+  its markup showing only on the lines the caret is on) — chosen once for
+  a card and kept, not changing as it is written, and switched in its
+  menu. In both, links and tags are pills, as Slack draws them: an
   icon for a page, a day or the web, an address shortened to its site and
   the ends of its path; a click (or tap) follows one, and on the Mac a
   right-click opens or copies it. What is written saves itself a moment
   after typing pauses; when the caret leaves the card, a new title takes
-  effect. Beside the
-  switch, in a glass capsule, its menu (Rename, Fold, Close Others, Add
-  Tag, Add Field, Insert Query, Copy Link, Copy Contents, Show in Finder, Delete) and its
-  close button. Story ▸ Write in Selected Card puts the caret in the
-  selected card, or takes it out.
+  effect. On the Mac its handle — its icon, or a to-do's ring — stands
+  before its first line, in the same place folded or open: a click shows
+  its menu (Rename, Fold, Close Others, Add Tag, Add Field, Insert Query,
+  Copy Link, Copy Contents, Show in Finder, Delete), a double-click folds
+  it, a drag moves it. A click on its title folds it at once. Its close
+  button is at the end of its first line on the card chosen and on the
+  one under the pointer. A click on another card takes the caret out of
+  the one being written in, so the keys go to the card that shows chosen.
+  On the phone, its menu is held. Story ▸ Write in Selected Card puts the
+  caret in the selected card, or takes it out.
 - **On a card**: its title (double-click to rename), tag pills (click one to
   open the tag's card; + adds one), its body, what is tagged with it, its
   other fields — and at its foot what links to it, as Manifold shows links:
@@ -203,10 +210,13 @@ scripts/build-app.sh run -GraphPath /tmp/tw-graph
   links to its day), edited with a date picker, a menu, a toggle, a field
   offering titles. The tag's card has **New *Tag***, and a query table of
   it shows those fields as columns. The tag's editor edits the list.
-- **Renaming and deleting**: renaming a tiddler updates the tiddlers that
+- **Renaming and deleting**: an untitled card whose first line or row is
+  made a heading (`# `) is offered it as its title, whenever it is — Title
+  at the line's end, or Return there. Renaming a tiddler updates the tiddlers that
   name it — links, embeds, tags, `list` fields, query blocks, link fields —
-  unless the editor's toggle says not to. **Delete Tiddler…** in a card's
-  menu asks first; the graph's history keeps it.
+  unless the editor's toggle says not to. **Delete Tiddler** in a card's
+  menu — or ⌘⌫ on the Mac, the card selected and not being written in —
+  deletes it at once: Undo brings it back, and the graph's history keeps it.
 - **Instant sync**: signed in to GitHub (File ▸ GitHub Account… on the Mac;
   the phone signs in to clone), weft follows the sync relay and syncs as
   soon as another device pushes. The phone also registers for the relay's

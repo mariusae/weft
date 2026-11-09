@@ -93,25 +93,35 @@ final class HandlePointerView: NSView, NSDraggingSource {
 
     override func resetCursorRects() { addCursorRect(bounds, cursor: onClick == nil ? .pointingHand : .arrow) }
 
+    /// The menu a click shows, waiting to see whether a second click comes.
+    private var pendingMenu: DispatchWorkItem?
+
     override func mouseDown(with event: NSEvent) {
+        // The second click of two: its double-click's, not the menu the first
+        // was about to show.
+        if event.clickCount >= 2, let onDoubleClick, let pending = pendingMenu {
+            pending.cancel()
+            pendingMenu = nil
+            _ = window?.nextEvent(matching: [.leftMouseUp])
+            onDoubleClick()
+            return
+        }
         let start = event.locationInWindow
         // Held till it is let go, or moved far enough to be a drag.
         while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp {
-                // Clicked again soon: its double-click's, not its menu — which,
-                // shown at once, the second click would land in.
-                if let onDoubleClick,
-                   let again = window?.nextEvent(matching: [.leftMouseDown], until: Date(timeIntervalSinceNow: doubleClickWait),
-                                                 inMode: .eventTracking, dequeue: true) {
-                    if again.clickCount >= 2 {
-                        _ = window?.nextEvent(matching: [.leftMouseUp])
-                        onDoubleClick()
-                        return
-                    }
-                    // Another click, slower: put back for what it is on.
-                    window?.postEvent(again, atStart: true)
+                if let onClick { onClick(); return }
+                guard onDoubleClick != nil else { showMenu(for: event); return }
+                // A second click may come — its double-click's, not the menu,
+                // which shown at once it would land in: the menu a moment
+                // later, the app going on meanwhile, not held waiting.
+                let menu = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    pendingMenu = nil
+                    showMenu(for: event)
                 }
-                if let onClick { onClick() } else { showMenu(for: event) }
+                pendingMenu = menu
+                DispatchQueue.main.asyncAfter(deadline: .now() + doubleClickWait, execute: menu)
                 return
             }
             let point = next.locationInWindow

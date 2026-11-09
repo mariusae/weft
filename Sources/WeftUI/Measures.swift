@@ -33,12 +33,16 @@ enum Measures {
     #if os(macOS)
     /// Round what a card says: its sides, its top and its foot.
     static let cardSides: CGFloat = xl
-    static let cardTop: CGFloat = m + 2
+    /// Over its first line: set so that line's middle — and its handle's —
+    /// is as far down a card open as folded, titled or not; folding and
+    /// opening it moves nothing beside it.
+    static let cardTop: CGFloat = 10
+    static let titledCardTop: CGFloat = 7
     static let cardBottom: CGFloat = m + 2
     /// Between its parts — title, words, what links to it.
     static let cardParts: CGFloat = s
     /// A card folded to its peek: above and below its one line.
-    static let peekPadding: CGFloat = s + 1
+    static let peekPadding: CGFloat = m
 
     /// The column before a card's words: a ring, an icon, an outline's
     /// bullets go in it — title, words and what is under them all begin

@@ -192,7 +192,9 @@ public struct ContentView: View {
         // to go somewhere is done with: not left to show over the river.
         .onChange(of: river.startsEmpty) { _, empty in if !empty { river.quickOpenShown = false } }
         // A page opened from it, or from elsewhere: its start page done with.
-        .onChange(of: river.focusRequest) { river.startShown = false }
+        // Watched in a view of its own: the window's root not drawn again
+        // for each card gone to.
+        .background { OnFocusRequest(river: river) { river.startShown = false } }
         #else
         // On the phone, the start page, as Safari's; else a sheet, as Prism's Go to is.
         .fullScreenCover(isPresented: Binding(get: { river.quickOpenShown && store.root != nil && sizeClass == .compact },
@@ -242,7 +244,7 @@ public struct ContentView: View {
         // Prism's warm ink and its accent, throughout.
         .foregroundStyle(Ink.text.color)
         .tint(Ink.accent.color)
-        .onChange(of: river.focusRequest) { compactColumn = .detail }
+        .background { OnFocusRequest(river: river) { compactColumn = .detail } }
         // What is done to pages and cards undone with the window's undo.
         .onAppear { store.undoManager = undoManager }
         #if os(iOS)
@@ -1456,13 +1458,13 @@ private struct RiverColumn: View {
                 // Once a card just opened is among the stack's: scrolled to in
                 // the change that put it there, it is not found to scroll to.
                 DispatchQueue.main.async {
-                    withAnimation(.snappy(duration: 0.35)) { proxy.scrollTo(target, anchor: .top) }
+                    withAnimation(.snappy(duration: 0.24)) { proxy.scrollTo(target, anchor: .top) }
                 }
                 // And again once the cards round it are laid out: the river's
                 // height only reckoned till they are, it can stop short of it.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
                     guard river.focusRequest == asked, river.focus == focus else { return }
-                    withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(target, anchor: .top) }
+                    withAnimation(.snappy(duration: 0.14)) { proxy.scrollTo(target, anchor: .top) }
                 }
             }
         }
@@ -1702,5 +1704,19 @@ private struct KeepsEnd: ViewModifier {
                 proxy.scrollTo(last, anchor: .bottom)
             }
         }
+    }
+}
+
+/// Does something each time a card is asked to be brought into view: what
+/// watches the river's `focusRequest`, so that the view it is put on does not.
+struct OnFocusRequest: View {
+    let river: River
+    let action: () -> Void
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onChange(of: river.focusRequest) { action() }
     }
 }

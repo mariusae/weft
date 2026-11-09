@@ -4,8 +4,8 @@ import SwiftUI
 
 /// The river by its keys, when nothing is being typed in — as Mail's list
 /// and Things' are: ↑ and ↓ choose the card before or after, Space folds
-/// it or opens it again, Return writes in it. Keys that something else
-/// wants — a field, a list, the outline — go on to it.
+/// it or opens it again, Return writes in it, ⌘⌫ deletes it. Keys that
+/// something else wants — a field, a list, the outline — go on to it.
 struct RiverKeys: NSViewRepresentable {
     let river: River
 
@@ -48,6 +48,15 @@ final class RiverKeysView: NSView {
         // Over the river, something asked: its keys.
         if river.quickOpenShown || river.homing != nil || river.riversShown || river.startShown { return event }
         let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        // ⌘⌫, as the Finder's: the selected card's tiddler deleted — Undo
+        // brings it back. In words being written, the line's start, as ever.
+        if flags == .command, event.keyCode == 51 {
+            // Only a card chosen — shown so — never the one that happens to
+            // be at the top of the river.
+            guard let card = river.chosen, river.store.tiddler(card) != nil, !river.store.isShadow(card) else { return event }
+            withAnimation { river.store.delete(card) }
+            return nil
+        }
         guard flags.isEmpty else { return event }
         switch event.keyCode {
         case 126: // ↑

@@ -153,6 +153,11 @@ struct OutlineCardEditor: UIViewRepresentable {
             coordinator.scheduleSave(editor)
         }
         editor.onOpenLink = { [river, title] in followOutline($0, in: river, from: title) }
+        // Its one empty bullet deleted: written as text instead.
+        editor.onDeleteInEmpty = { [river, title] in
+            coordinator.flush()
+            river.writeAsText(title)
+        }
         // Untitled and new: its first row offered as its title, quietly, once
         // written — or taken, typed as a heading and Return pressed.
         editor.isUntitled = { [store, title] in Untitled.isName(store.draftHead(title)?.title ?? title) }

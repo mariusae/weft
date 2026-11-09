@@ -38,12 +38,18 @@ public final class River: Identifiable {
     @ObservationIgnored public var present: () -> Void = {}
 
     /// The card to bring into view, and a count so that asking again does.
-    public private(set) var focus: String? {
+    /// Not watched itself: each card is told of its own selection, and what
+    /// shows the selected card watches `selectionVersion` — a click on one
+    /// card is not every card drawn again.
+    @ObservationIgnored public private(set) var focus: String? {
         didSet {
             guard focus != oldValue else { return }
             for title in [oldValue, focus].compactMap({ $0 }) { cardChanged(title) }
+            selectionVersion += 1
         }
     }
+    /// Bumped when the selected card changes: for what shows it.
+    public private(set) var selectionVersion = 0
     public private(set) var focusRequest = 0
     /// The card at the top of the river as it is scrolled, as the river says.
     @ObservationIgnored public var cardInView: String?
@@ -457,6 +463,7 @@ public final class River: Identifiable {
     }
 
     private func shut(_ title: String) {
+        chooseNext(after: title)
         cards.removeAll { $0 == title }
         folded.remove(title)
         caretParts[title] = nil
@@ -497,12 +504,32 @@ public final class River: Identifiable {
         cards.insert(title, at: min(index, cards.count))
     }
 
+    /// The chosen card closed or gone: the one after it chosen — or, the
+    /// last, the one before — as Mail does; the river not left with nothing
+    /// chosen, ↑ and ↓ starting from the top again.
+    private func chooseNext(after title: String) {
+        guard focus == title, let index = cards.firstIndex(of: title) else { return }
+        let rest = cards.filter { $0 != title }
+        focus = rest.isEmpty ? nil : rest[min(index, rest.count - 1)]
+    }
+
+    /// The card chosen by hand — written in, or clicked, or gone to — if
+    /// any: not, as `selected` may be, just the one at the top of the river.
+    /// What is done to a card for good, as deleting it, is done to this.
+    public var chosen: String? {
+        _ = selectionVersion
+        if let writing, cards.contains(writing) { return writing }
+        if let focus, cards.contains(focus) { return focus }
+        return nil
+    }
+
     /// Bumped when any card folds or unfolds: for what says whether all are.
     public internal(set) var foldsVersion = 0
 
     /// The card the keys act on: the one selected, else the one at the top
     /// of the river as it is scrolled.
     public var selected: String? {
+        _ = selectionVersion
         if let writing, cards.contains(writing) { return writing }
         if let focus, cards.contains(focus) { return focus }
         return cardInView.flatMap { cards.contains($0) ? $0 : nil }
@@ -558,6 +585,7 @@ public final class River: Identifiable {
     /// A page is gone: its card goes too.
     func removed(_ title: String) {
         if query != nil { removeFound(title) }
+        chooseNext(after: title)
         cards.removeAll { $0 == title }
         folded.remove(title)
         if writing == title { writing = nil }
@@ -586,7 +614,10 @@ public final class River: Identifiable {
 
     /// The card the caret is in.
     @ObservationIgnored private(set) var writing: String? {
-        didSet { if (writing != nil) != isWritingAny { isWritingAny = writing != nil } }
+        didSet {
+            if (writing != nil) != isWritingAny { isWritingAny = writing != nil }
+            if writing != oldValue { selectionVersion += 1 }
+        }
     }
     /// Whether the caret is in any card: what is over the keys is the editor's.
     public private(set) var isWritingAny = false
@@ -718,6 +749,18 @@ public final class River: Identifiable {
         let wasWriting = writing == title
         store.setEditorMode(store.editorMode(title) == .outline ? .text : .outline, for: title)
         if wasWriting { DispatchQueue.main.async { self.edit(title) } }
+    }
+
+    /// A card written as text from now on, the caret in it: its outline's
+    /// one empty bullet deleted, what is typed next its words, not a row's.
+    public func writeAsText(_ title: String) {
+        #if os(macOS)
+        // What is typed till the text editor has the caret, held for it:
+        // not let into the outline, still there till it is drawn again.
+        TypeAhead.hold(for: title)
+        #endif
+        store.setEditorMode(.text, for: title)
+        DispatchQueue.main.async { self.edit(title) }
     }
 
     /// ⌘F: words found in the card being written in — or, with none,
