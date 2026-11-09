@@ -45,8 +45,8 @@ xcodebuild archive -project $project -scheme $scheme -configuration Release \
   -allowProvisioningUpdates "${auth[@]}" \
   CURRENT_PROJECT_VERSION="$build"
 
-options=$out/ExportOptions.plist
-cat > $options <<EOF
+export_options=$out/ExportOptions.plist
+cat > $export_options <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -67,7 +67,7 @@ cat > $options <<EOF
 </plist>
 EOF
 
-xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist $options \
+xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist $export_options \
   -exportPath $out/Weft-$build -allowProvisioningUpdates "${auth[@]}"
 
 if [[ $destination == upload ]]; then
